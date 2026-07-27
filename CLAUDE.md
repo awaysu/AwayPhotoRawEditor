@@ -24,6 +24,13 @@ dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64
 src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 ```
 
+### 發佈 / 簽章 / 安裝檔（2026-07 起）
+1. `dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contained true`
+2. 簽 exe：自簽憑證 **CN=Awaysu**（CurrentUser\My，指紋 `D0929910745C87BB7CB48C89F3C354729E337876`，已匯入本機 Root/TrustedPublisher；公鑰在 `installer\AwaysuCodeSigning.cer`）——`Set-AuthenticodeSignature -HashAlgorithm SHA256 -TimestampServer http://timestamp.digicert.com`
+3. 安裝檔：`ISCC installer\AwayPhotoRawEditor.iss`（Inno Setup 6，裝在 `%LOCALAPPDATA%\Programs\Inno Setup 6\`）→ `installer\Output\AwayPhotoRawEditor-Setup-v{版本}.exe`（每使用者安裝、免 UAC、含 tools/；**.iss 內 MyAppVersion 要跟著版本改**），編譯完成後安裝檔同樣要簽章
+4. GitHub（gh CLI 已登入 awaysu）：程式碼推 `awaysu/AwayPhotoRawEditor`；安裝檔 commit 到 `awaysu/Download`（更新該 repo README 的表格與 SHA256；那個 repo 也放其他程式的安裝檔，只增不刪）
+- 自簽憑證在別人電腦仍會被 SmartScreen 警告（點「其他資訊→仍要執行」），正式消除需 EV / Trusted Signing 憑證
+
 > ⚠️ 重建前先關掉殘留進程，否則 exe 被鎖：
 > `Get-Process AwayPhotoRawEditor -ErrorAction SilentlyContinue | Stop-Process -Force`
 > WinExe 不會阻塞 PowerShell，用 `Start-Process ... -Wait`（或 `-PassThru` + `WaitForExit`）。
