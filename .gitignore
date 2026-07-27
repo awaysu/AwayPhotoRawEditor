@@ -1,0 +1,23 @@
+# build outputs
+src/bin/
+src/obj/
+installer/Output/
+
+# user / IDE local files
+*.user
+*.suo
+.vs/
+.idea/
+
+# signing material — 私鑰絕不進版控（.cer 公鑰除外）
+*.pfx
+*.p12
+*.snk
+
+# app caches (若在專案內開過測試資料夾)
+RAW_TEMP/
+
+# misc
+*.log
+Thumbs.db
+Desktop.ini
