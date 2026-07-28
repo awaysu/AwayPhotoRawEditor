@@ -184,6 +184,7 @@ public static class LibRawInterop
             lr = libraw_init(0);
             if (lr == IntPtr.Zero) return null;
             if (libraw_open_wfile(lr, path) != 0) return null;
+            int flip = ReadFlip(lr);   // 內嵌縮圖多為橫躺儲存、不帶方向標籤，要靠相機的 flip 轉正
             if (libraw_unpack_thumb(lr) != 0) return null;
             img = libraw_dcraw_make_mem_thumb(lr, out _);
             if (img == IntPtr.Zero) return null;
@@ -195,13 +196,20 @@ public static class LibRawInterop
             {
                 var bytes = new byte[dataSize];
                 Marshal.Copy(data, bytes, 0, dataSize);
+                if (flip == 0) return WicDecoder.LoadBytes(bytes);   // 尊重縮圖 JPEG 自帶的方向（若有）
                 using var ms = new MemoryStream(bytes);
                 using var tmp = new Bitmap(ms);
-                return new Bitmap(tmp); // detach from stream
+                var bmp = new Bitmap(tmp);   // detach from stream；只按 flip 轉一次，避免與自帶標籤重複旋轉
+                ApplyFlip(bmp, flip);
+                return bmp;
             }
             if (type == LIBRAW_IMAGE_BITMAP && colors >= 3)
-                return bits == 16 ? BitmapFrom16(data, w, h, colors).ToBitmap()
-                                  : BitmapFrom8Bmp(data, w, h, colors);
+            {
+                var bmp = bits == 16 ? BitmapFrom16(data, w, h, colors).ToBitmap()
+                                     : BitmapFrom8Bmp(data, w, h, colors);
+                ApplyFlip(bmp, flip);
+                return bmp;
+            }
             return null;
         }
         catch { return null; }
@@ -210,6 +218,35 @@ public static class LibRawInterop
             if (img != IntPtr.Zero) libraw_dcraw_clear_mem(img);
             if (lr != IntPtr.Zero) libraw_close(lr);
         }
+    }
+
+    // libraw 0.22.1 的 C API 沒有 flip getter。libraw_data_t 開頭為 image 指標(x64=8B)，
+    // 接著 sizes{8×ushort=16 + uint raw_pitch=4 + padding=4 + double pixel_aspect=8}，
+    // 故 sizes.flip 位於位移 40（已以實檔驗證：直幅 ARW=5、橫幅=0）。
+    // ⚠️ DLL 版本固定在 tools/，升級 LibRaw 時要重新驗證此位移。
+    private const int SizesFlipOffset = 40;
+
+    private static int ReadFlip(IntPtr lr)
+    {
+        try
+        {
+            int f = Marshal.ReadInt32(lr, SizesFlipOffset);
+            return f is 3 or 5 or 6 ? f : 0;   // 位移不符預期時讀到垃圾值 → 一律視為不旋轉
+        }
+        catch { return 0; }
+    }
+
+    /// <summary>依 libraw sizes.flip 轉正（3=180°、5=逆時針90°、6=順時針90°）。</summary>
+    private static void ApplyFlip(Bitmap bmp, int flip)
+    {
+        var op = flip switch
+        {
+            3 => RotateFlipType.Rotate180FlipNone,
+            5 => RotateFlipType.Rotate270FlipNone,
+            6 => RotateFlipType.Rotate90FlipNone,
+            _ => RotateFlipType.RotateNoneFlipNone
+        };
+        if (op != RotateFlipType.RotateNoneFlipNone) bmp.RotateFlip(op);
     }
 
     // ---- Buffer conversion ----------------------------------------------

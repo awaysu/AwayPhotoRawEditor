@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Models;
 
 namespace AwayPhotoRawEditor.Controls;
@@ -568,7 +569,7 @@ public sealed class ImageViewer : Control
     private void ShowGradientDeleteMenu(int index, Point p)
     {
         var menu = new ContextMenuStrip { BackColor = Theme.PanelBg2, ForeColor = Theme.Text };
-        var del = new ToolStripMenuItem("刪除此線性漸層") { ForeColor = Theme.Text };
+        var del = new ToolStripMenuItem(L.T("刪除此線性漸層")) { ForeColor = Theme.Text };
         del.Click += (_, _) =>
         {
             if (_adj == null || index < 0 || index >= _adj.Gradients.Count) return;
@@ -636,7 +637,7 @@ public sealed class ImageViewer : Control
         g.Clear(Theme.ViewerBg);
         if (_image is null)
         {
-            TextRenderer.DrawText(g, "選擇一張相片開始編輯", Theme.Normal,
+            TextRenderer.DrawText(g, L.T("選擇一張相片開始編輯"), Theme.Normal,
                 ClientRectangle, Theme.TextFaint,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             return;
@@ -656,7 +657,7 @@ public sealed class ImageViewer : Control
             case ToolMode.Heal: DrawHealOverlay(g); break;
         }
         if (WhiteBalancePickerActive)
-            TextRenderer.DrawText(g, "點擊中性灰色區域設定白平衡", Theme.Normal,
+            TextRenderer.DrawText(g, L.T("點擊中性灰色區域設定白平衡"), Theme.Normal,
                 new Rectangle(0, 8, Width, 20), Theme.Text, TextFormatFlags.HorizontalCenter);
     }
 

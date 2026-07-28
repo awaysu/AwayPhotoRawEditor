@@ -1,6 +1,7 @@
 using System;
 using System.Windows.Forms;
 using AwayPhotoRawEditor.App;
+using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Forms;
 
 namespace AwayPhotoRawEditor;
@@ -11,6 +12,22 @@ internal static class Program
     private static void Main(string[] args)
     {
         AppSettings.Load();
+        var language = AppSettings.Current.UiLanguage;
+        if (Enum.TryParse<AppLanguage>(Environment.GetEnvironmentVariable("AWPR_UI_LANGUAGE"), true, out var diagnosticLanguage))
+        {
+            language = diagnosticLanguage;
+            AppSettings.Current.UiLanguage = diagnosticLanguage; // in-memory only
+        }
+        L.SetLanguage(language);
+
+        var style = AppSettings.Current.InterfaceStyle;
+        // Visual diagnostics can exercise both palettes without modifying settings.xml.
+        if (Enum.TryParse<UiStyle>(Environment.GetEnvironmentVariable("AWPR_UI_STYLE"), true, out var diagnosticStyle))
+        {
+            style = diagnosticStyle;
+            AppSettings.Current.InterfaceStyle = diagnosticStyle; // in-memory only; never saved by diagnostics
+        }
+        Theme.Apply(style);
 
         // Headless engine self-test: --selftest <imagePath> <reportPath>
         if (args.Length >= 3 && args[0] == "--selftest")

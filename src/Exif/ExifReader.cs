@@ -85,6 +85,19 @@ public static class ExifReader
         catch { return false; }
     }
 
+    /// <summary>讀取檔案的 EXIF Orientation（1..8；讀不到回 1）。RAW 內嵌預覽轉正用。</summary>
+    public static int ReadOrientation(string path)
+    {
+        string? exe = AppPaths.FindExifTool();
+        if (exe is null) return 1;
+        try
+        {
+            string outp = RunExifTool(exe, new[] { "-Orientation#", "-s3", "-fast2", path }, out _);
+            return int.TryParse(outp.Trim(), out int v) && v is >= 1 and <= 8 ? v : 1;
+        }
+        catch { return 1; }
+    }
+
     /// <summary>Extract an embedded preview JPEG from a RAW file (largest available). Null on failure.</summary>
     public static byte[]? ExtractPreview(string path)
     {

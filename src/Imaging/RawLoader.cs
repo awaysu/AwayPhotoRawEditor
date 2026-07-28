@@ -37,7 +37,7 @@ public sealed class RawLoader
     public Bitmap LoadFull(string path)
     {
         var bmp = DecodeFullBitmap(path);
-        if (bmp is null) throw new IOException($"無法讀取影像：{Path.GetFileName(path)}");
+        if (bmp is null) throw new IOException(L.F("無法讀取影像：{0}", Path.GetFileName(path)));
         return bmp;
     }
 
@@ -55,8 +55,17 @@ public sealed class RawLoader
             var preview = ExifReader.ExtractPreview(path);
             if (preview is not null)
             {
-                var b = WicDecoder.LoadBytes(preview);
-                if (b is not null) return b;
+                var b = WicDecoder.LoadBytes(preview, out bool oriented);
+                if (b is not null)
+                {
+                    // 內嵌預覽常是橫躺儲存且不帶方向標籤 → 用檔案本身的 Orientation 補正
+                    if (!oriented)
+                    {
+                        int o = ExifReader.ReadOrientation(path);
+                        if (o > 1) WicDecoder.ApplyOrientation(b, o);
+                    }
+                    return b;
+                }
             }
             // Last resort: let WIC try the file directly (may work if OS RAW codec present).
             return WicDecoder.LoadFile(path);

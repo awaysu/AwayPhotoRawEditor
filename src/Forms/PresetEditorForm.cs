@@ -2,6 +2,7 @@ using System;
 using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Models;
 using AwayPhotoRawEditor.Panels;
@@ -70,6 +71,14 @@ public sealed class PresetEditorForm : Form
         _color.SetTemperatureMode(true);   // 風格檔一律以 Kelvin 儲存
         _color.HideWhiteBalanceRow();      // 沒有目標照片，滴管/拍攝時設定不適用
 
+        var backupBtn = new FlatButton { Text = "備份全部" };
+        backupBtn.SetBounds(16, 646, 116, 32);
+        backupBtn.Click += (_, _) => BackupAll();
+
+        var restoreBtn = new FlatButton { Text = "還原全部" };
+        restoreBtn.SetBounds(140, 646, 116, 32);
+        restoreBtn.Click += (_, _) => RestoreAll();
+
         var resetBtn = new FlatButton { Text = "恢復預設" };
         resetBtn.SetBounds(16, 686, 240, 32);
         resetBtn.Click += (_, _) => ResetAllPresets();
@@ -78,9 +87,10 @@ public sealed class PresetEditorForm : Form
         closeBtn.SetBounds(502, 686, 80, 32);
         closeBtn.Click += (_, _) => Close();
 
-        Controls.AddRange(new Control[] { header, _list, nameLbl, _nameBox, addBtn, hint, _basic, _color, _detail, resetBtn, closeBtn });
+        Controls.AddRange(new Control[] { header, _list, nameLbl, _nameBox, addBtn, hint, _basic, _color, _detail, backupBtn, restoreBtn, resetBtn, closeBtn });
 
         ReloadList();
+        L.Apply(this);
     }
 
     protected override void OnFormClosing(FormClosingEventArgs e)
@@ -108,7 +118,7 @@ public sealed class PresetEditorForm : Form
         using var bg = new SolidBrush(sel ? Theme.Accent : Theme.PanelBg2);
         e.Graphics.FillRectangle(bg, e.Bounds);
         string name = _list.Items[e.Index] as string ?? "";
-        string text = PresetProfile.BuiltIn.ContainsKey(name) ? name : name + "（自訂）";
+        string text = PresetProfile.BuiltIn.ContainsKey(name) ? L.T(name) : name + L.T("（自訂）");
         TextRenderer.DrawText(e.Graphics, text, Font,
             new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height),
             sel ? Color.White : Theme.Text,
@@ -164,12 +174,12 @@ public sealed class PresetEditorForm : Form
         var name = _nameBox.Text.Trim();
         if (name.Length == 0)
         {
-            MessageBox.Show(this, "請先輸入自訂風格檔名稱", "編輯風格檔", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, L.T("請先輸入自訂風格檔名稱"), L.T("編輯風格檔"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             return;
         }
         if (name == PresetProfile.DefaultName || PresetProfile.BuiltIn.ContainsKey(name) || PresetStore.CustomNames().Contains(name))
         {
-            MessageBox.Show(this, $"已有名為「{name}」的風格檔，請換一個名稱", "編輯風格檔", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, L.F("已有名為「{0}」的風格檔，請換一個名稱", name), L.T("編輯風格檔"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
         CommitCurrent();
@@ -178,12 +188,76 @@ public sealed class PresetEditorForm : Form
         ReloadList(name);
     }
 
+    /// <summary>備份全部：把整份風格檔設定存成使用者選擇的 XML 檔（重灌後可用「還原全部」帶回）。</summary>
+    private void BackupAll()
+    {
+        CommitCurrent();
+        using var d = new SaveFileDialog
+        {
+            Title = L.T("風格檔備份"),
+            Filter = L.T("風格檔備份") + " (*.xml)|*.xml",
+            FileName = "AwayPhotoRawEditor_Presets.xml",
+            DefaultExt = "xml",
+            AddExtension = true
+        };
+        if (d.ShowDialog(this) != DialogResult.OK) return;
+        try
+        {
+            PresetStore.ExportTo(d.FileName);
+            MessageBox.Show(this, L.F("已備份全部風格檔至：\n{0}", d.FileName),
+                L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, L.T("備份失敗：") + ex.Message,
+                L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
+    /// <summary>還原全部（先確認）：以備份檔整份取代現有風格檔設定。</summary>
+    private void RestoreAll()
+    {
+        using var d = new OpenFileDialog
+        {
+            Title = L.T("風格檔備份"),
+            Filter = L.T("風格檔備份") + " (*.xml)|*.xml"
+        };
+        if (d.ShowDialog(this) != DialogResult.OK) return;
+        var r = MessageBox.Show(this,
+            L.T("還原將以備份內容取代現有的所有風格檔設定。\n確定要還原？"),
+            L.T("風格檔備份"), MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+        if (r != DialogResult.OK) return;
+        try
+        {
+            if (!PresetStore.ImportFrom(d.FileName))
+            {
+                MessageBox.Show(this, L.T("這不是有效的風格檔備份檔"),
+                    L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+            _cur = null; _adj = null; _baseline = null;   // 捨棄編輯中的暫存，以備份內容為準
+            ReloadList();
+            MessageBox.Show(this, L.T("已從備份還原風格檔"),
+                L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Information);
+        }
+        catch (InvalidOperationException)
+        {
+            MessageBox.Show(this, L.T("這不是有效的風格檔備份檔"),
+                L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show(this, L.T("還原失敗：") + ex.Message,
+                L.T("風格檔備份"), MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+    }
+
     /// <summary>恢復預設（先確認）：刪除所有自訂風格檔、清除所有內建覆寫。</summary>
     private void ResetAllPresets()
     {
         var r = MessageBox.Show(this,
-            "將刪除所有自訂風格檔，並把所有內建風格檔恢復為預設值。\n確定要恢復預設？",
-            "恢復預設", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+            L.T("將刪除所有自訂風格檔，並把所有內建風格檔恢復為預設值。\n確定要恢復預設？"),
+            L.T("恢復預設"), MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
         if (r != DialogResult.OK) return;
 
         _cur = null; _adj = null; _baseline = null;   // discard pending edits on purpose

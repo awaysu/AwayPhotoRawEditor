@@ -77,6 +77,25 @@ public static class PresetStore
     /// <summary>恢復預設：刪除所有自訂風格檔與所有內建風格檔的覆寫值。</summary>
     public static void ResetAllToDefaults() => SaveAll(new PresetCollection());
 
+    /// <summary>備份：把整份風格檔設定（等同 presets.xml）寫到指定路徑。失敗擲出例外。</summary>
+    public static void ExportTo(string path)
+    {
+        using var fs = File.Create(path);
+        Serializer.Serialize(fs, Load());
+    }
+
+    /// <summary>還原：讀入備份檔並整份取代 presets.xml。
+    /// 格式錯誤擲出例外；能解析但不是 PresetCollection 時回傳 false。</summary>
+    public static bool ImportFrom(string path)
+    {
+        PresetCollection? col;
+        using (var fs = File.OpenRead(path))
+            col = Serializer.Deserialize(fs) as PresetCollection;
+        if (col is null) return false;
+        SaveAll(col);
+        return true;
+    }
+
     public static ImageAdjustments? Get(string name)
         => Load().Items.FirstOrDefault(p => p.Name == name)?.Adjustments;
 

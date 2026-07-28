@@ -4,6 +4,7 @@ using System.Drawing.Drawing2D;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 
 namespace AwayPhotoRawEditor.Forms;
@@ -37,8 +38,8 @@ public sealed class ProgressForm : Form
         string? subtitle = null, string? doneMessage = null)
     {
         _work = work;
-        _title = title;
-        _doneMessage = doneMessage;
+        _title = L.T(title);
+        _doneMessage = doneMessage is null ? null : L.T(doneMessage);
         Text = "";   // the styled header already shows the title — avoid a duplicate caption
         FormBorderStyle = FormBorderStyle.FixedDialog;
         StartPosition = FormStartPosition.CenterParent;
@@ -56,7 +57,7 @@ public sealed class ProgressForm : Form
         if (hasSub)
         {
             // Centered, multi-line "please wait" note.
-            var sub = new Label { Text = subtitle, ForeColor = Theme.Accent, Left = 20, Top = 60, Width = 440, Height = 44, BackColor = Theme.WindowBg, TextAlign = ContentAlignment.MiddleCenter };
+            var sub = new Label { Text = L.T(subtitle!), ForeColor = Theme.Accent, Left = 20, Top = 60, Width = 440, Height = 44, BackColor = Theme.WindowBg, TextAlign = ContentAlignment.MiddleCenter };
             Controls.Add(sub);
             msgTop = 114;
         }
@@ -65,13 +66,14 @@ public sealed class ProgressForm : Form
         _bar = new Panel { Left = 20, Top = msgTop + 28, Width = 440, Height = 18, BackColor = Theme.WindowBg };
         _bar.Paint += PaintBar;
         _cancel = new FlatButton { Text = "取消", Width = 90, Height = 30, Top = msgTop + 62, Left = 370 };
-        _cancel.Click += (_, _) => { _cts.Cancel(); _cancel.Enabled = false; _cancel.Text = "取消中…"; };
+        _cancel.Click += (_, _) => { _cts.Cancel(); _cancel.Enabled = false; _cancel.Text = L.T("取消中…"); };
 
         Controls.AddRange(new Control[] { _msg, _bar, _cancel });
 
         _anim = new System.Windows.Forms.Timer { Interval = 30 };
         _anim.Tick += (_, _) => AnimTick();
         _anim.Start();
+        L.Apply(this);
     }
 
     private Panel BuildHeader()

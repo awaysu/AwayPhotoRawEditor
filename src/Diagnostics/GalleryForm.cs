@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Imaging;
 using AwayPhotoRawEditor.Models;
@@ -27,7 +28,7 @@ public sealed class GalleryForm : Form
 
         var presetPanel = new Panel { Dock = DockStyle.Top, Height = 96, BackColor = Theme.PanelBg };
         var combo = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Theme.PanelBg3, ForeColor = Theme.Text };
-        combo.Items.AddRange(new object[] { "預設時設定", "風景", "人像", "鮮豔", "黑白" });
+        combo.Items.AddRange(new object[] { L.T("預設時設定"), L.T("風景"), L.T("人像"), L.T("鮮豔"), L.T("黑白") });
         combo.SelectedIndex = 1;
         presetPanel.Controls.Add(new FlatButton { Text = "儲存風格檔", Dock = DockStyle.Bottom, Height = 28 });
         presetPanel.Controls.Add(combo);
@@ -94,6 +95,7 @@ public sealed class GalleryForm : Form
             sample = WicDecoder.LoadFile(sampleImage) is { } b ? CacheManager.ResizeToMaxDim(b, 1400) : null;
         sample ??= SamplePhoto();
         viewer.SetImage(sample, true);
+        L.Apply(this);
     }
 
     private static AdjustmentSlider MakeSlider(string label, double min, double max, double def, double val, string fmt, bool bipolar)

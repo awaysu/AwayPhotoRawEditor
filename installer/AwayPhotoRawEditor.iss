@@ -3,8 +3,8 @@
 ; 再用 ISCC 編譯本檔，輸出到 installer\Output\。
 ; 安裝為「每使用者」（無需系統管理員權限），目錄 {localappdata}\Programs\AwayPhotoRawEditor。
 
-#define MyAppName "Away PhotoRaw Editor"
-#define MyAppVersion "1.0.0"
+#define MyAppName "AwayPhotoRawEditor"
+#define MyAppVersion "1.0.3"
 #define MyAppPublisher "Awaysu"
 #define MyAppURL "https://github.com/awaysu/AwayPhotoRawEditor"
 #define MyAppExeName "AwayPhotoRawEditor.exe"

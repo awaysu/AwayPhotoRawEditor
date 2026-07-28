@@ -20,19 +20,24 @@ public static class WicDecoder
         try
         {
             byte[] bytes = File.ReadAllBytes(path);
-            return LoadBytes(bytes);
+            return LoadBytes(bytes, out _);
         }
         catch { return null; }
     }
 
     /// <summary>Decode image bytes (e.g. an embedded JPEG preview) into a bitmap.</summary>
-    public static Bitmap? LoadBytes(byte[] bytes)
+    public static Bitmap? LoadBytes(byte[] bytes) => LoadBytes(bytes, out _);
+
+    /// <summary>Decode image bytes; <paramref name="hadOrientationTag"/> 回報位元組本身是否帶
+    /// EXIF 方向標籤（沒有時呼叫端可再用檔案層級的 Orientation 補正，例如 RAW 內嵌預覽）。</summary>
+    public static Bitmap? LoadBytes(byte[] bytes, out bool hadOrientationTag)
     {
+        hadOrientationTag = false;
         try
         {
             using var ms = new MemoryStream(bytes, writable: false);
             using var img = Image.FromStream(ms, useEmbeddedColorManagement: true, validateImageData: false);
-            int orientation = ReadOrientation(img);
+            int orientation = ReadOrientation(img, out hadOrientationTag);
             var bmp = new Bitmap(img.Width, img.Height, PixelFormat.Format32bppArgb);
             using (var g = Graphics.FromImage(bmp))
             {
@@ -44,22 +49,24 @@ public static class WicDecoder
         catch { return null; }
     }
 
-    private static int ReadOrientation(Image img)
+    private static int ReadOrientation(Image img, out bool found)
     {
+        found = false;
         try
         {
             foreach (var id in img.PropertyIdList)
                 if (id == OrientationTagId)
                 {
                     var p = img.GetPropertyItem(OrientationTagId);
-                    if (p?.Value is { Length: >= 2 }) return BitConverter.ToUInt16(p.Value, 0);
+                    if (p?.Value is { Length: >= 2 }) { found = true; return BitConverter.ToUInt16(p.Value, 0); }
                 }
         }
         catch { }
         return 1;
     }
 
-    private static Bitmap ApplyOrientation(Bitmap bmp, int orientation)
+    /// <summary>依 EXIF Orientation（1..8）轉正；公開給 RAW 內嵌預覽退回鏈補正方向用。</summary>
+    public static Bitmap ApplyOrientation(Bitmap bmp, int orientation)
     {
         RotateFlipType op = orientation switch
         {

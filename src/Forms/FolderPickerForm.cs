@@ -62,7 +62,7 @@ public sealed class FolderPickerForm : Form
         };
         void AddPlace(string glyph, string caption, Action act)
         {
-            var b = new FlatButton { Text = $"{glyph}   {caption}", LeftAlign = true, Width = 148, Height = 34, Margin = new Padding(0, 0, 0, 4) };
+            var b = new FlatButton { Text = $"{glyph}   {L.T(caption)}", LeftAlign = true, Width = 148, Height = 34, Margin = new Padding(0, 0, 0, 4) };
             b.Click += (_, _) => act();
             places.Controls.Add(b);
         }
@@ -105,6 +105,7 @@ public sealed class FolderPickerForm : Form
         Controls.Add(bottom);
 
         PlaceButtons();
+        L.Apply(this);
 
         var start = initial is not null && Directory.Exists(initial)
             ? initial : Environment.GetFolderPath(Environment.SpecialFolder.Desktop);
@@ -123,7 +124,7 @@ public sealed class FolderPickerForm : Form
         {
             _current = path;
             _path.Text = path;
-            _picked.Text = "已選擇：" + path;
+            _picked.Text = L.T("已選擇：") + path;
             var names = new List<string>();
             foreach (var dir in Directory.EnumerateDirectories(path)
                          .Where(d => !string.Equals(Path.GetFileName(d), AppPaths.RawTempFolderName, StringComparison.OrdinalIgnoreCase))
@@ -141,15 +142,15 @@ public sealed class FolderPickerForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "無法開啟：" + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, L.T("無法開啟：") + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
     private void ShowDrives()
     {
         _current = "";
-        _path.Text = "本機";
-        _picked.Text = "請選擇資料夾";
+        _path.Text = L.T("本機");
+        _picked.Text = L.T("請選擇資料夾");
         _list.SetItems(DriveInfo.GetDrives().Where(d => d.IsReady).Select(d => d.Name).ToList(), isDrives: true);
     }
 
@@ -222,7 +223,7 @@ public sealed class FolderPickerForm : Form
 
             if (_items.Count == 0)
             {
-                TextRenderer.DrawText(g, "（此資料夾沒有子資料夾）", Theme.Normal,
+                TextRenderer.DrawText(g, L.T("（此資料夾沒有子資料夾）"), Theme.Normal,
                     new Rectangle(0, 0, Width, RowH + 8), Theme.TextFaint,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;

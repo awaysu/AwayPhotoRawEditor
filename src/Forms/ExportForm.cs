@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Export;
 using AwayPhotoRawEditor.Models;
@@ -98,8 +99,8 @@ public sealed class ExportForm : Form
         var card5 = NewCard("格式與尺寸", rightX, 72, cardW, 218);
         _format = UiFactory.Combo("JPEG", "BMP", "TIFF", "PNG"); _format.SetBounds(16, 40, 120, 24);
         _format.SelectedIndex = (int)_s.Format;
-        var el = new Label { Text = "寬長最大值", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 150, Top = 42, Width = 92, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
-        _maxEdge = UiFactory.Text(_s.MaxLongEdge.ToString()); _maxEdge.SetBounds(248, 40, 72, 24);
+        var el = new Label { Text = "寬長最大值", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 150, Top = 42, Width = 130, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
+        _maxEdge = UiFactory.Text(_s.MaxLongEdge.ToString()); _maxEdge.SetBounds(284, 40, 72, 24);
         card5.Controls.Add(_format); card5.Controls.Add(el); card5.Controls.Add(_maxEdge);
         var rl = new Label { Text = "解析度（像素/英寸）", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 16, Top = 74, Width = 156, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
         _resolution = UiFactory.Combo("100", "200", "300", "400", "500", "600"); _resolution.SetBounds(176, 72, 80, 24);
@@ -108,44 +109,53 @@ public sealed class ExportForm : Form
         _quality = new AdjustmentSlider { Label = "JPEG 品質", Min = 50, Max = 100, DefaultValue = 100, Format = "0", Left = 16, Top = 108, Width = 468, Height = 40 };
         _quality.SetValueSilent(_s.JpegQuality);
         card5.Controls.Add(_quality);
-        _preserveExif = new DarkCheckBox { Text = "保存 EXIF（相機 / 鏡頭 / 拍攝資訊）", Checked = _s.PreserveExif }; _preserveExif.SetBounds(16, 156, 340, 24);
+        _preserveExif = new DarkCheckBox { Text = "保存 EXIF（相機 / 鏡頭 / 拍攝資訊）", Checked = _s.PreserveExif }; _preserveExif.SetBounds(16, 156, 468, 24);
         card5.Controls.Add(_preserveExif);
-        _openExplorer = new DarkCheckBox { Text = "轉檔完成後開啟檔案總管顯示", Checked = _s.OpenExplorerAfter }; _openExplorer.SetBounds(16, 186, 320, 24);
+        _openExplorer = new DarkCheckBox { Text = "轉檔完成後開啟檔案總管顯示", Checked = _s.OpenExplorerAfter }; _openExplorer.SetBounds(16, 186, 468, 24);
         card5.Controls.Add(_openExplorer);
         Controls.Add(card5);
 
         // ---- Card 6: 浮水印 --------------------------------------------
         var card6 = NewCard("浮水印", rightX, 302, cardW, 152);
         // Row 1: 啟用浮水印 + 文字
-        _wmEnable = new DarkCheckBox { Text = "啟用浮水印", Checked = _s.WatermarkEnabled }; _wmEnable.SetBounds(16, 40, 116, 24);
+        _wmEnable = new DarkCheckBox { Text = "啟用浮水印", Checked = _s.WatermarkEnabled }; _wmEnable.SetBounds(16, 40, 170, 24);
         card6.Controls.Add(_wmEnable);
-        card6.Controls.Add(WmLabel("文字", 140, 42, 40));
-        _wmText = UiFactory.Text(_s.WatermarkText); _wmText.SetBounds(182, 40, 302, 24);
+        card6.Controls.Add(WmLabel("文字", 186, 42, 42));
+        _wmText = UiFactory.Text(_s.WatermarkText); _wmText.SetBounds(228, 40, 256, 24);
         card6.Controls.Add(_wmText);
 
         // Row 2: 字體 + 大小 + 顏色
-        card6.Controls.Add(WmLabel("字體", 16, 76, 40));
-        _wmFont = UiFactory.Combo(FontNames()); _wmFont.SetBounds(58, 74, 148, 24);
+        card6.Controls.Add(WmLabel("字體", 16, 76, 60));
+        _wmFont = UiFactory.Combo(FontNames()); _wmFont.SetBounds(80, 74, 104, 24);
         SelectFont(_s.WatermarkFontName);
         card6.Controls.Add(_wmFont);
-        card6.Controls.Add(WmLabel("大小", 210, 76, 40));
-        _wmSize = UiFactory.Numeric(6, 300, (decimal)Math.Clamp(_s.WatermarkFontSize, 6, 300)); _wmSize.SetBounds(250, 74, 58, 24);
+        card6.Controls.Add(WmLabel("大小", 190, 76, 50));
+        _wmSize = UiFactory.Numeric(6, 300, (decimal)Math.Clamp(_s.WatermarkFontSize, 6, 300)); _wmSize.SetBounds(244, 74, 58, 24);
         card6.Controls.Add(_wmSize);
-        card6.Controls.Add(WmLabel("顏色", 314, 76, 40));
-        _wmColor = UiFactory.Combo("白色", "黑色", "藍色", "黃色", "綠色", "紅色", "灰色", "橙色"); _wmColor.SetBounds(356, 74, 112, 24);
+        card6.Controls.Add(WmLabel("顏色", 306, 76, 46));
+        _wmColor = UiFactory.Combo(
+            L.Pick("白色", "White", "白", "흰색", "白色", "Weiß", "Blanc", "Blanco"),
+            L.Pick("黑色", "Black", "黒", "검은색", "黑色", "Schwarz", "Noir", "Negro"),
+            L.Pick("藍色", "Blue", "青", "파란색", "蓝色", "Blau", "Bleu", "Azul"),
+            L.Pick("黃色", "Yellow", "黄", "노란색", "黄色", "Gelb", "Jaune", "Amarillo"),
+            L.Pick("綠色", "Green", "緑", "초록색", "绿色", "Grün", "Vert", "Verde"),
+            L.Pick("紅色", "Red", "赤", "빨간색", "红色", "Rot", "Rouge", "Rojo"),
+            L.Pick("灰色", "Gray", "グレー", "회색", "灰色", "Grau", "Gris", "Gris"),
+            L.Pick("橙色", "Orange", "オレンジ", "주황색", "橙色", "Orange", "Orange", "Naranja"));
+        _wmColor.SetBounds(352, 74, 132, 24);
         _wmColor.SelectedIndex = (int)_s.WatermarkColor;
         card6.Controls.Add(_wmColor);
 
         // Row 3: 透明度 + 位置 + 邊緣
-        card6.Controls.Add(WmLabel("透明度", 16, 110, 56));
-        _wmAlpha = UiFactory.Numeric(0, 100, Math.Clamp(_s.WatermarkTransparency, 0, 100)); _wmAlpha.SetBounds(74, 108, 66, 24);
+        card6.Controls.Add(WmLabel("透明度", 16, 110, 64));
+        _wmAlpha = UiFactory.Numeric(0, 100, Math.Clamp(_s.WatermarkTransparency, 0, 100)); _wmAlpha.SetBounds(84, 108, 54, 24);
         card6.Controls.Add(_wmAlpha);
-        card6.Controls.Add(WmLabel("位置", 156, 110, 40));
-        _wmPos = UiFactory.Combo("左上", "右上", "左下", "右下"); _wmPos.SetBounds(198, 108, 90, 24);
+        card6.Controls.Add(WmLabel("位置", 142, 110, 66));
+        _wmPos = UiFactory.Combo("左上", "右上", "左下", "右下"); _wmPos.SetBounds(210, 108, 125, 24);
         _wmPos.SelectedIndex = (int)_s.WatermarkPosition;
         card6.Controls.Add(_wmPos);
-        card6.Controls.Add(WmLabel("邊緣", 300, 110, 40));
-        _wmMargin = UiFactory.Numeric(0, 9999, Math.Clamp(_s.WatermarkMargin, 0, 9999)); _wmMargin.SetBounds(342, 108, 66, 24);
+        card6.Controls.Add(WmLabel("邊緣", 340, 110, 58));
+        _wmMargin = UiFactory.Numeric(0, 9999, Math.Clamp(_s.WatermarkMargin, 0, 9999)); _wmMargin.SetBounds(402, 108, 62, 24);
         card6.Controls.Add(_wmMargin);
         Controls.Add(card6);
 
@@ -162,7 +172,7 @@ public sealed class ExportForm : Form
         // ---- Footer buttons ---------------------------------------------
         const int footerY = 524;
         var save = new FlatButton { Text = "儲存設定", Left = mx, Top = footerY, Width = 100, Height = 32 };
-        var cancel = new FlatButton { Text = "取消", Left = 1048 - 16 - 72, Top = footerY, Width = 72, Height = 32 };
+        var cancel = new FlatButton { Text = "取消", Left = 1048 - 16 - 92, Top = footerY, Width = 92, Height = 32 };
         var start = new FlatButton { Text = "儲存設定並開始轉存", Primary = true, Left = cancel.Left - 8 - 150, Top = footerY, Width = 150, Height = 32 };
         save.Click += (_, _) => { Commit(); DialogResult = DialogResult.OK; Close(); };
         start.Click += (_, _) => { Commit(); StartRequested = true; DialogResult = DialogResult.OK; Close(); };
@@ -172,6 +182,7 @@ public sealed class ExportForm : Form
         _rDesktop.Checked = _s.Location == ExportLocation.Desktop;
         _rSame.Checked = _s.Location == ExportLocation.SameAsSource;
         _rCustom.Checked = _s.Location == ExportLocation.Custom;
+        L.Apply(this);
     }
 
     // ---- layout helpers -----------------------------------------------------
@@ -187,9 +198,9 @@ public sealed class ExportForm : Form
                 g.FillRectangle(accent, 0, 0, 4, header.Height);            // accent bar
             using (var line = new Pen(Color.FromArgb(60, Theme.Accent)))
                 g.DrawLine(line, 0, header.Height - 1, header.Width, header.Height - 1);
-            TextRenderer.DrawText(g, "匯出照片", Theme.UI(13f, FontStyle.Bold),
+            TextRenderer.DrawText(g, L.T("匯出照片"), Theme.UI(13f, FontStyle.Bold),
                 new Rectangle(20, 8, 440, 26), Theme.Text, TextFormatFlags.Left);
-            TextRenderer.DrawText(g, $"共 {photoCount} 張相片將被轉存", Theme.Normal,
+            TextRenderer.DrawText(g, L.F("共 {0} 張相片將被轉存", photoCount), Theme.Normal,
                 new Rectangle(20, 34, 440, 20), Theme.TextDim, TextFormatFlags.Left);
         };
         return header;

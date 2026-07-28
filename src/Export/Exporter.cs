@@ -8,6 +8,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Imaging;
 using AwayPhotoRawEditor.Models;
 using AwayPhotoRawEditor.Storage;
@@ -40,7 +41,7 @@ public static class Exporter
                 }
                 catch (Exception ex)
                 {
-                    throw new Exception($"匯出「{item.FileName}」失敗：{ex.Message}", ex);
+                    throw new Exception(L.F("匯出「{0}」失敗：{1}", item.FileName, ex.Message), ex);
                 }
                 done++;
                 progress.Report((done, total, item.DisplayName));
@@ -134,7 +135,7 @@ public static class Exporter
             if (f is not null) { using (f) return f.ToBitmap(); }
         }
         return loader.DecodeFullBitmap(item.SourcePath)
-               ?? throw new IOException("無法解碼影像");
+               ?? throw new IOException(L.T("無法解碼影像"));
     }
 
     /// <summary>Scale the image so its longest edge equals <paramref name="maxLongEdge"/>,

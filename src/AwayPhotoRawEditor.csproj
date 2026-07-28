@@ -14,13 +14,21 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.0.0</Version>
+    <Version>1.0.3</Version>
     <Product>AwayPhotoRawEditor</Product>
     <ApplicationIcon>icon\icon.ico</ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <EmbeddedResource Include="Assets\email.png" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 編譯時間：關於視窗顯示用（AppVersion.BuildTime 讀取） -->
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>BuildTime</_Parameter1>
+      <_Parameter2>$([System.DateTime]::Now.ToString('yyyy/MM/dd HH:mm:ss'))</_Parameter2>
+    </AssemblyAttribute>
   </ItemGroup>
 
 </Project>

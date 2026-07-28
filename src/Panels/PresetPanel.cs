@@ -1,6 +1,8 @@
 using System;
 using System.Drawing;
+using System.Linq;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Models;
 using AwayPhotoRawEditor.Storage;
@@ -12,6 +14,10 @@ namespace AwayPhotoRawEditor.Panels;
 public sealed class PresetPanel : SectionPanel
 {
     private readonly ComboBox _combo;
+    private sealed record PresetChoice(string Name, string Display)
+    {
+        public override string ToString() => Display;
+    }
 
     public event Action<string>? ApplyPreset;
 
@@ -25,7 +31,7 @@ public sealed class PresetPanel : SectionPanel
 
         var apply = new FlatButton { Text = "套用該風格檔", Primary = true };
         apply.SetBounds(12, 44, 286, 26);
-        apply.Click += (_, _) => { if (_combo.SelectedItem is string name) ApplyPreset?.Invoke(name); };
+        apply.Click += (_, _) => { if (_combo.SelectedItem is PresetChoice choice) ApplyPreset?.Invoke(choice.Name); };
 
         ContentArea.Controls.AddRange(new Control[] { _combo, apply });
         ReloadNames();
@@ -34,11 +40,13 @@ public sealed class PresetPanel : SectionPanel
     /// <summary>重建下拉清單：內建風格檔 + 使用者自訂（編輯風格檔視窗新增的），保留目前選取。</summary>
     public void ReloadNames()
     {
-        var prev = _combo.SelectedItem as string;
+        var prev = (_combo.SelectedItem as PresetChoice)?.Name;
         _combo.Items.Clear();
-        foreach (var n in PresetProfile.BuiltInNames) _combo.Items.Add(n);
-        foreach (var n in PresetStore.CustomNames()) _combo.Items.Add(n);
-        int i = prev != null ? _combo.Items.IndexOf(prev) : -1;
+        foreach (var n in PresetProfile.BuiltInNames) _combo.Items.Add(new PresetChoice(n, L.T(n)));
+        foreach (var n in PresetStore.CustomNames()) _combo.Items.Add(new PresetChoice(n, n));
+        int i = prev != null
+            ? _combo.Items.Cast<PresetChoice>().ToList().FindIndex(x => x.Name == prev)
+            : -1;
         _combo.SelectedIndex = i >= 0 ? i : 0;
     }
 }

@@ -6,6 +6,26 @@ using System.Xml.Serialization;
 
 namespace AwayPhotoRawEditor.App;
 
+/// <summary>可由設定切換的整體介面風格。</summary>
+public enum UiStyle
+{
+    ClassicDark,
+    WarmPaper
+}
+
+/// <summary>Supported application UI languages.（新值一律往後加，settings.xml 存的是名稱但別重排既有順序）</summary>
+public enum AppLanguage
+{
+    TraditionalChinese,
+    English,
+    Japanese,
+    Korean,
+    SimplifiedChinese,
+    German,
+    French,
+    Spanish
+}
+
 /// <summary>
 /// Persistent application settings (settings.xml under %AppData%\AwayPhotoRawEditor).
 /// Governs RawLoader behaviour.
@@ -23,6 +43,12 @@ public sealed class AppSettings
 
     /// <summary>視窗過矮時左右欄顯示捲軸（DarkScrollHost）；關閉時超出部分直接裁切。</summary>
     public bool ShowColumnScrollBars { get; set; } = false;
+
+    /// <summary>整體介面風格；舊版設定檔未含此欄位時維持原本的經典深色。</summary>
+    public UiStyle InterfaceStyle { get; set; } = UiStyle.ClassicDark;
+
+    /// <summary>介面語言；舊版設定檔未含此欄位時維持繁體中文。</summary>
+    public AppLanguage UiLanguage { get; set; } = AppLanguage.TraditionalChinese;
 
     // Last used folder — convenience, restored at startup.
     public string LastFolder { get; set; } = "";

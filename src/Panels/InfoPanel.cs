@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 using AwayPhotoRawEditor.Imaging;
 using AwayPhotoRawEditor.Models;
@@ -78,22 +79,23 @@ public sealed class ExifView : Control
 
         var rows = new List<(string k, string v)>
         {
-            ("相機", $"{_data.CameraMake} {_data.CameraModel}".Trim()),
-            ("鏡頭", _data.Lens),
+            (L.T("相機"), $"{_data.CameraMake} {_data.CameraModel}".Trim()),
+            (L.T("鏡頭"), _data.Lens),
             ("ISO", _data.ISO),
-            ("光圈", _data.Aperture),
-            ("快門", _data.Shutter),
-            ("焦段", _data.FocalLength),
-            ("曝光補償", _data.ExposureBias),
-            ("白平衡", _data.WhiteBalance),
-            ("測光", _data.MeteringMode),
-            ("日期", _data.DateTaken),
-            ("尺寸", _data.DimensionsDisplay),
-            ("檔案大小", _data.FileSizeDisplay),
+            (L.T("光圈"), _data.Aperture),
+            (L.T("快門"), _data.Shutter),
+            (L.T("焦段"), _data.FocalLength),
+            (L.T("曝光補償"), _data.ExposureBias),
+            (L.T("白平衡"), _data.WhiteBalance),
+            (L.T("測光"), _data.MeteringMode),
+            (L.T("日期"), _data.DateTaken),
+            (L.T("尺寸"), _data.DimensionsDisplay),
+            (L.T("檔案大小"), _data.FileSizeDisplay),
         };
 
         int y = 2;
-        const int keyW = 64, lineH = 20;
+        int keyW = L.CurrentLanguage is AppLanguage.TraditionalChinese or AppLanguage.SimplifiedChinese ? 64 : 94;
+        const int lineH = 20;
         foreach (var (k, v) in rows)
         {
             if (string.IsNullOrWhiteSpace(v)) continue;

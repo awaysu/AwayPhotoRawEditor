@@ -79,7 +79,7 @@ public sealed class MainForm : Form
 
     public MainForm()
     {
-        Text = "Away PhotoRaw Editor";
+        Text = "AwayPhotoRawEditor";
         try { Icon = System.Drawing.Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { /* icon 載不到就用預設 */ }
         BackColor = Theme.WindowBg;
         ForeColor = Theme.Text;
@@ -103,6 +103,7 @@ public sealed class MainForm : Form
         ResetPanelsToDefault();
         SetEditorEnabled(false);   // 尚未載入照片：所有設定顯示預設值且不可調整
         UpdateStatus();
+        L.Apply(this);
     }
 
     private bool _autoOpened;
@@ -126,7 +127,7 @@ public sealed class MainForm : Form
     {
         var top = BuildTopBar();
 
-        _strip.BackColor = Color.FromArgb(0x25, 0x25, 0x25);
+        _strip.BackColor = Theme.PanelBg;
         _strip.Dock = DockStyle.Top;
 
         // Left + center share a region that carries the thumbnail strip on top; the
@@ -169,7 +170,7 @@ public sealed class MainForm : Form
         var appMenu = new IconButton { Glyph = "☰", GlyphSize = 20f, Left = 14, Top = 9, Width = 46, Height = 42 };
         appMenu.Click += (_, _) => ShowAppMenu(appMenu);
 
-        var logo = new Label { Text = "Away PhotoRaw Editor", Left = 72, Top = 0, Width = 290, Height = 60, ForeColor = Theme.Text, Font = Theme.UI(15f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+        var logo = new Label { Text = "AwayPhotoRawEditor", Left = 72, Top = 0, Width = 290, Height = 60, ForeColor = Theme.Text, Font = Theme.UI(15f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
 
         var openBtn = new FlatButton { Text = "📁  開啟資料夾", Primary = true, Left = 370, Top = 14, Width = 132, Height = 32 };
         openBtn.Click += (_, _) => PickFolder();
@@ -362,7 +363,7 @@ public sealed class MainForm : Form
             return token => { ctx.Token = token; return ImageProcessor.Apply(proxy, adj, ctx); };
         };
         _scheduler.Completed = OnRenderDone;
-        _scheduler.Failed = ex => _status.Text = "算圖失敗：" + ex.Message;
+        _scheduler.Failed = ex => _status.Text = L.T("算圖失敗：") + ex.Message;
     }
 
     // ---- folder / scan ---------------------------------------------------
@@ -379,9 +380,12 @@ public sealed class MainForm : Form
         SaveCurrentIfDirty();
 
         _folder = folder;
-        AppSettings.Current.LastFolder = folder;
-        AppSettings.Current.PushRecentFolder(folder);
-        AppSettings.Current.Save();
+        if (!Program.Headless)   // 診斷截圖（--shot 等）不可污染使用者的 LastFolder / 開啟紀錄
+        {
+            AppSettings.Current.LastFolder = folder;
+            AppSettings.Current.PushRecentFolder(folder);
+            AppSettings.Current.Save();
+        }
         _pathLabel.Text = folder;
 
         List<string> files;
@@ -393,7 +397,7 @@ public sealed class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "無法讀取資料夾：" + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            MessageBox.Show(this, L.T("無法讀取資料夾：") + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             return;
         }
 
@@ -423,10 +427,10 @@ public sealed class MainForm : Form
         // Generate thumbnail + full-preview caches with a cancelable progress window,
         // so selecting any photo later is instant (no on-demand RAW decode).
         var itemsCopy = _items.ToList();
-        using (var pf = new ProgressForm("產生快取（縮圖＋預覽）",
+        using (var pf = new ProgressForm(L.T("產生快取（縮圖＋預覽）"),
                    (prog, token) => GenerateThumbnailCaches(itemsCopy, prog, token),
-                   subtitle: "第一次產生快取與縮圖檔案需要一些時間\n請稍等...",
-                   doneMessage: "完成，可以開始編輯"))
+                   subtitle: L.T("第一次產生快取與縮圖檔案需要一些時間\n請稍等..."),
+                   doneMessage: L.T("完成，可以開始編輯")))
             pf.ShowDialog(this);
 
         if (_items.Count > 0) LoadPhoto(_items[0]);
@@ -443,7 +447,13 @@ public sealed class MainForm : Form
         _items.Clear();
         _copiedAdj = null;
         _strip.SetItems(_items, 0);
-        _pathLabel.Text = "尚未選擇資料夾";
+        _pathLabel.Text = L.T("尚未選擇資料夾");
+        if (!Program.Headless)
+        {
+            // 使用者主動關閉資料夾 → 下次啟動維持「關閉狀態」，不再自動開啟這個資料夾
+            AppSettings.Current.LastFolder = "";
+            AppSettings.Current.Save();
+        }
         UpdateStatus();
     }
 
@@ -504,8 +514,8 @@ public sealed class MainForm : Form
     {
         if (string.IsNullOrEmpty(_folder)) return;
         var r = MessageBox.Show(this,
-            "關閉資料夾並刪除此資料夾的快取與縮圖檔案？\n（編輯設定會保留，下次開啟會重新產生快取）",
-            "刪除快取縮圖", MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
+            L.T("關閉資料夾並刪除此資料夾的快取與縮圖檔案？\n（編輯設定會保留，下次開啟會重新產生快取）"),
+            L.T("刪除快取縮圖"), MessageBoxButtons.OKCancel, MessageBoxIcon.Warning);
         if (r != DialogResult.OK) return;
 
         var folder = _folder;
@@ -513,7 +523,7 @@ public sealed class MainForm : Form
         // Release any GC-held proxy / thumbnail bitmaps so their files aren't locked.
         GC.Collect(); GC.WaitForPendingFinalizers();
         int removed = DeleteCacheFiles(folder);
-        _status.Text = $"已關閉資料夾並刪除快取縮圖（{removed} 個檔案）";
+        _status.Text = L.F("已關閉資料夾並刪除快取縮圖（{0} 個檔案）", removed);
     }
 
     /// <summary>Delete thumbnail (_thumb.jpg) and proxy (.rawpipe.png / .f32) caches under the
@@ -612,7 +622,7 @@ public sealed class MainForm : Form
         _undo.Clear(); _redo.Clear();
         if (_showOriginal) { _showOriginal = false; _origBtn.Primary = false; }
         _resetViewNext = true;
-        _status.Text = "載入中… " + item.DisplayName;
+        _status.Text = L.T("載入中… ") + item.DisplayName;
 
         var loader = _loader;
         Task.Run(() =>
@@ -629,7 +639,7 @@ public sealed class MainForm : Form
             }
             catch (Exception ex)
             {
-                BeginInvoke(new Action(() => _status.Text = "載入失敗：" + ex.Message));
+                BeginInvoke(new Action(() => _status.Text = L.T("載入失敗：") + ex.Message));
                 return;
             }
             BeginInvoke(new Action(() => ApplyLoaded(item, v, adj, exif, proxy)));
@@ -810,7 +820,7 @@ public sealed class MainForm : Form
             _snapshot = _adj.Clone();
             _dirty = false;
         }
-        catch (Exception ex) { _status.Text = "儲存調整失敗：" + ex.Message; }
+        catch (Exception ex) { _status.Text = L.T("儲存調整失敗：") + ex.Message; }
     }
 
     /// <summary>The selected photos other than the current one (empty unless a multi-selection).</summary>
@@ -953,7 +963,7 @@ public sealed class MainForm : Form
             _color.Bind(_adj);
             OnAdjustmentChanged(immediate: true);
         }
-        else _status.Text = "此相片沒有可用的拍攝白平衡資訊";
+        else _status.Text = L.T("此相片沒有可用的拍攝白平衡資訊");
     }
 
     /// <summary>Clamp a Kelvin value into the range the 色溫 slider can display for the current
@@ -1007,28 +1017,28 @@ public sealed class MainForm : Form
             if (enabled) mi.Click += (_, _) => act();
         }
 
-        var applyPreset = new ToolStripMenuItem("套用風格檔") { ForeColor = Theme.Text };
+        var applyPreset = new ToolStripMenuItem(L.T("套用風格檔")) { ForeColor = Theme.Text };
         foreach (var name in PresetProfile.BuiltInNames.Concat(PresetStore.CustomNames()))
         {
             var n = name;
-            var sub = applyPreset.DropDownItems.Add(n);
+            var sub = applyPreset.DropDownItems.Add(PresetProfile.BuiltIn.ContainsKey(n) ? L.T(n) : n);
             sub.Click += (_, _) => ApplyPresetToSelection(n);
         }
 
-        Add("全選", () => _strip.SelectAll());
-        Add("反向選擇", () => _strip.InvertSelection());
-        Add("取消全選", () => _strip.DeselectAll());
+        Add(L.T("全選"), () => _strip.SelectAll());
+        Add(L.T("反向選擇"), () => _strip.InvertSelection());
+        Add(L.T("取消全選"), () => _strip.DeselectAll());
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add(applyPreset);
         // Copy settings only makes sense for a single photo — disable it on a multi-selection.
-        Add("複製照片設定", () => CopySettings(item), _strip.SelectedItems.Count <= 1);
-        Add("貼上照片設定", PasteSettings);
+        Add(L.T("複製照片設定"), () => CopySettings(item), _strip.SelectedItems.Count <= 1);
+        Add(L.T("貼上照片設定"), PasteSettings);
         menu.Items.Add(new ToolStripSeparator());
-        Add("建立副本", () => CreateVirtualCopy(item));
-        Add("移除於預覽列", () => RemoveFromPreview(item));
-        Add("刪除檔案", () => DeletePhotoFile(item));
+        Add(L.T("建立副本"), () => CreateVirtualCopy(item));
+        Add(L.T("移除於預覽列"), () => RemoveFromPreview(item));
+        Add(L.T("刪除檔案"), () => DeletePhotoFile(item));
         menu.Items.Add(new ToolStripSeparator());
-        Add("匯出照片", ExportSelection);
+        Add(L.T("匯出照片"), ExportSelection);
 
         menu.Show(screenPt);
     }
@@ -1040,12 +1050,12 @@ public sealed class MainForm : Form
         _copiedAdj = a?.Clone();
         foreach (var it in _items) it.IsCopySettingsSource = ReferenceEquals(it, item);
         _strip.RefreshBadges();
-        _status.Text = "已複製相片設定";
+        _status.Text = L.T("已複製相片設定");
     }
 
     private void PasteSettings()
     {
-        if (_copiedAdj is null) { _status.Text = "尚未複製任何設定"; return; }
+        if (_copiedAdj is null) { _status.Text = L.T("尚未複製任何設定"); return; }
         foreach (var it in _strip.SelectedItems)
         {
             var a = _copiedAdj.Clone();
@@ -1055,7 +1065,7 @@ public sealed class MainForm : Form
         }
         _strip.RefreshBadges();
         OnAdjustmentChanged(immediate: true);
-        _status.Text = "已貼上相片設定";
+        _status.Text = L.T("已貼上相片設定");
     }
 
     private void CreateVirtualCopy(PhotoItem item)
@@ -1074,7 +1084,7 @@ public sealed class MainForm : Form
         // thumbnail for the copy = same source thumb
         var thumb = _loader.LoadThumbnailCache(item.SourcePath);
         if (thumb != null) _strip.SetImage(copy.Key, thumb);
-        _status.Text = "已建立虛擬副本";
+        _status.Text = L.T("已建立虛擬副本");
     }
 
     private void RemoveFromPreview(PhotoItem item)
@@ -1084,7 +1094,7 @@ public sealed class MainForm : Form
         PreviewListStore.Save(_folder, preview);
         _items.RemoveAll(i => ReferenceEquals(i, item));
         RefreshStripKeepSelection();
-        _status.Text = "已從預覽移除";
+        _status.Text = L.T("已從預覽移除");
     }
 
     /// <summary>Un-hide every photo hidden via 移除於預覽列 and reload the folder.</summary>
@@ -1092,18 +1102,18 @@ public sealed class MainForm : Form
     {
         if (string.IsNullOrEmpty(_folder)) return;
         var preview = PreviewListStore.Load(_folder);
-        if (preview.Hidden.Count == 0) { _status.Text = "沒有已隱藏的照片"; return; }
+        if (preview.Hidden.Count == 0) { _status.Text = L.T("沒有已隱藏的照片"); return; }
         int n = preview.Hidden.Count;
         preview.Hidden.Clear();
         PreviewListStore.Save(_folder, preview);
         OpenFolder(_folder);
-        _status.Text = $"已還原 {n} 張隱藏的照片";
+        _status.Text = L.F("已還原 {0} 張隱藏的照片", n);
     }
 
     private void DeletePhotoFile(PhotoItem item)
     {
         if (item.IsVirtualCopy) { RemoveFromPreview(item); return; }
-        if (MessageBox.Show(this, $"確定刪除檔案？（會移到資源回收桶）\n{item.FileName}", "刪除照片檔案",
+        if (MessageBox.Show(this, L.F("確定刪除檔案？（會移到資源回收桶）\n{0}", item.FileName), L.T("刪除照片檔案"),
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         try
         {
@@ -1116,11 +1126,11 @@ public sealed class MainForm : Form
             try { File.Delete(AppPaths.AdjustmentXmlPath(item.SourcePath, item.VirtualCopyIndex)); } catch { }
             _items.RemoveAll(i => ReferenceEquals(i, item));
             RefreshStripKeepSelection();
-            _status.Text = "已刪除檔案";
+            _status.Text = L.T("已刪除檔案");
         }
         catch (Exception ex)
         {
-            MessageBox.Show(this, "刪除失敗：" + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            MessageBox.Show(this, L.T("刪除失敗：") + ex.Message, "AwayPhotoRawEditor", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
     }
 
@@ -1142,7 +1152,7 @@ public sealed class MainForm : Form
         if (_adj != null) RebindAll();
         _strip.RefreshBadges();
         OnAdjustmentChanged(immediate: true);
-        _status.Text = $"已套用風格檔：{name}";
+        _status.Text = L.F("已套用風格檔：{0}", PresetProfile.BuiltIn.ContainsKey(name) ? L.T(name) : name);
     }
 
     private void RefreshStripKeepSelection()
@@ -1179,10 +1189,10 @@ public sealed class MainForm : Form
     private void ShowAppMenu(Control anchor)
     {
         var menu = new ContextMenuStrip { BackColor = Theme.PanelBg2, ForeColor = Theme.Text, ShowImageMargin = false };
-        menu.Items.Add("開啟資料夾…", null, (_, _) => PickFolder());
-        var closeItem = menu.Items.Add("關閉資料夾", null, (_, _) => CloseFolder());
+        menu.Items.Add(L.T("開啟資料夾…"), null, (_, _) => PickFolder());
+        var closeItem = menu.Items.Add(L.T("關閉資料夾"), null, (_, _) => CloseFolder());
         closeItem.Enabled = !string.IsNullOrEmpty(_folder);
-        var closeDelItem = menu.Items.Add("關閉資料夾並刪除快取縮圖", null, (_, _) => CloseFolderAndClearCache());
+        var closeDelItem = menu.Items.Add(L.T("關閉資料夾並刪除快取縮圖"), null, (_, _) => CloseFolderAndClearCache());
         closeDelItem.Enabled = !string.IsNullOrEmpty(_folder);
 
         // 還原被「移除於預覽列」隱藏的照片（顯示數量，無隱藏時停用）。
@@ -1190,19 +1200,19 @@ public sealed class MainForm : Form
         if (!string.IsNullOrEmpty(_folder))
             try { hiddenCount = PreviewListStore.Load(_folder).Hidden.Count; } catch { }
         var restoreItem = menu.Items.Add(
-            hiddenCount > 0 ? $"還原已隱藏的照片（{hiddenCount} 張）" : "還原已隱藏的照片",
+            hiddenCount > 0 ? L.F("還原已隱藏的照片（{0} 張）", hiddenCount) : L.T("還原已隱藏的照片"),
             null, (_, _) => RestoreHiddenPhotos());
         restoreItem.Enabled = hiddenCount > 0;
 
-        var refreshItem = menu.Items.Add("重新整理資料夾  (F5)", null, (_, _) => RefreshFolder());
+        var refreshItem = menu.Items.Add(L.T("重新整理資料夾  (F5)"), null, (_, _) => RefreshFolder());
         refreshItem.Enabled = !string.IsNullOrEmpty(_folder);
 
         // 紀錄：右側子選單顯示所有開過的資料夾紀錄（最近在前），點選即開啟。
-        var recentItem = new ToolStripMenuItem("紀錄") { ForeColor = Theme.Text };
+        var recentItem = new ToolStripMenuItem(L.T("紀錄")) { ForeColor = Theme.Text };
         var recents = AppSettings.Current.RecentFolders;
         if (recents.Count == 0)
         {
-            recentItem.DropDownItems.Add(new ToolStripMenuItem("（尚無開啟紀錄）") { Enabled = false, ForeColor = Color.Black });
+            recentItem.DropDownItems.Add(new ToolStripMenuItem(L.T("（尚無開啟紀錄）")) { Enabled = false, ForeColor = Color.Black });
         }
         else
         {
@@ -1214,23 +1224,23 @@ public sealed class MainForm : Form
                 sub.Click += (_, _) =>
                 {
                     if (Directory.Exists(p)) OpenFolder(p);
-                    else MessageBox.Show(this, "資料夾已不存在：\n" + p, "紀錄", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    else MessageBox.Show(this, L.F("資料夾已不存在：\n{0}", p), L.T("紀錄"), MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 };
                 recentItem.DropDownItems.Add(sub);
             }
             recentItem.DropDownItems.Add(new ToolStripSeparator());
-            var clear = recentItem.DropDownItems.Add("清除紀錄");
+            var clear = recentItem.DropDownItems.Add(L.T("清除紀錄"));
             clear.ForeColor = Color.Black;
             clear.Click += (_, _) => { AppSettings.Current.RecentFolders.Clear(); AppSettings.Current.Save(); };
         }
         menu.Items.Add(recentItem);
 
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("設定…", null, (_, _) => ShowSettings());
-        menu.Items.Add("編輯風格檔…", null, (_, _) => ShowPresetEditor());
+        menu.Items.Add(L.T("設定…"), null, (_, _) => ShowSettings());
+        menu.Items.Add(L.T("編輯風格檔…"), null, (_, _) => ShowPresetEditor());
         menu.Items.Add(new ToolStripSeparator());
-        menu.Items.Add("關於", null, (_, _) => { using var dlg = new AboutForm(); dlg.ShowDialog(this); });
-        menu.Items.Add("結束", null, (_, _) => Close());
+        menu.Items.Add(L.T("關於"), null, (_, _) => { using var dlg = new AboutForm(); dlg.ShowDialog(this); });
+        menu.Items.Add(L.T("結束"), null, (_, _) => Close());
         menu.Show(anchor, new Point(0, anchor.Height));
     }
 
@@ -1244,9 +1254,19 @@ public sealed class MainForm : Form
 
     private void ShowSettings()
     {
+        var previousStyle = AppSettings.Current.InterfaceStyle;
+        var previousLanguage = AppSettings.Current.UiLanguage;
         using var dlg = new SettingsForm();
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
+            if (previousLanguage != AppSettings.Current.UiLanguage)
+            {
+                Application.Restart();
+                Close();
+                return;
+            }
+            if (previousStyle != AppSettings.Current.InterfaceStyle)
+                Theme.Apply(AppSettings.Current.InterfaceStyle, this);
             _strip.ShowNumber = AppSettings.Current.ShowThumbnailNumber;
             if (_leftScroll != null) _leftScroll.ScrollEnabled = AppSettings.Current.ShowColumnScrollBars;
             if (_rightScroll != null) _rightScroll.ScrollEnabled = AppSettings.Current.ShowColumnScrollBars;
@@ -1263,7 +1283,7 @@ public sealed class MainForm : Form
     /// <summary>Top-bar「匯出目前照片」— exports only the single photo shown in the main preview.</summary>
     private void ExportCurrent()
     {
-        if (_current is null) { MessageBox.Show(this, "目前沒有可匯出的照片。", "匯出", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (_current is null) { MessageBox.Show(this, L.T("目前沒有可匯出的照片。"), L.T("匯出"), MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         ExportPhotos(new List<PhotoItem> { _current });
     }
 
@@ -1272,7 +1292,7 @@ public sealed class MainForm : Form
 
     private void ExportPhotos(List<PhotoItem> targets)
     {
-        if (targets.Count == 0) { MessageBox.Show(this, "沒有可匯出的相片。", "匯出", MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
+        if (targets.Count == 0) { MessageBox.Show(this, L.T("沒有可匯出的相片。"), L.T("匯出"), MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         SaveCurrentIfDirty();
 
         // The 標誌/watermark is edited live inside the dialog: it mutates _exportSettings and
@@ -1283,27 +1303,27 @@ public sealed class MainForm : Form
         if (dlg.ShowDialog(this) != DialogResult.OK || !dlg.StartRequested) return;
 
         List<string>? written = null;
-        using (var pf = new ProgressForm("匯出相片",
+        using (var pf = new ProgressForm(L.T("匯出相片"),
             async (prog, token) => written = await Exporter.Export(targets, settings, _loader, prog, token)))
         {
             pf.ShowDialog(this);
             if (pf.Error != null)
             {
-                MessageBox.Show(this, pf.Error.Message, "匯出失敗", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                MessageBox.Show(this, pf.Error.Message, L.T("匯出失敗"), MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return;
             }
-            if (pf.Canceled) { _status.Text = "匯出已取消"; return; }
+            if (pf.Canceled) { _status.Text = L.T("匯出已取消"); return; }
         }
-        _status.Text = written != null ? $"已匯出 {written.Count} 張相片" : "匯出完成";
+        _status.Text = written != null ? L.F("已匯出 {0} 張相片", written.Count) : L.T("匯出完成");
     }
 
     // ---- status / lifecycle ---------------------------------------------
 
     private void UpdateStatus()
     {
-        _status.Text = !_loader.LibRawAvailable ? "未使用LibRaw讀取"
-            : _loader.LastFullDecodeUsedLibRaw ? "LibRaw 讀取中"
-            : AppSettings.Current.UseLibRaw ? "LibRaw 已啟用" : "未使用LibRaw讀取";
+        _status.Text = !_loader.LibRawAvailable ? L.T("未使用LibRaw讀取")
+            : _loader.LastFullDecodeUsedLibRaw ? L.T("LibRaw 讀取中")
+            : AppSettings.Current.UseLibRaw ? L.T("LibRaw 已啟用") : L.T("未使用LibRaw讀取");
     }
 
     protected override void OnKeyDown(KeyEventArgs e)
@@ -1364,7 +1384,7 @@ public sealed class MainForm : Form
             int idx = _items.FindIndex(i => i.Key == curKey);
             if (idx > 0) _strip.SelectIndex(idx);   // SelectionChanged → LoadPhoto
         }
-        _status.Text = "已重新整理資料夾";
+        _status.Text = L.T("已重新整理資料夾");
     }
 
     /// <summary>對照原圖（工具列鈕 / '\' 鍵）：以中性調整（保留裁切與旋轉）重算畫面。</summary>

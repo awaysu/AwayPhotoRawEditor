@@ -1,6 +1,6 @@
 # Away PhotoRaw Editor
 
-深色主題的 Windows 桌面 RAW 相片編輯器（Lightroom / Capture One 類）。
+Windows 桌面 RAW 相片編輯器（Lightroom / Capture One 類）。
 非破壞式編輯，所有調整以 XML 存於各資料夾的 `RAW_TEMP` 快取，原始檔案永不變動。
 
 ![icon](src/icon/icon.png)
@@ -21,7 +21,8 @@
 - 風格檔（內建＋自訂，可編輯覆寫）
 - 縮圖多選批次編輯、批次復原、虛擬副本
 - 匯出：重新命名規則、尺寸上限、DPI、浮水印、EXIF 保留
-- 全自繪深色 UI
+- 可切換「經典深色／暖白相紙」兩套自繪 UI
+- 四語介面：繁體中文、English、日本語、한국어
 
 ## 系統需求
 
