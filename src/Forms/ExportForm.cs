@@ -99,8 +99,8 @@ public sealed class ExportForm : Form
         var card5 = NewCard("格式與尺寸", rightX, 72, cardW, 218);
         _format = UiFactory.Combo("JPEG", "BMP", "TIFF", "PNG"); _format.SetBounds(16, 40, 120, 24);
         _format.SelectedIndex = (int)_s.Format;
-        var el = new Label { Text = "寬長最大值", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 150, Top = 42, Width = 130, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
-        _maxEdge = UiFactory.Text(_s.MaxLongEdge.ToString()); _maxEdge.SetBounds(284, 40, 72, 24);
+        var el = new Label { Text = "符合寬度高度(像素)", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 142, Top = 42, Width = 214, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
+        _maxEdge = UiFactory.Text(_s.MaxLongEdge.ToString()); _maxEdge.SetBounds(360, 40, 72, 24);
         card5.Controls.Add(_format); card5.Controls.Add(el); card5.Controls.Add(_maxEdge);
         var rl = new Label { Text = "解析度（像素/英寸）", ForeColor = Theme.TextDim, BackColor = Theme.PanelBg, Left = 16, Top = 74, Width = 156, Height = 20, TextAlign = ContentAlignment.MiddleLeft };
         _resolution = UiFactory.Combo("100", "200", "300", "400", "500", "600"); _resolution.SetBounds(176, 72, 80, 24);

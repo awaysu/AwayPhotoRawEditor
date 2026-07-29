@@ -18,7 +18,7 @@ public sealed class ToolsPanel : AdjustPanelBase
 
     // crop
     private ComboBox _aspect = null!;
-    private NumericUpDown _cw = null!, _ch = null!, _angle = null!;
+    private NumericUpDown _cw = null!, _ch = null!;
     // heal
     private FlatButton _cloneBtn = null!, _inpaintBtn = null!;
 
@@ -115,10 +115,10 @@ public sealed class ToolsPanel : AdjustPanelBase
         }
         _cw.ValueChanged += CustomChanged; _ch.ValueChanged += CustomChanged;
 
-        var lblAngle = UiFactory.Label("角度", Theme.TextDim); lblAngle.SetBounds(0, 40, 42, 26);
-        _angle = UiFactory.Numeric(-90, 90, 0, 1, 0.5m); _angle.SetBounds(46, 40, 92, 28);
-        _angle.ValueChanged += (_, _) => { if (Adj != null) { RaiseEditBegin(); Adj.CropAngle = (double)_angle.Value; RaiseChanged(); } };
-        RegisterLoader(a => _angle.Value = (decimal)Math.Clamp(a.CropAngle, -90, 90));
+        // 角度：與廣角變形相同的滑桿（拖曳時即時重算畫面；預覽在裁切工具下也會旋轉）。
+        // UI 值＝−CropAngle：使用者要求方向相反；只翻轉操作方向，儲存值意義不變（舊 XML 不受影響）。
+        var angle = CreateSlider("角度", -45, 45, 0, "0.0", true, a => -a.CropAngle, (a, v) => a.CropAngle = -v, 0.5);
+        angle.SetBounds(0, 38, 266, 36);
 
         var distortion = CreateSlider("廣角變形", -100, 100, 0, "0", true, a => a.Distortion, (a, v) => a.Distortion = v, 1);
         distortion.SetBounds(0, 76, 266, 36);
@@ -131,7 +131,7 @@ public sealed class ToolsPanel : AdjustPanelBase
         var reset = new FlatButton { Text = "裁切重設" }; reset.SetBounds(0, 158, 260, 28);
         reset.Click += (_, _) => ResetCrop?.Invoke();
 
-        _crop.Controls.AddRange(new Control[] { lblRatio, _aspect, _cw, colon, _ch, lblAngle, _angle, distortion, rotL, rotR, reset });
+        _crop.Controls.AddRange(new Control[] { lblRatio, _aspect, _cw, colon, _ch, angle, distortion, rotL, rotR, reset });
     }
 
     // ---- gradient --------------------------------------------------------
@@ -144,7 +144,7 @@ public sealed class ToolsPanel : AdjustPanelBase
     private void BuildGradient()
     {
         // Sliders edit the currently-selected gradient (a.ActiveGradient); disabled when none.
-        AddGradSlider(0, "曝光", -5, 5, 0, "0.00", 0.05, g => g.Exposure, (g, v) => g.Exposure = v);
+        AddGradSlider(0, "曝光", -2, 2, 0, "0.00", 0.05, g => g.Exposure, (g, v) => g.Exposure = v);
         AddGradSlider(36, "對比", -100, 100, 0, "0", 1, g => g.Contrast, (g, v) => g.Contrast = v);
         AddGradSlider(72, "亮部", -100, 100, 0, "0", 1, g => g.Highlights, (g, v) => g.Highlights = v);
         AddGradSlider(108, "暗部", -100, 100, 0, "0", 1, g => g.Shadows, (g, v) => g.Shadows = v);

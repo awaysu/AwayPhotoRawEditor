@@ -307,10 +307,11 @@ public sealed class ThumbnailStrip : Control
             using (var pen = new Pen(Theme.Accent, 2))
                 g.DrawRectangle(pen, rect.X + 2, rect.Y + 1, rect.Width - 5, rect.Height - 2);
 
-        // index number (top-left, starting from #1)
+        // index number (top-left, starting from #1) — DisplayNumber counts the folder's full
+        // list including hidden photos, so numbers skip when a photo is hidden (#1, #3…).
         if (_showNumber)
         {
-            string num = "#" + (i + 1);
+            string num = "#" + (cell.Item.DisplayNumber > 0 ? cell.Item.DisplayNumber : i + 1);
             var numSize = TextRenderer.MeasureText(num, Theme.Small);
             var numRect = new Rectangle(photoRect.X + 3, photoRect.Y + 3, numSize.Width + 8, 15);
             PaintHelpers.FillRounded(g, numRect, 3, Color.FromArgb(185, 90, 90, 98));
@@ -321,6 +322,18 @@ public sealed class ThumbnailStrip : Control
 
         // status markers (top-right, right-aligned)
         int rx = photoRect.Right - 4, ry = photoRect.Y + 4;
+        if (cell.Item.IsHidden)
+        {
+            // 隱藏 icon：劃了斜線的眼睛（隱藏且不輸出的照片，「顯示全部」模式下可見）。
+            var r = new Rectangle(rx - 18, ry, 18, 13);
+            PaintHelpers.FillRounded(g, r, 3, Color.FromArgb(205, 40, 40, 46));
+            using (var pen = new Pen(Color.FromArgb(240, 240, 244), 1.4f))
+            {
+                g.DrawEllipse(pen, r.X + 4f, r.Y + 3.5f, 10f, 6f);
+                g.DrawLine(pen, r.X + 3f, r.Bottom - 2f, r.Right - 3f, r.Y + 2f);
+            }
+            rx -= 22;
+        }
         if (cell.Item.IsVirtualCopy)
         {
             var r = new Rectangle(rx - 30, ry, 30, 12);

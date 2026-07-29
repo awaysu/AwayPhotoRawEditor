@@ -118,8 +118,9 @@ public sealed class MainForm : Form
             OpenFolder(last);
     }
 
-    /// <summary>Test hook: open a folder programmatically (used by the --shot diagnostic).</summary>
-    public void TestOpen(string folder) => OpenFolder(folder);
+    /// <summary>Test hook: open a folder programmatically (used by the --shot diagnostic).
+    /// Marks auto-open as done so a deferred OnShown doesn't re-open LastFolder over it.</summary>
+    public void TestOpen(string folder) { _autoOpened = true; OpenFolder(folder); }
 
     // ---- layout ----------------------------------------------------------
 
@@ -307,7 +308,7 @@ public sealed class MainForm : Form
         _tools.RotateRight += () => Rotate(90);
         _tools.ResetCrop += ResetCropGeometry;
         _tools.CropAspectChanged += ApplyCropAspect;
-        _tools.HealModeChanged += m => _viewer.HealMode = m;
+        _tools.HealModeChanged += m => { if (_viewer.SetHealMode(m)) OnAdjustmentChanged(); };
         _tools.HealSizeChanged += s => { if (_viewer.SetHealBrushSize(s)) OnAdjustmentChanged(); };
         _tools.ClearHeal += () => { if (_adj != null) { PushUndo(); _adj.HealSpots.Clear(); OnAdjustmentChanged(); } };
         _tools.AddGradient += OnAddGradient;
@@ -404,14 +405,23 @@ public sealed class MainForm : Form
         var preview = PreviewListStore.Load(folder);
         var hidden = new HashSet<string>(preview.Hidden);
 
+        // 「顯示全部」模式：已隱藏（不輸出）的照片也放進預覽列（帶 IsHidden 標記與隱藏 icon）；
+        // 「不顯示隱藏」模式（預設）：隱藏的照片不出現。
+        // #編號（DisplayNumber）對「每一張」遞增，含被濾掉的隱藏照片——隱藏後跳號。
+        bool showHidden = AppSettings.Current.ShowHiddenPhotos;
         _items.Clear();
+        int seq = 0;
         foreach (var f in files)
         {
-            if (!hidden.Contains(f)) _items.Add(new PhotoItem(f));
+            bool h = hidden.Contains(f);
+            seq++;
+            if (!h || showHidden) _items.Add(new PhotoItem(f) { IsHidden = h, DisplayNumber = seq });
             foreach (var vc in preview.VirtualCopies.Where(v => string.Equals(v.Path, f, StringComparison.OrdinalIgnoreCase)))
             {
                 var key = $"{f}|copy:{vc.Index}";
-                if (!hidden.Contains(key)) _items.Add(new PhotoItem(f, vc.Index));
+                bool hv = hidden.Contains(key);
+                seq++;
+                if (!hv || showHidden) _items.Add(new PhotoItem(f, vc.Index) { IsHidden = hv, DisplayNumber = seq });
             }
         }
 
@@ -1009,7 +1019,8 @@ public sealed class MainForm : Form
 
     private void ShowThumbnailMenu(PhotoItem item, Point screenPt)
     {
-        var menu = new ContextMenuStrip { BackColor = Theme.PanelBg2, ForeColor = Theme.Text, ShowImageMargin = false };
+        // ShowCheckMargin：「不顯示隱藏／顯示全部」二選一勾選需要勾勾欄位才畫得出來。
+        var menu = new ContextMenuStrip { BackColor = Theme.PanelBg2, ForeColor = Theme.Text, ShowImageMargin = false, ShowCheckMargin = true };
         void Add(string text, Action act, bool enabled = true)
         {
             var mi = menu.Items.Add(text);
@@ -1035,8 +1046,18 @@ public sealed class MainForm : Form
         Add(L.T("貼上照片設定"), PasteSettings);
         menu.Items.Add(new ToolStripSeparator());
         Add(L.T("建立副本"), () => CreateVirtualCopy(item));
-        Add(L.T("移除於預覽列"), () => RemoveFromPreview(item));
+        Add(L.T("隱藏且不輸出"), HideSelected, _strip.SelectedItems.Any(i => !i.IsHidden));
+        Add(L.T("取消隱藏"), UnhideSelected, _strip.SelectedItems.Any(i => i.IsHidden));
         Add(L.T("刪除檔案"), () => DeletePhotoFile(item));
+        menu.Items.Add(new ToolStripSeparator());
+        // 顯示模式：二選一勾選（勾在目前生效的那一項）。
+        bool showAll = AppSettings.Current.ShowHiddenPhotos;
+        var hideMode = new ToolStripMenuItem(L.T("不顯示隱藏")) { Checked = !showAll, ForeColor = Theme.Text };
+        var showMode = new ToolStripMenuItem(L.T("顯示全部")) { Checked = showAll, ForeColor = Theme.Text };
+        hideMode.Click += (_, _) => SetShowHiddenMode(false);
+        showMode.Click += (_, _) => SetShowHiddenMode(true);
+        menu.Items.Add(hideMode);
+        menu.Items.Add(showMode);
         menu.Items.Add(new ToolStripSeparator());
         Add(L.T("匯出照片"), ExportSelection);
 
@@ -1087,17 +1108,65 @@ public sealed class MainForm : Form
         _status.Text = L.T("已建立虛擬副本");
     }
 
-    private void RemoveFromPreview(PhotoItem item)
+    /// <summary>隱藏且不輸出：記到 preview_list 的 Hidden。「顯示全部」模式下照片留在
+    /// 預覽列（帶隱藏 icon）；「不顯示隱藏」模式下從預覽列移除。匯出一律略過隱藏照片。</summary>
+    private void HideFromPreview(PhotoItem item)
     {
         var preview = PreviewListStore.Load(_folder);
         if (!preview.Hidden.Contains(item.Key)) preview.Hidden.Add(item.Key);
         PreviewListStore.Save(_folder, preview);
-        _items.RemoveAll(i => ReferenceEquals(i, item));
-        RefreshStripKeepSelection();
-        _status.Text = L.T("已從預覽移除");
+        item.IsHidden = true;
+        if (AppSettings.Current.ShowHiddenPhotos)
+        {
+            _strip.RefreshBadges();
+        }
+        else
+        {
+            _items.RemoveAll(i => ReferenceEquals(i, item));
+            RefreshStripKeepSelection();
+        }
+        _status.Text = L.T("已隱藏（不輸出）");
     }
 
-    /// <summary>Un-hide every photo hidden via 移除於預覽列 and reload the folder.</summary>
+    /// <summary>取消隱藏：從 preview_list 的 Hidden 移除（照片在「顯示全部」模式下才點得到）。</summary>
+    private void UnhideFromPreview(PhotoItem item)
+    {
+        var preview = PreviewListStore.Load(_folder);
+        preview.Hidden.Remove(item.Key);
+        PreviewListStore.Save(_folder, preview);
+        item.IsHidden = false;
+        _strip.RefreshBadges();
+        _status.Text = L.T("已取消隱藏");
+    }
+
+    /// <summary>把目前選取的照片全部「隱藏且不輸出」（右鍵選單與 Del 鍵共用）。</summary>
+    private void HideSelected()
+    {
+        foreach (var it in _strip.SelectedItems.ToList()) HideFromPreview(it);
+    }
+
+    private void UnhideSelected()
+    {
+        foreach (var it in _strip.SelectedItems.ToList()) UnhideFromPreview(it);
+    }
+
+    /// <summary>切換「不顯示隱藏／顯示全部」，重建預覽列並盡量保留目前選取。</summary>
+    private void SetShowHiddenMode(bool showAll)
+    {
+        if (AppSettings.Current.ShowHiddenPhotos == showAll) return;
+        AppSettings.Current.ShowHiddenPhotos = showAll;
+        if (!Program.Headless) AppSettings.Current.Save();
+        if (string.IsNullOrEmpty(_folder)) return;
+        var curKey = _current?.Key;
+        OpenFolder(_folder);
+        if (curKey != null)
+        {
+            int idx = _items.FindIndex(i => i.Key == curKey);
+            if (idx > 0) _strip.SelectIndex(idx);
+        }
+    }
+
+    /// <summary>Un-hide every photo hidden via 隱藏且不輸出 and reload the folder.</summary>
     private void RestoreHiddenPhotos()
     {
         if (string.IsNullOrEmpty(_folder)) return;
@@ -1112,7 +1181,18 @@ public sealed class MainForm : Form
 
     private void DeletePhotoFile(PhotoItem item)
     {
-        if (item.IsVirtualCopy) { RemoveFromPreview(item); return; }
+        // 虛擬副本沒有實體檔案：直接從預覽列與 preview_list 移除（連同其調整 XML）。
+        if (item.IsVirtualCopy)
+        {
+            _items.RemoveAll(i => ReferenceEquals(i, item));
+            var preview = PreviewListStore.Load(_folder);
+            preview.Hidden.Remove(item.Key);
+            PreviewListStore.Save(_folder, preview);
+            SavePreviewList();   // 重寫 VirtualCopies（已不含這個副本）
+            try { File.Delete(AppPaths.AdjustmentXmlPath(item.SourcePath, item.VirtualCopyIndex)); } catch { }
+            RefreshStripKeepSelection();
+            return;
+        }
         if (MessageBox.Show(this, L.F("確定刪除檔案？（會移到資源回收桶）\n{0}", item.FileName), L.T("刪除照片檔案"),
             MessageBoxButtons.YesNo, MessageBoxIcon.Warning) != DialogResult.Yes) return;
         try
@@ -1155,6 +1235,32 @@ public sealed class MainForm : Form
         _status.Text = L.F("已套用風格檔：{0}", PresetProfile.BuiltIn.ContainsKey(name) ? L.T(name) : name);
     }
 
+    /// <summary>重算 #編號：以「資料夾完整清單（含隱藏照片與其虛擬副本）」的位置為準，
+    /// 隱藏的照片仍佔號——#2 被隱藏時預覽列顯示 #1、#3（跳號）。列舉順序與 OpenFolder 相同。</summary>
+    private void RenumberItems()
+    {
+        if (string.IsNullOrEmpty(_folder) || _items.Count == 0) return;
+        try
+        {
+            var preview = PreviewListStore.Load(_folder);
+            var byKey = _items.ToDictionary(i => i.Key);
+            int seq = 0;
+            foreach (var f in Directory.EnumerateFiles(_folder)
+                         .Where(p => AppPaths.IsSupported(p) && !AppPaths.IsRawTemp(p))
+                         .OrderBy(p => p, StringComparer.OrdinalIgnoreCase))
+            {
+                seq++;
+                if (byKey.TryGetValue(f, out var it)) it.DisplayNumber = seq;
+                foreach (var vc in preview.VirtualCopies.Where(v => string.Equals(v.Path, f, StringComparison.OrdinalIgnoreCase)))
+                {
+                    seq++;
+                    if (byKey.TryGetValue($"{f}|copy:{vc.Index}", out var c)) c.DisplayNumber = seq;
+                }
+            }
+        }
+        catch { /* 編號失敗不影響其他功能 */ }
+    }
+
     private void RefreshStripKeepSelection()
     {
         // 預覽列被清空（最後一張被移除/刪除）：主編輯區的照片也要移除，
@@ -1166,6 +1272,7 @@ public sealed class MainForm : Form
             return;
         }
 
+        RenumberItems();
         var cur = _current;
         int idx = cur != null ? _items.FindIndex(i => ReferenceEquals(i, cur)) : 0;
         _strip.SetItems(_items, Math.Max(0, idx));
@@ -1179,8 +1286,16 @@ public sealed class MainForm : Form
     private void SavePreviewList()
     {
         var preview = PreviewListStore.Load(_folder);
+        // 「不顯示隱藏」模式下，被隱藏的虛擬副本不在 _items 裡——重寫 VirtualCopies 時
+        // 要保留這些項目，否則「取消隱藏／還原」後副本會消失。
+        var inItems = new HashSet<string>(_items.Where(i => i.IsVirtualCopy).Select(i => i.Key));
+        var hiddenSet = new HashSet<string>(preview.Hidden);
+        var keptHidden = preview.VirtualCopies
+            .Where(v => { var key = $"{v.Path}|copy:{v.Index}"; return !inItems.Contains(key) && hiddenSet.Contains(key); })
+            .ToList();
         preview.VirtualCopies = _items.Where(i => i.IsVirtualCopy)
-            .Select(i => new VirtualCopyEntry { Path = i.SourcePath, Index = i.VirtualCopyIndex }).ToList();
+            .Select(i => new VirtualCopyEntry { Path = i.SourcePath, Index = i.VirtualCopyIndex })
+            .Concat(keptHidden).ToList();
         PreviewListStore.Save(_folder, preview);
     }
 
@@ -1195,7 +1310,7 @@ public sealed class MainForm : Form
         var closeDelItem = menu.Items.Add(L.T("關閉資料夾並刪除快取縮圖"), null, (_, _) => CloseFolderAndClearCache());
         closeDelItem.Enabled = !string.IsNullOrEmpty(_folder);
 
-        // 還原被「移除於預覽列」隱藏的照片（顯示數量，無隱藏時停用）。
+        // 還原被「隱藏且不輸出」隱藏的照片（顯示數量，無隱藏時停用）。
         int hiddenCount = 0;
         if (!string.IsNullOrEmpty(_folder))
             try { hiddenCount = PreviewListStore.Load(_folder).Hidden.Count; } catch { }
@@ -1239,6 +1354,16 @@ public sealed class MainForm : Form
         menu.Items.Add(L.T("設定…"), null, (_, _) => ShowSettings());
         menu.Items.Add(L.T("編輯風格檔…"), null, (_, _) => ShowPresetEditor());
         menu.Items.Add(new ToolStripSeparator());
+        // 支援 RAW 檔相機列表：開瀏覽器連到 LibRaw 官方清單（對應內建的 LibRaw 版本）。
+        menu.Items.Add(L.T("支援RAW檔相機列表"), null, (_, _) =>
+        {
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+                    "https://www.libraw.org/supported-cameras") { UseShellExecute = true });
+            }
+            catch { /* 沒有預設瀏覽器等情況：不崩潰 */ }
+        });
         menu.Items.Add(L.T("關於"), null, (_, _) => { using var dlg = new AboutForm(); dlg.ShowDialog(this); });
         menu.Items.Add(L.T("結束"), null, (_, _) => Close());
         menu.Show(anchor, new Point(0, anchor.Height));
@@ -1292,6 +1417,8 @@ public sealed class MainForm : Form
 
     private void ExportPhotos(List<PhotoItem> targets)
     {
+        // 「隱藏且不輸出」：隱藏的照片一律不進匯出（含 匯出全部/選取/目前照片）。
+        targets = targets.Where(t => !t.IsHidden).ToList();
         if (targets.Count == 0) { MessageBox.Show(this, L.T("沒有可匯出的相片。"), L.T("匯出"), MessageBoxButtons.OK, MessageBoxIcon.Information); return; }
         SaveCurrentIfDirty();
 
@@ -1338,7 +1465,7 @@ public sealed class MainForm : Form
         else if (e.KeyCode == Keys.Left) { StepSelection(-1); e.Handled = true; }
         else if (e.KeyCode == Keys.Right) { StepSelection(1); e.Handled = true; }
         else if (e.KeyCode == Keys.Delete && e.Shift) { if (_strip.CurrentItem is { } del) DeletePhotoFile(del); e.Handled = true; }
-        else if (e.KeyCode == Keys.Delete) { RemoveSelectedFromPreview(); e.Handled = true; }
+        else if (e.KeyCode == Keys.Delete) { HideSelected(); e.Handled = true; }   // Del＝隱藏且不輸出
         else if (e.KeyCode == Keys.Escape) { CancelPickerOrTool(); e.Handled = true; }
         else if (e.KeyCode == Keys.F5) { RefreshFolder(); e.Handled = true; }
         else if (e.KeyCode == Keys.Oem5) { ToggleShowOriginal(); e.Handled = true; }   // '\' 對照原圖
@@ -1351,13 +1478,6 @@ public sealed class MainForm : Form
         Control? c = ActiveControl;
         while (c is ContainerControl { ActiveControl: not null } cc) c = cc.ActiveControl;
         return c is TextBoxBase or ComboBox or NumericUpDown;
-    }
-
-    /// <summary>Del：把目前選取的照片全部「移除於預覽列」（可由選單還原）。</summary>
-    private void RemoveSelectedFromPreview()
-    {
-        var sel = _strip.SelectedItems.ToList();
-        foreach (var it in sel) RemoveFromPreview(it);
     }
 
     /// <summary>Esc：先取消白平衡滴管，否則取消目前選取的工具。</summary>

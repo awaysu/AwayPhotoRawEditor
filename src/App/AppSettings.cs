@@ -44,6 +44,10 @@ public sealed class AppSettings
     /// <summary>視窗過矮時左右欄顯示捲軸（DarkScrollHost）；關閉時超出部分直接裁切。</summary>
     public bool ShowColumnScrollBars { get; set; } = false;
 
+    /// <summary>預覽列「顯示全部」模式：true = 連同已隱藏（不輸出）的照片一起顯示（帶隱藏 icon）；
+    /// false =「不顯示隱藏」（預設，隱藏的照片不出現在預覽列）。</summary>
+    public bool ShowHiddenPhotos { get; set; } = false;
+
     /// <summary>整體介面風格；舊版設定檔未含此欄位時維持原本的經典深色。</summary>
     public UiStyle InterfaceStyle { get; set; } = UiStyle.ClassicDark;
 

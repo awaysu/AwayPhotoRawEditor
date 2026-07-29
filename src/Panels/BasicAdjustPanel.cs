@@ -9,7 +9,7 @@ public sealed class BasicAdjustPanel : AdjustPanelBase
     {
         Size = new Size(310, 245);
         const int x = 12, w = 286, h = 34, gap = 35, y = 4;
-        AddSliderAt(x, y + 0 * gap, w, h, "曝光", -5, 5, 0, "0.00", true, a => a.Exposure, (a, v) => a.Exposure = v, 0.05);
+        AddSliderAt(x, y + 0 * gap, w, h, "曝光", -2, 2, 0, "0.00", true, a => a.Exposure, (a, v) => a.Exposure = v, 0.05);
         AddSliderAt(x, y + 1 * gap, w, h, "對比", -100, 100, 0, "0", true, a => a.Contrast, (a, v) => a.Contrast = v, 1);
         AddSliderAt(x, y + 2 * gap, w, h, "亮部", -100, 100, 0, "0", true, a => a.Highlights, (a, v) => a.Highlights = v, 1);
         AddSliderAt(x, y + 3 * gap, w, h, "暗部", -100, 100, 0, "0", true, a => a.Shadows, (a, v) => a.Shadows = v, 1);

@@ -92,6 +92,22 @@ public sealed class ImageViewer : Control
         return true;
     }
 
+    /// <summary>Set the heal mode for new spots and convert the active spot (last placed /
+    /// edited) between 仿製 / 修補. Returns true when an existing spot was converted
+    /// (caller should re-render). Raises EditBegin first so the change is undoable.</summary>
+    public bool SetHealMode(HealMode mode)
+    {
+        HealMode = mode;
+        if (_adj is null || _activeSpot < 0 || _activeSpot >= _adj.HealSpots.Count) return false;
+        var s = _adj.HealSpots[_activeSpot];
+        bool inpaint = mode == HealMode.Inpaint;
+        if (s.UseInpaint == inpaint) return false;
+        EditBegin?.Invoke(this, EventArgs.Empty);
+        s.UseInpaint = inpaint;
+        Invalidate();
+        return true;
+    }
+
     public void SetImage(Bitmap? image, bool resetView)
     {
         _image?.Dispose();

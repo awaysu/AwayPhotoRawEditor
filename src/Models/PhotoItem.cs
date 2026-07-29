@@ -35,6 +35,10 @@ public sealed class PhotoItem
     /// <summary>Photo has non-default adjustments (shows the "edited" badge).</summary>
     public bool IsEdited { get; set; }
 
+    /// <summary>#編號：以資料夾完整清單（含隱藏照片）的位置為準——隱藏的照片仍佔號，
+    /// 所以 #2 被隱藏時預覽列顯示 #1、#3（跳號）。0 = 未指定（縮圖列退回 index+1）。</summary>
+    public int DisplayNumber { get; set; }
+
     /// <summary>Hidden from the preview (persisted in preview_list.xml).</summary>
     public bool IsHidden { get; set; }
 

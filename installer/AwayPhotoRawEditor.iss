@@ -4,7 +4,7 @@
 ; 安裝為「每使用者」（無需系統管理員權限），目錄 {localappdata}\Programs\AwayPhotoRawEditor。
 
 #define MyAppName "AwayPhotoRawEditor"
-#define MyAppVersion "1.0.3"
+#define MyAppVersion "1.0.4"
 #define MyAppPublisher "Awaysu"
 #define MyAppURL "https://github.com/awaysu/AwayPhotoRawEditor"
 #define MyAppExeName "AwayPhotoRawEditor.exe"

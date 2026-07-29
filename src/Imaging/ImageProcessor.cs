@@ -94,7 +94,18 @@ public static class ImageProcessor
 
         // Crop overlay: show the full distorted/rotated frame; the crop box is applied only
         // in the final (no-tool) view, so the white frame stays aligned while dragging.
-        if (ctx.SkipCropRect) return Finish(rotated);
+        if (ctx.SkipCropRect)
+        {
+            // 角度即時預覽：整個畫面繞裁切中心旋轉（取樣方式與 CropRect 相同），
+            // 白框內看到的內容就是最終裁切結果；框本身維持不旋轉。
+            if (adj.CropAngle != 0)
+            {
+                var s = StraightenPreview(rotated, adj, token);
+                rotated.Dispose();
+                rotated = s;
+            }
+            return Finish(rotated);
+        }
 
         var cropped = CropRect(rotated, adj, token);      // 10b
         if (!ReferenceEquals(cropped, rotated)) rotated.Dispose();
@@ -433,6 +444,34 @@ public static class ImageProcessor
                 double sx = cx + (rx * cosA - ry * sinA);
                 double sy = cy + (rx * sinA + ry * cosA);
                 Sample(rotated, sx, sy, out float rr, out float gg, out float bb, out float aa);
+                dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
+            }
+        });
+        return dst;
+    }
+
+    /// <summary>Full-frame straighten preview for the crop overlay: rotate the content around
+    /// the crop-rect center with the same sampling as <see cref="CropRect"/>, keeping the
+    /// buffer size — so the area inside the axis-aligned crop box matches the final crop.</summary>
+    private static FloatImageBuffer StraightenPreview(FloatImageBuffer src, ImageAdjustments adj, CancellationToken t)
+    {
+        int W = src.Width, H = src.Height;
+        double cx = (adj.CropX + adj.CropWidth / 2) * W;
+        double cy = (adj.CropY + adj.CropHeight / 2) * H;
+        double a = adj.CropAngle * Math.PI / 180.0;
+        double sinA = Math.Sin(a), cosA = Math.Cos(a);
+
+        var dst = new FloatImageBuffer(W, H);
+        ForRows(dst, t, (y) =>
+        {
+            double ry = y - cy;
+            int i = y * W * 4;
+            for (int x = 0; x < W; x++, i += 4)
+            {
+                double rx = x - cx;
+                double sx = cx + (rx * cosA - ry * sinA);
+                double sy = cy + (rx * sinA + ry * cosA);
+                Sample(src, sx, sy, out float rr, out float gg, out float bb, out float aa);
                 dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
             }
         });
