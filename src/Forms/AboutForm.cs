@@ -21,7 +21,7 @@ public sealed class AboutForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(500, 322);
+        ClientSize = new Size(500, 420);
 
         var body = Theme.UI(10f);
 
@@ -49,10 +49,14 @@ public sealed class AboutForm : Form
 
         var buildTime = new Label { Text = L.T("編譯時間：") + AppVersion.BuildTime, Font = body, ForeColor = Theme.Text, Left = 20, Top = 234, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
 
-        var ok = new FlatButton { Text = "確定", Primary = true, Left = 404, Top = 274, Width = 80, Height = 32 };
+        // 第三方元件聲明（LGPL/Artistic 署名；元件名稱與授權為專有名詞，不翻譯）
+        var thirdCap = new Label { Text = "第三方元件:", Font = body, ForeColor = Theme.Text, Left = 20, Top = 282, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
+        var thirdList = new Label { Text = "LibRaw (LGPL 2.1)\nExifTool by Phil Harvey (Perl Artistic License)", Font = body, ForeColor = Theme.Text, Left = 20, Top = 310, Width = 460, Height = 48, TextAlign = ContentAlignment.TopLeft };
+
+        var ok = new FlatButton { Text = "確定", Primary = true, Left = 404, Top = 372, Width = 80, Height = 32 };
         ok.Click += (_, _) => Close();
 
-        Controls.AddRange(new Control[] { header, version, authorCap, authorPic, srcCap, link, buildTime, ok });
+        Controls.AddRange(new Control[] { header, version, authorCap, authorPic, srcCap, link, buildTime, thirdCap, thirdList, ok });
         L.Apply(this);
 
         // 圖以 2×(20pt) 產生：縮到 10pt 等效大小並跟著 DPI 放大，接在（翻譯後的）「作者:」右側置中

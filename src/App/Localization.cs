@@ -589,6 +589,7 @@ public static class L
         ["作者:"] = new("Author:", "作者：", "제작자:", "作者:", "Autor:", "Auteur :", "Autor:"),
         ["版本："] = new("Version: ", "バージョン：", "버전: ", "版本：", "Version: ", "Version : ", "Versión: "),
         ["編譯時間："] = new("Build time: ", "ビルド日時：", "빌드 시간: ", "编译时间：", "Build-Zeit: ", "Compilé le : ", "Compilado el: "),
+        ["第三方元件:"] = new("Third-party components:", "サードパーティコンポーネント：", "서드파티 구성 요소:", "第三方组件:", "Drittanbieter-Komponenten:", "Composants tiers :", "Componentes de terceros:"),
         ["無法解碼影像"] = new("Could not decode image", "画像をデコードできません", "이미지를 디코딩할 수 없습니다", "无法解码图像", "Bild kann nicht dekodiert werden", "Impossible de décoder l'image", "No se puede decodificar la imagen"),
         ["無法讀取影像：{0}"] = new("Could not read image: {0}", "画像を読み込めません：{0}", "이미지를 읽을 수 없음: {0}", "无法读取图像：{0}", "Bild kann nicht gelesen werden: {0}", "Impossible de lire l'image : {0}", "No se puede leer la imagen: {0}"),
         ["匯出「{0}」失敗：{1}"] = new("Failed to export “{0}”: {1}", "「{0}」の書き出しに失敗：{1}", "‘{0}’ 내보내기 실패: {1}", "导出“{0}”失败：{1}", "Export von „{0}“ fehlgeschlagen: {1}", "Échec de l'exportation de « {0} » : {1}", "Error al exportar “{0}”: {1}")

@@ -14,7 +14,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
     <Product>AwayPhotoRawEditor</Product>
     <ApplicationIcon>icon\icon.ico</ApplicationIcon>
   </PropertyGroup>
