@@ -55,12 +55,6 @@ iscc installer\AwayPhotoRawEditor.iss
 
 外部工具已內建於 `tools/`（LibRaw 0.22.1、ExifTool 13.59），執行期自動偵測。
 
-## 二次開發 / Modifying this project
-
-歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。
-
-You are welcome to modify this project into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.
-
 ## 第三方元件
 
 - [LibRaw](https://www.libraw.org/) 0.22.1 — LGPL 2.1
@@ -69,3 +63,9 @@ You are welcome to modify this project into your own version — I only ask that
 ## 作者
 
 Awaysu (awaysu@gmail.com)
+
+## 二次開發 / Modifying this project
+
+歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。
+
+You are welcome to modify this project into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.
