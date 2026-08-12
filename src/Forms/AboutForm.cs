@@ -62,6 +62,11 @@ public sealed class AboutForm : Form
         var buildTime = Text0(L.T("編譯時間：") + AppVersion.BuildTime, body, y, lineH);
         y += gap;
 
+        // 本程式自己的授權。不是法律義務（授權約束的是再散布的人，不是著作權人），
+        // 但擺在這裡剛好向下方「二次開發」的請求示範：聲明就是放這個位置。
+        var license = Text0(L.T("授權：") + "BSD 3-Clause　© 2026 Awaysu", body, y, lineH);
+        y += gap;
+
         // 第三方元件聲明（LGPL/Artistic 署名；元件名稱與授權為專有名詞，不翻譯）
         // 版本在執行期讀取：升級 tools/ 之後這裡不會變成過期資訊。
         var thirdCap = Text0("第三方元件:", body, y, lineH);
@@ -86,7 +91,7 @@ public sealed class AboutForm : Form
         Controls.AddRange(new Control[]
         {
             header, version, authorCap, authorPic, dlCap, dlLink,
-            srcCap, srcLink, buildTime, thirdCap, thirdList, modifyNote, ok
+            srcCap, srcLink, buildTime, license, thirdCap, thirdList, modifyNote, ok
         });
         L.Apply(this);
 

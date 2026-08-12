@@ -109,6 +109,7 @@ public static class L
         ["介面大小"] = new("UI size", "UI サイズ", "UI 크기", "界面大小", "UI-Größe", "Taille de l'UI", "Tamaño de UI"),
         // 帶冒號當獨立 key，避免與「常用位置」的「下載」（下載資料夾）混淆
         ["下載:"] = new("Download:", "ダウンロード:", "다운로드:", "下载:", "Download:", "Téléchargement :", "Descarga:"),
+        ["授權："] = new("License: ", "ライセンス: ", "라이선스: ", "许可: ", "Lizenz: ", "Licence : ", "Licencia: "),
         ["歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。"] = new(
             "You are welcome to modify this into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.",
             "自由に改変してご自身のバージョンを作って構いません。ただし「バージョン情報」に出典（AwayPhotoRawEditor / Awaysu）を記載してください。",
