@@ -16,7 +16,7 @@
     <!-- SystemAware：process 的 DPI 固定，Ui.Scale 取一次即可，不必在執行期重算整份版面。
          代價是拖到不同縮放的第二螢幕時由 Windows 拉伸（尺寸正確、略糊）。 -->
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
-    <Version>1.0.6</Version>
+    <Version>1.0.7</Version>
     <Product>AwayPhotoRawEditor</Product>
     <ApplicationIcon>icon\icon.ico</ApplicationIcon>
   </PropertyGroup>

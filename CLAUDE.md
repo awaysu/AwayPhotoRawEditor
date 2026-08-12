@@ -139,6 +139,15 @@ Top Bar (Dock Top, 60) → 縮圖列 (Dock Top, **158**) → body = 3 欄 TableL
 - **`VStackPanel` 子控制項不要再設 `Dock`**（手動座標排版會衝突）。
 - **LibRaw RAW 全解析度解碼在執行緒集區(1MB 堆疊)可能溢位** → `LibRawInterop.RunLargeStack` 用 64MB 堆疊執行緒跑原生解碼。
 - **ExifTool**：文字欄位(WhiteBalance/MeteringMode)保留友善字串，數值欄位用 `-Tag#` 強制數字。
+- **⚠️ LibRaw 不認識的機型會輸出遮罩邊 → 照片右側與下方出現黑邊**（2026-08 修，v1.0.7）。
+  - 症狀：proxy 與匯出的照片右／下各有一條純黑帶，**縮圖正常**（縮圖走相機內嵌預覽，不經全解碼）
+  - 實例：`ILCE-7RM6` 配 LibRaw 0.22.1 → `libraw sizes` 顯示 `raw 10240x7168 / visible 10240x7168 / margin L0 T0`，也就是**完全沒有裁切表**，可見區其實只有 9984×6656（3:2）
+  - 修法：`ExifReader.ReadVisibleSize()`（ExifTool `FullImageSize`，有快取）把可見尺寸傳給 `LibRawInterop.DecodeToBitmap/DecodeToFloat`，在複製出 managed buffer 前就裁掉
+  - **`FullImageSize` 不能用 `-fast2` 讀**：它在 Sony maker notes 裡，-fast2 會跳過 → 必須獨立一次查詢（`ExifReader.Read` 的主查詢仍保留 -fast2 求快）
+  - **不要只靠「掃純黑邊」**：遮罩邊界有去馬賽克造成的過渡帶，純黑掃描會少裁幾十個像素（實測 10017×6673 vs 正確的 9984×6656，還是留了一條細黑線）。掃描只用來判斷 padding 在哪一邊（LibRaw 內部已套用 flip，直幅照片的遮罩邊不在右下），以及沒有 EXIF 尺寸時的退路（此時會用常見長寬比驗證，不像正常比例就不敢裁）
+  - `照片資訊` 的尺寸同樣改採 `FullImageSize`，才會跟實際輸出一致
+  - 診斷：`--selftest` 的 `[工具偵測]` 會印 `libraw sizes`，一眼看出機型有沒有裁切表
+  - 已驗證無回歸：Sony ARW / Nikon NEF / Canon CR3 / Panasonic RW2 / Adobe DNG 共 15 檔，含直幅，全部零黑邊
 - 高精度 proxy 以 `.rawpipe.png.f32` 浮點無損快取實現（非字面 16-bit PNG）。
 - 讀檔/解碼失敗全程 try/catch 退回，不崩潰；長時間操作皆 async + `ProgressForm` 可取消。
 - **`FlatButton.Primary` 是「有 backing field + `Invalidate`」的屬性**，不是自動屬性——早期版本是自動屬性，切換工具高亮時舊鈕不重繪，導致**兩顆同時看起來被選**。自繪控制項的視覺狀態屬性都要在 setter 觸發重繪。

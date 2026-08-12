@@ -111,10 +111,14 @@ public static class LibRawInterop
     // ---- Public decode API ----------------------------------------------
 
     /// <summary>Full-resolution 8-bit sRGB decode. Null on failure.</summary>
-    public static Bitmap? DecodeToBitmap(string path) => RunLargeStack(() => DecodeProcessed(path, bps: 8) as Bitmap);
+    /// <param name="expectedVisible">可見區尺寸（EXIF FullImageSize）。LibRaw 對不支援的機型
+    /// 會連遮罩邊一起輸出，有這個值就能精準裁掉；給 <c>Size.Empty</c> 則退回黑邊掃描。</param>
+    public static Bitmap? DecodeToBitmap(string path, Size expectedVisible = default) =>
+        RunLargeStack(() => DecodeProcessed(path, bps: 8, expectedVisible) as Bitmap);
 
     /// <summary>Full-resolution high-precision decode (16-bit → float). Null on failure.</summary>
-    public static FloatImageBuffer? DecodeToFloat(string path) => RunLargeStack(() => DecodeProcessed(path, bps: 16) as FloatImageBuffer);
+    public static FloatImageBuffer? DecodeToFloat(string path, Size expectedVisible = default) =>
+        RunLargeStack(() => DecodeProcessed(path, bps: 16, expectedVisible) as FloatImageBuffer);
 
     /// <summary>
     /// LibRaw's full RAW demosaic uses large on-stack buffers and can overflow the
@@ -137,7 +141,7 @@ public static class LibRawInterop
         return result;
     }
 
-    private static object? DecodeProcessed(string path, int bps)
+    private static object? DecodeProcessed(string path, int bps, Size expectedVisible)
     {
         if (!Available) return null;
         IntPtr lr = IntPtr.Zero, img = IntPtr.Zero;
@@ -160,9 +164,12 @@ public static class LibRawInterop
             if (type != LIBRAW_IMAGE_BITMAP || colors < 3 || w <= 0 || h <= 0) return null;
             IntPtr data = img + HeaderSize;
 
+            // LibRaw 不認識的機型會連遮罩邊一起交出來（見 VisibleRect），先算出可見區再複製
+            var rect = VisibleRect(data, w, h, colors, bits, expectedVisible);
+
             return bits == 16
-                ? BitmapFrom16(data, w, h, colors)
-                : BitmapFrom8Bmp(data, w, h, colors);
+                ? BitmapFrom16(data, w, h, colors, rect)
+                : BitmapFrom8Bmp(data, w, h, colors, rect);
         }
         catch { return null; }
         finally
@@ -205,8 +212,10 @@ public static class LibRawInterop
             }
             if (type == LIBRAW_IMAGE_BITMAP && colors >= 3)
             {
-                var bmp = bits == 16 ? BitmapFrom16(data, w, h, colors).ToBitmap()
-                                     : BitmapFrom8Bmp(data, w, h, colors);
+                // 縮圖是相機自帶的預覽，本來就不含遮罩邊，整塊複製
+                var whole = new Rectangle(0, 0, w, h);
+                var bmp = bits == 16 ? BitmapFrom16(data, w, h, colors, whole).ToBitmap()
+                                     : BitmapFrom8Bmp(data, w, h, colors, whole);
                 ApplyFlip(bmp, flip);
                 return bmp;
             }
@@ -225,6 +234,39 @@ public static class LibRawInterop
     // 故 sizes.flip 位於位移 40（已以實檔驗證：直幅 ARW=5、橫幅=0）。
     // ⚠️ DLL 版本固定在 tools/，升級 LibRaw 時要重新驗證此位移。
     private const int SizesFlipOffset = 40;
+
+    // 同一個 libraw_image_sizes_t（起點＝libraw_data_t + 8）的前 8 個 ushort：
+    //   raw_height, raw_width, height, width, top_margin, left_margin, iheight, iwidth
+    private const int SizesOffset = 8;
+
+    /// <summary>libraw 回報的尺寸。`Width`/`Height` 是它認定的可見區，
+    /// `RawWidth`/`RawHeight` 含遮罩邊；機型不被支援時兩者會相同。</summary>
+    public readonly record struct RawSizes(
+        int RawWidth, int RawHeight, int Width, int Height,
+        int LeftMargin, int TopMargin, int IWidth, int IHeight, int Flip);
+
+    /// <summary>診斷用：讀出 libraw 的尺寸欄位（`--selftest` 會印出來）。</summary>
+    public static RawSizes? ReadSizes(string path) => RunLargeStack(() => ReadSizesCore(path));
+
+    private static RawSizes? ReadSizesCore(string path)
+    {
+        if (!Available) return null;
+        IntPtr lr = IntPtr.Zero;
+        try
+        {
+            lr = libraw_init(0);
+            if (lr == IntPtr.Zero) return null;
+            if (libraw_open_wfile(lr, path) != 0) return null;
+            if (libraw_unpack(lr) != 0) return null;
+            ushort U(int i) => (ushort)Marshal.ReadInt16(lr, SizesOffset + i * 2);
+            return new RawSizes(
+                RawWidth: U(1), RawHeight: U(0), Width: U(3), Height: U(2),
+                LeftMargin: U(5), TopMargin: U(4), IWidth: U(7), IHeight: U(6),
+                Flip: Marshal.ReadInt32(lr, SizesFlipOffset));
+        }
+        catch { return null; }
+        finally { if (lr != IntPtr.Zero) libraw_close(lr); }
+    }
 
     private static int ReadFlip(IntPtr lr)
     {
@@ -262,8 +304,99 @@ public static class LibRawInterop
         dataSize = Marshal.ReadInt32(img, 12);
     }
 
-    private static unsafe Bitmap BitmapFrom8Bmp(IntPtr data, int w, int h, int colors)
+    // ---- 遮罩邊裁切 -------------------------------------------------------
+
+    /// <summary>常見的可見區長寬比（連同其倒數，涵蓋直幅）。</summary>
+    private static readonly double[] CommonAspects = { 3.0 / 2, 4.0 / 3, 16.0 / 9, 1.0, 5.0 / 4, 7.0 / 5 };
+
+    private static bool PlausibleAspect(int w, int h)
     {
+        if (w <= 0 || h <= 0) return false;
+        double a = (double)w / h;
+        foreach (double t in CommonAspects)
+        {
+            if (Math.Abs(a - t) / t < 0.005) return true;
+            double inv = 1 / t;
+            if (Math.Abs(a - inv) / inv < 0.005) return true;
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// LibRaw 對它不認識的機型拿不到可見區裁切表，會把整塊感光元件緩衝區交出來，
+    /// 遮罩邊在輸出上就是純黑：ILCE-7RM6 配 LibRaw 0.22.1 解出 10240×7168，
+    /// 實際可見區只有 9984×6656（3:2），右邊多 256 欄、下面多 512 列全黑。
+    ///
+    /// 這裡量出四邊「整列／整欄都是純黑」的範圍再裁掉，並用兩道保險避免誤裁：
+    ///  1. 解出來的長寬比已經是常見比例 → 直接原樣返回（正常支援的機型零成本）
+    ///  2. 每邊最多裁 12.5%，而且**裁完必須落在常見比例上**才採用
+    ///     （夜景照整欄純黑也可能被量到，但裁完的比例不會剛好是 3:2/4:3/…）
+    /// </summary>
+    private static unsafe Rectangle VisibleRect(IntPtr data, int w, int h, int colors, int bits, Size expected)
+    {
+        var full = new Rectangle(0, 0, w, h);
+
+        int thr = bits == 16 ? 2 * 257 : 2;          // 0..255 的門檻換算到 0..65535
+        long rowStride = (long)w * colors;
+        byte* p8 = (byte*)data;
+        ushort* p16 = (ushort*)data;
+
+        bool Dark(long index)                        // index = 像素序號 × colors
+        {
+            if (bits == 16)
+                return p16[index] <= thr && p16[index + 1] <= thr && p16[index + 2] <= thr;
+            return p8[index] <= thr && p8[index + 1] <= thr && p8[index + 2] <= thr;
+        }
+        bool ColBlack(int x)
+        {
+            for (int y = 0; y < h; y++) if (!Dark(y * rowStride + (long)x * colors)) return false;
+            return true;
+        }
+        bool RowBlack(int y)
+        {
+            long b = y * rowStride;
+            for (int x = 0; x < w; x++) if (!Dark(b + (long)x * colors)) return false;
+            return true;
+        }
+
+        // ---- 1) 有 EXIF 的可見尺寸就用它（最準；遮罩邊界有去馬賽克過渡帶，純黑掃描會少裁幾十像素）
+        int ew = expected.Width, eh = expected.Height;
+        if (ew > 0 && eh > 0)
+        {
+            if ((w < h) != (ew < eh)) (ew, eh) = (eh, ew);   // libraw 已內部套用 flip，直/橫幅對調
+            if (ew <= w && eh <= h && (ew < w || eh < h))
+            {
+                // 位置由「哪一邊是黑的」決定：旋轉過的緩衝區遮罩邊不一定在右下角
+                int x = (w > ew && ColBlack(0)) ? w - ew : 0;
+                int y = (h > eh && RowBlack(0)) ? h - eh : 0;
+                return new Rectangle(x, y, ew, eh);
+            }
+            return full;   // 期望尺寸與解出來的一致（或不合理）→ 不動
+        }
+
+        // ---- 2) 沒有 EXIF 尺寸時的退路：純黑邊掃描 + 長寬比驗證
+        if (PlausibleAspect(w, h)) return full;      // 已是常見比例，不用掃
+
+        int maxTrimX = w / 8, maxTrimY = h / 8;
+        int right = 0, left = 0, bottom = 0, top = 0;
+        while (right < maxTrimX && ColBlack(w - 1 - right)) right++;
+        while (left < maxTrimX && left < w - right - 1 && ColBlack(left)) left++;
+        while (bottom < maxTrimY && RowBlack(h - 1 - bottom)) bottom++;
+        while (top < maxTrimY && top < h - bottom - 1 && RowBlack(top)) top++;
+
+        int nw = w - left - right, nh = h - top - bottom;
+        if (nw <= 0 || nh <= 0) return full;
+        if (nw == w && nh == h) return full;
+        if (!PlausibleAspect(nw, nh)) return full;   // 裁完不像正常比例 → 不敢動
+        return new Rectangle(left, top, nw, nh);
+    }
+
+    // ---- native buffer → managed ----------------------------------------
+
+    private static unsafe Bitmap BitmapFrom8Bmp(IntPtr data, int srcW, int srcH, int colors, Rectangle rect)
+    {
+        int w = rect.Width, h = rect.Height;
+        long rowStride = (long)srcW * colors;
         var bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb);
         var bd = bmp.LockBits(new Rectangle(0, 0, w, h), ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
@@ -272,7 +405,7 @@ public static class LibRawInterop
             for (int y = 0; y < h; y++)
             {
                 byte* dst = (byte*)bd.Scan0 + (long)y * bd.Stride;
-                byte* s = src + (long)y * w * colors;
+                byte* s = src + (y + rect.Y) * rowStride + (long)rect.X * colors;
                 for (int x = 0; x < w; x++)
                 {
                     byte r = s[x * colors + 0];
@@ -286,8 +419,10 @@ public static class LibRawInterop
         return bmp;
     }
 
-    private static unsafe FloatImageBuffer BitmapFrom16(IntPtr data, int w, int h, int colors)
+    private static unsafe FloatImageBuffer BitmapFrom16(IntPtr data, int srcW, int srcH, int colors, Rectangle rect)
     {
+        int w = rect.Width, h = rect.Height;
+        long rowStride = (long)srcW * colors;
         var buf = new FloatImageBuffer(w, h);
         const float inv = 1f / 65535f;
         ushort* src = (ushort*)data;
@@ -295,7 +430,7 @@ public static class LibRawInterop
         {
             for (int y = 0; y < h; y++)
             {
-                ushort* s = src + (long)y * w * colors;
+                ushort* s = src + (y + rect.Y) * rowStride + (long)rect.X * colors;
                 float* dst = dstBase + (long)y * w * 4;
                 for (int x = 0; x < w; x++)
                 {

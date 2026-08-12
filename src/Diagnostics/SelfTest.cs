@@ -78,6 +78,13 @@ public static class SelfTest
             Line($"  LibRaw 可用     : {LibRawInterop.Available}");
             Line($"  exiftool.exe    : {AppPaths.FindExifTool() ?? "(未找到)"}");
             Line($"  ExifTool 可用   : {ExifReader.ExifToolAvailable}");
+            if (AppPaths.IsRaw(imagePath) && LibRawInterop.ReadSizes(imagePath) is { } rs)
+            {
+                // 機型不被 LibRaw 支援時 Width/Height 會等於 RawWidth/RawHeight（拿不到可見區裁切表），
+                // 遮罩邊就會變成輸出上的黑邊——這幾個數字是判斷的依據。
+                Line($"  libraw sizes    : raw {rs.RawWidth}x{rs.RawHeight} / visible {rs.Width}x{rs.Height}" +
+                     $" / i {rs.IWidth}x{rs.IHeight} / margin L{rs.LeftMargin} T{rs.TopMargin} / flip {rs.Flip}");
+            }
             Line("");
 
             Line("[EXIF]");

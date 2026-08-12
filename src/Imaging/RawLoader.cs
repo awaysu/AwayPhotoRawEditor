@@ -47,7 +47,8 @@ public sealed class RawLoader
         {
             if (UseLibRaw && LibRawInterop.Available)
             {
-                var b = LibRawInterop.DecodeToBitmap(path);
+                // 傳入 EXIF 的可見區尺寸：LibRaw 對不支援的機型會連遮罩邊一起輸出成黑邊
+                var b = LibRawInterop.DecodeToBitmap(path, ExifReader.ReadVisibleSize(path));
                 if (b is not null) { LastFullDecodeUsedLibRaw = true; return b; }
             }
             LastFullDecodeUsedLibRaw = false;
@@ -80,7 +81,7 @@ public sealed class RawLoader
     {
         if (AppPaths.IsRaw(path) && UseLibRaw && UseHighPrecisionRawPipeline && LibRawInterop.Available)
         {
-            var f = LibRawInterop.DecodeToFloat(path);
+            var f = LibRawInterop.DecodeToFloat(path, ExifReader.ReadVisibleSize(path));
             if (f is not null) { LastFullDecodeUsedLibRaw = true; return f; }
         }
         var bmp = DecodeFullBitmap(path);

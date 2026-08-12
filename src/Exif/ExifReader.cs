@@ -80,6 +80,16 @@ public static class ExifReader
             data.DateTaken = FirstNonEmpty(Str(o, "DateTimeOriginal"), Str(o, "CreateDate"));
             data.Width = (int)Num(o, "ImageWidth");
             data.Height = (int)Num(o, "ImageHeight");
+            // 部分 RAW 的 ImageWidth/Height 是整塊感光元件緩衝區（含遮罩邊），例如 ILCE-7RM6 的
+            // ARW 為 10240×7168，可見區其實是 9984×6656。改採 FullImageSize，照片資訊顯示的
+            // 尺寸才會跟實際輸出一致。（另一次查詢：FullImageSize 在上面的 -fast2 下讀不到。）
+            var vis = ReadVisibleSize(path);
+            if (!vis.IsEmpty && vis.Width <= data.Width && vis.Height <= data.Height &&
+                (vis.Width < data.Width || vis.Height < data.Height))
+            {
+                data.Width = vis.Width;
+                data.Height = vis.Height;
+            }
             return true;
         }
         catch { return false; }
@@ -217,6 +227,65 @@ public static class ExifReader
         if (v.ValueKind == JsonValueKind.String &&
             double.TryParse(v.GetString(), NumberStyles.Any, CultureInfo.InvariantCulture, out var ds)) return ds;
         return 0;
+    }
+
+    // 可見區尺寸的快取：解碼路徑每張照片只問一次 ExifTool（key 含 mtime/大小，檔案換了會失效）。
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, Size> _visibleSizeCache = new();
+
+    /// <summary>
+    /// RAW 的「可見區」尺寸（ExifTool `FullImageSize`）。
+    ///
+    /// 部分機型的 `ImageWidth/Height` 是整塊感光元件緩衝區（含遮罩邊），例如 ILCE-7RM6 的 ARW
+    /// 為 10240×7168，可見區其實是 9984×6656。LibRaw 若不認識該機型就會把遮罩邊一起輸出成黑邊，
+    /// 這個值是唯一精準的裁切依據（純黑掃描會因為去馬賽克過渡帶少裁幾十個像素）。
+    ///
+    /// ⚠️ 刻意不加 <c>-fast2</c>：FullImageSize 在 Sony maker notes 裡，-fast2 會跳過它。
+    /// 讀不到時回 <see cref="Size.Empty"/>。
+    /// </summary>
+    public static Size ReadVisibleSize(string path)
+    {
+        string key;
+        try
+        {
+            var fi = new FileInfo(path);
+            key = $"{path}|{fi.LastWriteTimeUtc.Ticks}|{fi.Length}";
+        }
+        catch { return Size.Empty; }
+
+        if (_visibleSizeCache.TryGetValue(key, out var cached)) return cached;
+
+        var result = Size.Empty;
+        try
+        {
+            var exe = AppPaths.FindExifTool();
+            if (exe is not null)
+            {
+                string json = RunExifTool(exe, new[] { "-json", "-FullImageSize", path }, out _);
+                if (!string.IsNullOrWhiteSpace(json))
+                {
+                    using var doc = JsonDocument.Parse(json);
+                    if (doc.RootElement.ValueKind == JsonValueKind.Array && doc.RootElement.GetArrayLength() > 0)
+                    {
+                        var (w, h) = ParseSize(Str(doc.RootElement[0], "FullImageSize"));
+                        if (w > 0 && h > 0) result = new Size(w, h);
+                    }
+                }
+            }
+        }
+        catch { /* 讀不到就當沒有，退回黑邊掃描 */ }
+
+        _visibleSizeCache[key] = result;
+        return result;
+    }
+
+    /// <summary>解析 ExifTool 的 "WxH" 字串（如 FullImageSize "9984x6656"）。失敗回 (0, 0)。</summary>
+    private static (int w, int h) ParseSize(string s)
+    {
+        if (string.IsNullOrWhiteSpace(s)) return (0, 0);
+        var parts = s.Split('x', 'X', '×');
+        if (parts.Length != 2) return (0, 0);
+        return int.TryParse(parts[0].Trim(), out var w) && int.TryParse(parts[1].Trim(), out var h)
+            ? (w, h) : (0, 0);
     }
 
     private static string FirstNonEmpty(params string[] vals)
