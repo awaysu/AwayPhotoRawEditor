@@ -27,9 +27,22 @@ src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 
 ### 發佈 / 簽章 / 安裝檔（2026-07 起）
 1. `dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contained true`
-2. 簽 exe：自簽憑證 **CN=Awaysu**（CurrentUser\My，指紋 `D0929910745C87BB7CB48C89F3C354729E337876`，已匯入本機 Root/TrustedPublisher；公鑰在 `installer\AwaysuCodeSigning.cer`）——`Set-AuthenticodeSignature -HashAlgorithm SHA256 -TimestampServer http://timestamp.digicert.com`
+2. 簽 exe：自簽憑證 **CN=AwayTerminal (awaysu), O=AwayTerminal, C=TW**
+   （`CurrentUser\My`，指紋 `7B11D2A5062A07C5BDD440A8C6B34FD3D7E5719D`，2031/7/21 到期；
+   公鑰在 `installer\AwayTerminalCodeSigning.cer`）——
+   `Set-AuthenticodeSignature -HashAlgorithm SHA256 -TimestampServer http://timestamp.digicert.com`
+   - **2026-08 起改用這張**（v1.0.9 是第一個實際簽章發布的版本）。舊文件記的 `CN=Awaysu`
+     指紋 `D092…7876` 只存在於另一台電腦、從未用於發布，`installer\AwaysuCodeSigning.cer` 僅作歷史保留
+   - `Set-AuthenticodeSignature` 會回 `UnknownError` / `UntrustedRoot`——那是**驗證**結果
+     （自簽憑證的根不在信任存放區），不是簽章失敗；用 `Get-AuthenticodeSignature` 確認
+     `SignatureType=Authenticode`、`SignerCertificate` 與 `TimeStamperCertificate` 都在即可
 3. 安裝檔：`ISCC installer\AwayPhotoRawEditor.iss`（Inno Setup 6，裝在 `%LOCALAPPDATA%\Programs\Inno Setup 6\`）→ `installer\Output\AwayPhotoRawEditor-Setup-v{版本}.exe`（每使用者安裝、免 UAC、含 tools/；**.iss 內 MyAppVersion 要跟著版本改**），編譯完成後安裝檔同樣要簽章
-4. GitHub（gh CLI 已登入 awaysu）：程式碼推 `awaysu/AwayPhotoRawEditor`；安裝檔 commit 到 `awaysu/Download`（更新該 repo README 的表格與 SHA256；那個 repo 也放其他程式的安裝檔，只增不刪）
+4. 攜帶版 zip（2026-08 起一併提供）：把 publish 內容 + `tools\` 複製到
+   `installer\Output\AwayPhotoRawEditor-v{版本}\`（**結構與安裝後相同**，`AppPaths.ToolsRoots()`
+   第一個就找 `<exe目錄>\tools`），再用 `ZipFile.CreateFromDirectory(..., includeBaseDirectory: true)` 打包
+5. GitHub（gh CLI 已登入 awaysu）：程式碼推 `awaysu/AwayPhotoRawEditor`；安裝檔 commit 到 `awaysu/Download`（更新該 repo README 的表格與 SHA256；那個 repo 也放其他程式的安裝檔，只增不刪）
+- **⚠️ 順序不能顛倒**：exe 是被打包進安裝檔與 zip 的，所以一定是「簽 exe → ISCC / 打包 zip → 簽安裝檔」。
+  先做安裝檔再簽 exe 完全沒有用。簽章會改變檔案內容，**SHA256 必須在簽完之後才算**
 - 自簽憑證在別人電腦仍會被 SmartScreen 警告（點「其他資訊→仍要執行」），正式消除需 EV / Trusted Signing 憑證
 
 > ⚠️ 重建前先關掉殘留進程，否則 exe 被鎖：
