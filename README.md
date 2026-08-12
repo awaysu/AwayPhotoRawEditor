@@ -19,11 +19,15 @@ A lightweight Windows RAW photo editor with non-destructive editing, color adjus
 
 ## 下載
 
-安裝檔請到 [awaysu/Download](https://github.com/awaysu/Download) 下載
-`AwayPhotoRawEditor-Setup-vX.Y.Z.exe`（自含式，無需另裝 .NET）。
+**https://www.awaysu.cc/software/awayphotoraweditor**
 
-> 安裝檔以自簽憑證簽署，Windows SmartScreen 可能顯示警告，
-> 點「其他資訊 → 仍要執行」即可安裝。安裝為每使用者、不需系統管理員權限。
+提供兩種形式，都是自含式、無需另裝 .NET：
+
+- `AwayPhotoRawEditor-Setup-vX.Y.Z.exe` — 安裝檔（每使用者安裝、不需系統管理員權限）
+- `AwayPhotoRawEditor-vX.Y.Z-portable.zip` — 免安裝，解壓縮即可執行
+
+> 以自簽憑證簽署（`CN=AwayTerminal (awaysu)`），Windows SmartScreen 可能顯示警告，
+> 點「其他資訊 → 仍要執行」即可。
 
 ## 功能
 
@@ -57,8 +61,14 @@ iscc installer\AwayPhotoRawEditor.iss
 
 ## 第三方元件
 
-- [LibRaw](https://www.libraw.org/) 0.22.1 — LGPL 2.1
-- [ExifTool](https://exiftool.org/) 13.59 by Phil Harvey — Perl Artistic License
+- [LibRaw](https://www.libraw.org/) 0.22.1 — LGPL 2.1（以動態連結使用，原始碼一併散布於 `tools/libraw/`）
+- [ExifTool](https://exiftool.org/) 13.59 by Phil Harvey — Perl Artistic License（以獨立行程呼叫）
+
+## 授權 / License
+
+本專案以 [BSD 3-Clause](LICENSE) 授權 — Copyright (c) 2026, Awaysu
+
+上述第三方元件維持各自的授權，不受本授權影響。
 
 ## 作者
 

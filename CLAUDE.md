@@ -4,6 +4,7 @@
 
 深色主題的 Windows 桌面 RAW 相片編輯器（Lightroom / Capture One 類）。非破壞式編輯，所有調整以 XML 存於各資料夾的 `RAW_TEMP` 快取。
 
+- **授權**：**BSD 3-Clause**（`LICENSE`，Copyright (c) 2026, Awaysu；2026-08 補上——在那之前 repo 沒有授權條款，法律上等於保留所有權利，跟 README 的「歡迎自由修改」矛盾）。選 BSD-3 而非 MIT 是因為它的第 2 條明文要求**二進位散布也要在文件/隨附材料保留著作權聲明**，對應「請在你的關於視窗提及來源」；第 3 條擋掉冒用名義背書。內建的 LibRaw(LGPL 2.1，動態連結+附原始碼) 與 ExifTool(Artistic，獨立行程) 維持各自授權，不影響本專案採用 BSD。
 - **技術**：C# / .NET 8（`net8.0-windows`）/ WinForms / x64 / `unsafe`
 - **UI**：深色、全自繪控制項，字體 Microsoft JhengHei UI
 - **DPI**：見下方「高 DPI 縮放」——**所有版面數字都是 96 DPI 設計值，一律經過 `Ui.S()` / `Ui.Place()`**
@@ -40,7 +41,9 @@ src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 4. 攜帶版 zip（2026-08 起一併提供）：把 publish 內容 + `tools\` 複製到
    `installer\Output\AwayPhotoRawEditor-v{版本}\`（**結構與安裝後相同**，`AppPaths.ToolsRoots()`
    第一個就找 `<exe目錄>\tools`），再用 `ZipFile.CreateFromDirectory(..., includeBaseDirectory: true)` 打包
-5. GitHub（gh CLI 已登入 awaysu）：程式碼推 `awaysu/AwayPhotoRawEditor`；安裝檔 commit 到 `awaysu/Download`（更新該 repo README 的表格與 SHA256；那個 repo 也放其他程式的安裝檔，只增不刪）
+5. 發布：程式碼推 `awaysu/AwayPhotoRawEditor`（gh CLI 已登入 awaysu）；安裝檔與 zip 放到
+   **下載網頁 https://www.awaysu.cc/software/awayphotoraweditor**（關於視窗也連到這裡）
+   - ~~舊流程是 commit 到 `awaysu/Download`~~ —— **2026-08 起改用自己的下載網頁，那個 repo 不再使用**
 - **⚠️ 順序不能顛倒**：exe 是被打包進安裝檔與 zip 的，所以一定是「簽 exe → ISCC / 打包 zip → 簽安裝檔」。
   先做安裝檔再簽 exe 完全沒有用。簽章會改變檔案內容，**SHA256 必須在簽完之後才算**
 - 自簽憑證在別人電腦仍會被 SmartScreen 警告（點「其他資訊→仍要執行」），正式消除需 EV / Trusted Signing 憑證
