@@ -151,6 +151,26 @@ public static class ExifReader
         catch { return false; }
     }
 
+    private static string? _exifToolVersion;
+
+    /// <summary>內建 exiftool.exe 的版本（如 "13.59"）。讀不到回空字串。
+    /// 關於視窗用它顯示，避免升級工具後版本號寫死在字串裡變成過期資訊。</summary>
+    public static string ExifToolVersion
+    {
+        get
+        {
+            if (_exifToolVersion is not null) return _exifToolVersion;
+            _exifToolVersion = "";
+            try
+            {
+                var exe = AppPaths.FindExifTool();
+                if (exe is not null) _exifToolVersion = RunExifTool(exe, new[] { "-ver" }, out _).Trim();
+            }
+            catch { /* 讀不到就不顯示版本 */ }
+            return _exifToolVersion;
+        }
+    }
+
     private static string RunExifTool(string exe, string[] args, out string stderr)
     {
         var psi = new ProcessStartInfo(exe)

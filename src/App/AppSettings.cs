@@ -47,7 +47,7 @@ public sealed class FontSizes
     /// <summary>區塊標題（粗體）：基本調整／色彩／細節／直方圖／照片資訊／工具／風格檔種類。</summary>
     public int SectionTitle { get; set; } = 16;
     /// <summary>關於視窗內文。</summary>
-    public int AboutBody { get; set; } = 13;
+    public int AboutBody { get; set; } = 16;
     /// <summary>選擇資料夾清單的 📁 / 💽 圖示。</summary>
     public int FolderGlyph { get; set; } = 15;
     /// <summary>小圖示按鈕（白平衡滴管等）。</summary>
@@ -57,7 +57,7 @@ public sealed class FontSizes
     /// <summary>對話框標題（粗體）：匯出照片／設定。</summary>
     public int DialogTitle { get; set; } = 17;
     /// <summary>關於視窗標題（粗體）。</summary>
-    public int AboutTitle { get; set; } = 19;
+    public int AboutTitle { get; set; } = 22;
     /// <summary>左上 logo「AwayPhotoRawEditor」（粗體）。</summary>
     public int Logo { get; set; } = 22;
     /// <summary>左上漢堡選單 ☰。</summary>

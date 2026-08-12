@@ -107,6 +107,16 @@ public static class L
         ["介面風格"] = new("Interface style", "インターフェーススタイル", "인터페이스 스타일", "界面风格", "Oberflächenstil", "Style d'interface", "Estilo de interfaz"),
         ["語言"] = new("Language", "言語", "언어", "语言", "Sprache", "Langue", "Idioma"),
         ["介面大小"] = new("UI size", "UI サイズ", "UI 크기", "界面大小", "UI-Größe", "Taille de l'UI", "Tamaño de UI"),
+        // 帶冒號當獨立 key，避免與「常用位置」的「下載」（下載資料夾）混淆
+        ["下載:"] = new("Download:", "ダウンロード:", "다운로드:", "下载:", "Download:", "Téléchargement :", "Descarga:"),
+        ["歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。"] = new(
+            "You are welcome to modify this into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.",
+            "自由に改変してご自身のバージョンを作って構いません。ただし「バージョン情報」に出典（AwayPhotoRawEditor / Awaysu）を記載してください。",
+            "자유롭게 수정해 자신의 버전을 만들어도 됩니다. 다만 정보 창에 출처(AwayPhotoRawEditor / Awaysu)를 밝혀 주세요.",
+            "欢迎自由修改成你自己的版本，只希望你能在你的“关于”窗口中提及来源是这里（AwayPhotoRawEditor / Awaysu）。",
+            "Sie dürfen dies frei zu einer eigenen Version ändern — ich bitte nur darum, die Quelle (AwayPhotoRawEditor / Awaysu) in Ihrem Info-Dialog zu nennen.",
+            "Vous pouvez librement en faire votre propre version — je demande seulement de créditer la source (AwayPhotoRawEditor / Awaysu) dans votre fenêtre À propos.",
+            "Puedes modificarlo libremente para crear tu propia versión — solo te pido que menciones la fuente (AwayPhotoRawEditor / Awaysu) en tu ventana Acerca de."),
         ["自動（依螢幕大小）"] = new(
             "Automatic (fit screen)",
             "自動（画面に合わせる）",

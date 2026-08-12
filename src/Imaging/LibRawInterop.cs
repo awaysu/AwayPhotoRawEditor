@@ -89,6 +89,9 @@ public static class LibRawInterop
     private static extern void libraw_close(IntPtr lr);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern IntPtr libraw_version();
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void libraw_set_output_bps(IntPtr lr, int value);
 
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
@@ -107,6 +110,28 @@ public static class LibRawInterop
     private const int HeaderSize = 16;
     private const int LIBRAW_IMAGE_JPEG = 1;
     private const int LIBRAW_IMAGE_BITMAP = 2;
+
+    private static string? _version;
+
+    /// <summary>載入的 libraw.dll 版本（如 "0.22.1"）。讀不到回空字串。
+    /// 關於視窗用它顯示，避免升級 DLL 後版本號寫死在字串裡變成過期資訊。</summary>
+    public static string Version
+    {
+        get
+        {
+            if (_version is not null) return _version;
+            try
+            {
+                var p = Available ? libraw_version() : IntPtr.Zero;
+                var s = p == IntPtr.Zero ? "" : Marshal.PtrToStringAnsi(p) ?? "";
+                // libraw 回的是 "0.22.1-Release"，顯示上不需要那個後綴
+                int dash = s.IndexOf("-Release", StringComparison.OrdinalIgnoreCase);
+                _version = dash > 0 ? s[..dash] : s;
+            }
+            catch { _version = ""; }
+            return _version;
+        }
+    }
 
     // ---- Public decode API ----------------------------------------------
 

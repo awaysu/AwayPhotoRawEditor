@@ -134,11 +134,16 @@ public static class Ui
     /// 版面是以 100% 螢幕設計的：像編輯風格檔 598×732 在 1920×1080 上只佔 68% 高，
     /// 但同一台螢幕開 150% 後需要 1098px，比工作區（約 1020px）還高，視窗會被切掉。
     /// 這裡先夾住尺寸，配合視窗的 <c>AutoScroll</c> 讓超出的部分可以捲動。</summary>
-    public static Size FitWorkArea(int designW, int designH)
+    public static Size FitWorkArea(int designW, int designH) =>
+        FitWorkAreaPx(S(designW), S(designH));
+
+    /// <summary>同 <see cref="FitWorkArea"/>，但輸入已經是實際像素
+    /// （用於高度由量測文字算出來、不是設計常數的視窗）。</summary>
+    public static Size FitWorkAreaPx(int wPx, int hPx)
     {
         var wa = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
         int maxW = Math.Max(320, wa.Width - S(24));    // 留給左右外框
         int maxH = Math.Max(240, wa.Height - S(48));   // 留給標題列與外框
-        return new Size(Math.Min(S(designW), maxW), Math.Min(S(designH), maxH));
+        return new Size(Math.Min(wPx, maxW), Math.Min(hPx, maxH));
     }
 }
