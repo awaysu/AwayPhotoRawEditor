@@ -24,13 +24,13 @@ public sealed class PresetPanel : SectionPanel
     public PresetPanel() : base("風格檔種類")
     {
         ManualLayout = true;
-        Size = new Size(310, 106);
+        Size = Ui.Sz(310, 106);
 
         _combo = UiFactory.Combo();
-        _combo.SetBounds(12, 6, 286, 30);
+        Ui.Place(_combo, 12, 6, 286, 30);
 
         var apply = new FlatButton { Text = "套用該風格檔", Primary = true };
-        apply.SetBounds(12, 44, 286, 26);
+        Ui.Place(apply, 12, 44, 286, 26);
         apply.Click += (_, _) => { if (_combo.SelectedItem is PresetChoice choice) ApplyPreset?.Invoke(choice.Name); };
 
         ContentArea.Controls.AddRange(new Control[] { _combo, apply });

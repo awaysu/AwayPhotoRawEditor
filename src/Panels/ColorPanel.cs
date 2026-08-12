@@ -29,17 +29,17 @@ public sealed class ColorPanel : AdjustPanelBase
 
     public ColorPanel() : base("色彩")
     {
-        Size = new Size(310, 210);
+        Size = Ui.Sz(310, 210);
 
         _wbLabel = UiFactory.Label("白平衡選擇器", Theme.TextDim);
-        _wbLabel.SetBounds(12, 4, 104, 26);
+        Ui.Place(_wbLabel, 12, 4, 104, 26);
 
         _picker = new IconButton { Glyph = "🖉", Checkable = true };
-        _picker.SetBounds(118, 2, 30, 30);
+        Ui.Place(_picker, 118, 2, 30, 30);
         _picker.CheckedChanged += (_, _) => WbPickerToggled?.Invoke(_picker.Checked);
 
         _asShot = new FlatButton { Text = "拍攝時設定" };
-        _asShot.SetBounds(310 - 12 - 100, 2, 100, 30);
+        Ui.Place(_asShot, 310 - 12 - 100, 2, 100, 30);
         _asShot.Click += (_, _) => UseAsShotWb?.Invoke();
 
         ContentArea.Controls.AddRange(new Control[] { _wbLabel, _picker, _asShot });
@@ -71,6 +71,25 @@ public sealed class ColorPanel : AdjustPanelBase
             _temp.Bipolar = true; _temp.WheelStep = 1;
         }
         _temp.Invalidate();
+    }
+
+    /// <summary>白平衡列改成量文字寬度再排：標籤文字會隨語言（L.Apply）與使用者調整的字級變動，
+    /// 寫死 104px 在大字級或長翻譯下會把「白平衡選擇器」的最後一個字切掉。
+    /// 在 OnHandleCreated 做，此時翻譯與字型都已確定。</summary>
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        LayoutWhiteBalanceRow();
+    }
+
+    private void LayoutWhiteBalanceRow()
+    {
+        if (!_wbLabel.Visible) return;
+        int textW = TextRenderer.MeasureText(_wbLabel.Text, _wbLabel.Font).Width + Ui.S(4);
+        _wbLabel.Width = Math.Max(Ui.S(60), textW);
+        // 滴管接在標籤右側，但不能疊到右側的「拍攝時設定」
+        int left = _wbLabel.Right + Ui.S(8);
+        _picker.Left = Math.Min(left, _asShot.Left - _picker.Width - Ui.S(8));
     }
 
     public void SetPickerChecked(bool value) => _picker.Checked = value;

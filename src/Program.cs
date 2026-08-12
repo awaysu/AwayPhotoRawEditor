@@ -11,7 +11,16 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
-        AppSettings.Load();
+        // DPI 必須最先決定：Theme 的靜態字型與所有版面常數都依賴 Ui.Scale，
+        // 而 SetHighDpiMode 也必須在建立任何視窗之前呼叫。
+        ApplicationConfiguration.Initialize(); // high-DPI + visual styles from csproj
+        AppSettings.Load();                    // 只讀 XML，不碰 Theme/UI，可以放在 Ui.Init 之前
+        Ui.Init(AppSettings.Current.UiScalePercent);
+        if (float.TryParse(Environment.GetEnvironmentVariable("AWPR_UI_SCALE"),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var forcedScale))
+            Ui.ForceScale(forcedScale);   // 診斷：不改系統設定就能截出各種縮放的畫面
+
         var language = AppSettings.Current.UiLanguage;
         if (Enum.TryParse<AppLanguage>(Environment.GetEnvironmentVariable("AWPR_UI_LANGUAGE"), true, out var diagnosticLanguage))
         {
@@ -43,8 +52,6 @@ internal static class Program
             return;
         }
 
-        ApplicationConfiguration.Initialize(); // high-DPI + visual styles from csproj
-
         // Main window screenshot: --shot <folder> <outPng> [waitMs] [WxH]
         if (args.Length >= 3 && args[0] == "--shot")
         {
@@ -55,7 +62,9 @@ internal static class Program
                 mf.WindowState = FormWindowState.Normal;
                 mf.StartPosition = FormStartPosition.Manual;
                 mf.Location = new System.Drawing.Point(-4000, -4000);
-                var size = new System.Drawing.Size(1500, 1040);
+                // 預設尺寸是 96 DPI 設計值（要縮放才裝得下同樣的版面）；
+                // 明確指定的 WxH 則視為實際像素，方便測矮視窗捲軸。
+                var size = Ui.Sz(1500, 1040);
                 if (args.Length >= 5)
                 {
                     var parts = args[4].Split('x', 'X');
@@ -96,6 +105,7 @@ internal static class Program
                 "gradoverlay" => BuildGradientOverlayProbe(),
                 "presets" => new Forms.PresetEditorForm(),
                 "about" => new Forms.AboutForm(),
+                "fonts" => new Forms.FontSizeForm(AppSettings.Current.FontSizes),
                 _ => new Forms.SettingsForm()
             };
             dlg.StartPosition = FormStartPosition.Manual;
@@ -150,13 +160,13 @@ internal static class Program
         adj.Gradients.Add(new Models.LinearGradient { Exposure = -1.2 });
         adj.ActiveGradientIndex = 0;
         var tools = new Panels.ToolsPanel();
-        tools.Location = new System.Drawing.Point(12, 12);
+        tools.Location = Ui.Pt(12, 12);
         tools.Bind(adj);
         tools.SelectTool(Models.ToolMode.Gradient);
         var f = new Form
         {
             FormBorderStyle = FormBorderStyle.FixedDialog,
-            ClientSize = new System.Drawing.Size(tools.Width + 24, tools.Height + 24),
+            ClientSize = new System.Drawing.Size(tools.Width + Ui.S(24), tools.Height + Ui.S(24)),
             BackColor = Controls.Theme.WindowBg, Text = "漸層 ribbon"
         };
         f.Controls.Add(tools);
@@ -178,7 +188,7 @@ internal static class Program
         var f = new Form
         {
             FormBorderStyle = FormBorderStyle.FixedDialog,
-            ClientSize = new System.Drawing.Size(760, 520),
+            ClientSize = Ui.Sz(760, 520),
             BackColor = Controls.Theme.WindowBg, Text = "漸層 overlay"
         };
         f.Controls.Add(viewer);

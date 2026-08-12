@@ -14,7 +14,7 @@ namespace AwayPhotoRawEditor.Controls;
 /// </summary>
 public sealed class DarkScrollHost : Panel, IMessageFilter
 {
-    private const int BarW = 10;
+    private static int BarW => Ui.S(10);   // 96 DPI 設計值
     private const int WM_MOUSEWHEEL = 0x020A;
 
     [DllImport("user32.dll")] private static extern IntPtr WindowFromPoint(Point pt);
@@ -72,11 +72,12 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
             _scrollY = _scrollEnabled ? Math.Clamp(_scrollY, 0, MaxScroll) : 0;
 
             bool need = _scrollEnabled && MaxScroll > 0;
-            int contentW = ClientSize.Width - (need ? BarW : 0);
+            int barW = BarW;
+            int contentW = ClientSize.Width - (need ? barW : 0);
             _content.SetBounds(0, -_scrollY, contentW, _contentHeight);
             if (need)
             {
-                _bar.SetBounds(ClientSize.Width - BarW, 0, BarW, ClientSize.Height);
+                _bar.SetBounds(ClientSize.Width - barW, 0, barW, ClientSize.Height);
                 _bar.Invalidate();
             }
             _bar.Visible = need;
@@ -97,7 +98,7 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
-        ScrollBy(-e.Delta);
+        ScrollBy(Ui.S(-e.Delta));   // 捲動量隨縮放，手感一致
         base.OnMouseWheel(e);
     }
 
@@ -139,7 +140,7 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
                 return false;                                               // 焦點輸入控制項維持原生行為
         }
         int delta = unchecked((short)((long)m.WParam >> 16));
-        ScrollBy(-delta);
+        ScrollBy(Ui.S(-delta));
         return true;
     }
 
@@ -164,9 +165,9 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
         {
             int max = _host.MaxScroll;
             if (max <= 0 || Height <= 0 || _host._contentHeight <= 0) return Rectangle.Empty;
-            int th = Math.Max(30, (int)(Height * (Height / (float)_host._contentHeight)));
+            int th = Math.Max(Ui.S(30), (int)(Height * (Height / (float)_host._contentHeight)));
             int ty = (int)(_host._scrollY / (float)max * (Height - th));
-            return new Rectangle(2, ty, Width - 4, th);
+            return new Rectangle(Ui.S(2), ty, Width - Ui.S(4), th);
         }
 
         private void ScrollToThumbY(int thumbY)
@@ -198,7 +199,7 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            _host.ScrollBy(-e.Delta);
+            _host.ScrollBy(Ui.S(-e.Delta));
             base.OnMouseWheel(e);
         }
 
@@ -209,7 +210,7 @@ public sealed class DarkScrollHost : Panel, IMessageFilter
             g.Clear(BackColor);
             var tr = ThumbRect();
             if (!tr.IsEmpty)
-                PaintHelpers.FillRounded(g, tr, 3, _dragging || _hover ? Theme.SliderFill : Theme.BorderLight);
+                PaintHelpers.FillRounded(g, tr, Ui.S(3f), _dragging || _hover ? Theme.SliderFill : Theme.BorderLight);
         }
     }
 }

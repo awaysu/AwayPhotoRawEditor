@@ -1,4 +1,4 @@
-using System.Drawing;
+using AwayPhotoRawEditor.Controls;
 
 namespace AwayPhotoRawEditor.Panels;
 
@@ -7,7 +7,7 @@ public sealed class BasicAdjustPanel : AdjustPanelBase
 {
     public BasicAdjustPanel() : base("基本調整")
     {
-        Size = new Size(310, 245);
+        Size = Ui.Sz(310, 245);
         const int x = 12, w = 286, h = 34, gap = 35, y = 4;
         AddSliderAt(x, y + 0 * gap, w, h, "曝光", -2, 2, 0, "0.00", true, a => a.Exposure, (a, v) => a.Exposure = v, 0.05);
         AddSliderAt(x, y + 1 * gap, w, h, "對比", -100, 100, 0, "0", true, a => a.Contrast, (a, v) => a.Contrast = v, 1);

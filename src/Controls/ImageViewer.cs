@@ -43,7 +43,10 @@ public sealed class ImageViewer : Control
     private PointF _offsetStart;
     private RectangleF _cropStart;
     private bool _dragMoved;
-    private const int PanThreshold = 4;   // px before a left-drag counts as a pan (vs a click)
+    // 以下都是「螢幕座標」的操作提示尺寸（手把、判定半徑、線寬），隨 DPI 縮放。
+    // 影像幾何（_scale / _offset / rpx / rangePx）一律不縮放——100% 檢視必須是真實像素。
+    private static int PanThreshold => Ui.S(4);   // px before a left-drag counts as a pan (vs a click)
+    private static float HandleHitRadius => Ui.S(12f);   // 漸層手把的點選判定半徑
 
     public ToolMode Tool { get; set; } = ToolMode.None;
     public HealMode HealMode { get; set; } = HealMode.Clone;
@@ -350,7 +353,7 @@ public sealed class ImageViewer : Control
     private bool BeginCropDrag(Point p)
     {
         var r = CropCtrlRect();
-        const float h = 10;
+        float h = Ui.S(10f);   // 邊 / 角的抓取判定範圍
         bool L = Math.Abs(p.X - r.Left) < h, R = Math.Abs(p.X - r.Right) < h;
         bool T = Math.Abs(p.Y - r.Top) < h, B = Math.Abs(p.Y - r.Bottom) < h;
         bool inX = p.X > r.Left - h && p.X < r.Right + h;
@@ -528,7 +531,7 @@ public sealed class ImageViewer : Control
 
     // ---- gradient interaction -------------------------------------------
 
-    private const float RotHandleDist = 64f;   // blue rotate handle: fixed screen offset, to the right of白點
+    private static float RotHandleDist => Ui.S(64f);   // blue rotate handle: fixed screen offset, to the right of白點
 
     private bool BeginGradientDrag(Point p)
     {
@@ -541,8 +544,8 @@ public sealed class ImageViewer : Control
             var rangePt = new PointF(center.X + (float)(ux * g.Range * _image!.Height * _scale),
                                      center.Y + (float)(uy * g.Range * _image.Height * _scale));
             var rotatePt = RotateHandlePos(center, g);
-            Drag d = Dist(p, rotatePt) < 12 ? Drag.GradRotate :
-                     Dist(p, rangePt) < 12 ? Drag.GradRange : Drag.None;
+            Drag d = Dist(p, rotatePt) < HandleHitRadius ? Drag.GradRotate :
+                     Dist(p, rangePt) < HandleHitRadius ? Drag.GradRange : Drag.None;
             if (d != Drag.None) { _drag = d; EditBegin?.Invoke(this, EventArgs.Empty); return true; }
         }
 
@@ -563,7 +566,7 @@ public sealed class ImageViewer : Control
     private int GradientAtPoint(Point p)
     {
         for (int i = 0; i < _adj!.Gradients.Count; i++)
-            if (Dist(p, NormToCtrl(_adj.Gradients[i].CenterX, _adj.Gradients[i].CenterY)) < 12) return i;
+            if (Dist(p, NormToCtrl(_adj.Gradients[i].CenterX, _adj.Gradients[i].CenterY)) < HandleHitRadius) return i;
         return -1;
     }
 
@@ -608,8 +611,8 @@ public sealed class ImageViewer : Control
         {
             var s = _adj.HealSpots[i];
             float rpx = (float)(s.RadiusNorm * Math.Max(_image!.Width, _image.Height) * _scale);
-            if (Dist(p, NormToCtrl(s.TargetX, s.TargetY)) < Math.Max(8, rpx)) { _drag = Drag.HealTarget; _dragSpot = _activeSpot = i; EditBegin?.Invoke(this, EventArgs.Empty); return true; }
-            if (!s.UseInpaint && Dist(p, NormToCtrl(s.SourceX, s.SourceY)) < Math.Max(8, rpx)) { _drag = Drag.HealSource; _dragSpot = _activeSpot = i; EditBegin?.Invoke(this, EventArgs.Empty); return true; }
+            if (Dist(p, NormToCtrl(s.TargetX, s.TargetY)) < Math.Max(Ui.S(8f), rpx)) { _drag = Drag.HealTarget; _dragSpot = _activeSpot = i; EditBegin?.Invoke(this, EventArgs.Empty); return true; }
+            if (!s.UseInpaint && Dist(p, NormToCtrl(s.SourceX, s.SourceY)) < Math.Max(Ui.S(8f), rpx)) { _drag = Drag.HealSource; _dragSpot = _activeSpot = i; EditBegin?.Invoke(this, EventArgs.Empty); return true; }
         }
         // add new spot
         var (nx, ny) = CtrlToNorm(p);
@@ -634,7 +637,7 @@ public sealed class ImageViewer : Control
         {
             var s = _adj.HealSpots[i];
             float rpx = (float)(s.RadiusNorm * Math.Max(_image!.Width, _image.Height) * _scale);
-            if (Dist(p, NormToCtrl(s.TargetX, s.TargetY)) < Math.Max(8, rpx))
+            if (Dist(p, NormToCtrl(s.TargetX, s.TargetY)) < Math.Max(Ui.S(8f), rpx))
             {
                 EditBegin?.Invoke(this, EventArgs.Empty);
                 _adj.HealSpots.RemoveAt(i);
@@ -674,7 +677,7 @@ public sealed class ImageViewer : Control
         }
         if (WhiteBalancePickerActive)
             TextRenderer.DrawText(g, L.T("點擊中性灰色區域設定白平衡"), Theme.Normal,
-                new Rectangle(0, 8, Width, 20), Theme.Text, TextFormatFlags.HorizontalCenter);
+                new Rectangle(0, Ui.S(8), Width, Ui.S(20)), Theme.Text, TextFormatFlags.HorizontalCenter);
     }
 
     private void DrawCropOverlay(Graphics g)
@@ -688,10 +691,10 @@ public sealed class ImageViewer : Control
             g.FillRegion(dim, region);
             region.Dispose();
         }
-        using var pen = new Pen(Color.White, 1.5f);
+        using var pen = new Pen(Color.White, Ui.S(1.5f));
         g.DrawRectangle(pen, r.X, r.Y, r.Width, r.Height);
         // thirds
-        using var thin = new Pen(Color.FromArgb(120, 255, 255, 255));
+        using var thin = new Pen(Color.FromArgb(120, 255, 255, 255), Ui.SMin(1));
         for (int i = 1; i < 3; i++)
         {
             float x = r.X + r.Width * i / 3, y = r.Y + r.Height * i / 3;
@@ -704,7 +707,7 @@ public sealed class ImageViewer : Control
             new PointF(r.Left, r.Bottom), new PointF(r.Right, r.Bottom),
             new PointF(r.X + r.Width / 2, r.Top), new PointF(r.X + r.Width / 2, r.Bottom),
             new PointF(r.Left, r.Y + r.Height / 2), new PointF(r.Right, r.Y + r.Height / 2) })
-            g.FillRectangle(hb, pt.X - 3, pt.Y - 3, 6, 6);
+            g.FillRectangle(hb, pt.X - Ui.S(3f), pt.Y - Ui.S(3f), Ui.S(6f), Ui.S(6f));
     }
 
     private void DrawGradientOverlay(Graphics g)
@@ -725,35 +728,37 @@ public sealed class ImageViewer : Control
         var v = new PointF((float)-uy, (float)ux);   // gradient line direction (perpendicular to axis)
         PointF P(double t) => new((float)(center.X + v.X * t), (float)(center.Y + v.Y * t));
 
-        using (var pen = new Pen(Color.FromArgb(isActive ? 230 : 100, 255, 220, 60), isActive ? 1.6f : 1.2f))
+        using (var pen = new Pen(Color.FromArgb(isActive ? 230 : 100, 255, 220, 60), Ui.S(isActive ? 1.6f : 1.2f)))
             g.DrawLine(pen, P(-len), P(len));
 
+        float hr = Ui.S(5f), hd = Ui.S(10f);   // 手把半徑 / 直徑
         if (!isActive)
         {
             // A small white dot so an inactive gradient can be clicked to select it.
             using var wb = new SolidBrush(Color.FromArgb(200, 255, 255, 255));
-            g.FillEllipse(wb, center.X - 5, center.Y - 5, 10, 10);
+            g.FillEllipse(wb, center.X - hr, center.Y - hr, hd, hd);
             return;
         }
 
         // Yellow range band (dashed edges + a yellow handle marking the falloff distance).
         double rangePx = gr.Range * _image!.Height * _scale;
-        using (var pen = new Pen(Color.FromArgb(120, 255, 220, 60), 1f) { DashStyle = DashStyle.Dash })
+        using (var pen = new Pen(Color.FromArgb(120, 255, 220, 60), Ui.SMin(1)) { DashStyle = DashStyle.Dash })
         {
             var c1 = new PointF(center.X + (float)(ux * rangePx), center.Y + (float)(uy * rangePx));
             var c2 = new PointF(center.X - (float)(ux * rangePx), center.Y - (float)(uy * rangePx));
             g.DrawLine(pen, c1.X + v.X * -len, c1.Y + v.Y * -len, c1.X + v.X * len, c1.Y + v.Y * len);
             g.DrawLine(pen, c2.X + v.X * -len, c2.Y + v.Y * -len, c2.X + v.X * len, c2.Y + v.Y * len);
             using var hb = new SolidBrush(Color.FromArgb(255, 255, 220, 60));
-            g.FillEllipse(hb, c1.X - 5, c1.Y - 5, 10, 10);
+            g.FillEllipse(hb, c1.X - hr, c1.Y - hr, hd, hd);
         }
         // Blue rotate handle, to the right of白點.
         var rot = RotateHandlePos(center, gr);
-        using (var pen = new Pen(Color.FromArgb(200, 120, 200, 255), 1f)) g.DrawLine(pen, center, rot);
-        using (var hb = new SolidBrush(Color.FromArgb(255, 120, 200, 255))) g.FillEllipse(hb, rot.X - 5, rot.Y - 5, 10, 10);
+        using (var pen = new Pen(Color.FromArgb(200, 120, 200, 255), Ui.SMin(1))) g.DrawLine(pen, center, rot);
+        using (var hb = new SolidBrush(Color.FromArgb(255, 120, 200, 255))) g.FillEllipse(hb, rot.X - hr, rot.Y - hr, hd, hd);
         // White position handle on top.
+        float wr = Ui.S(6f), wd = Ui.S(12f);
         using (var hb = new SolidBrush(Color.White))
-            g.FillEllipse(hb, center.X - 6, center.Y - 6, 12, 12);
+            g.FillEllipse(hb, center.X - wr, center.Y - wr, wd, wd);
     }
 
     private void DrawHealOverlay(Graphics g)
@@ -762,12 +767,12 @@ public sealed class ImageViewer : Control
         {
             float rpx = (float)(s.RadiusNorm * Math.Max(_image!.Width, _image.Height) * _scale);
             var tc = NormToCtrl(s.TargetX, s.TargetY);
-            using (var pen = new Pen(Color.FromArgb(230, 90, 200, 120), 1.6f))
+            using (var pen = new Pen(Color.FromArgb(230, 90, 200, 120), Ui.S(1.6f)))
                 g.DrawEllipse(pen, tc.X - rpx, tc.Y - rpx, rpx * 2, rpx * 2);
             if (!s.UseInpaint)
             {
                 var sc = NormToCtrl(s.SourceX, s.SourceY);
-                using var pen = new Pen(Color.FromArgb(200, 120, 180, 240), 1.4f) { DashStyle = DashStyle.Dash };
+                using var pen = new Pen(Color.FromArgb(200, 120, 180, 240), Ui.S(1.4f)) { DashStyle = DashStyle.Dash };
                 g.DrawEllipse(pen, sc.X - rpx, sc.Y - rpx, rpx * 2, rpx * 2);
                 g.DrawLine(pen, sc, tc);
             }

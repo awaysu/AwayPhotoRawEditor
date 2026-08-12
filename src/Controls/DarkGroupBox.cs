@@ -31,14 +31,14 @@ public sealed class DarkGroupBox : GroupBox
         float top = title.Length > 0 ? ts.Height / 2f : 0.5f;
 
         var r = new RectangleF(0.5f, top, Width - 1, Height - top - 1);
-        PaintHelpers.FillRounded(g, r, 8f, Theme.PanelBg);
-        PaintHelpers.DrawRounded(g, r, 8f, Theme.Border);
+        PaintHelpers.FillRounded(g, r, Ui.S(8f), Theme.PanelBg);
+        PaintHelpers.DrawRounded(g, r, Ui.S(8f), Theme.Border);
 
         if (title.Length > 0)
         {
-            const int tx = 12;
+            int tx = Ui.S(12);
             using (var b = new SolidBrush(Theme.PanelBg))   // notch out the border behind the caption
-                g.FillRectangle(b, tx - 4, 0, ts.Width + 8, ts.Height);
+                g.FillRectangle(b, tx - Ui.S(4), 0, ts.Width + Ui.S(8), ts.Height);
             TextRenderer.DrawText(g, title, titleFont, new Point(tx, 0), Theme.Text, TextFormatFlags.NoPadding);
         }
     }

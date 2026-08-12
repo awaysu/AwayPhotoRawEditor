@@ -29,7 +29,7 @@ public abstract class AdjustPanelBase : SectionPanel
         var s = new AdjustmentSlider
         {
             Label = label, Min = min, Max = max, DefaultValue = def, Format = fmt,
-            Bipolar = bipolar, WheelStep = wheelStep, Height = 36
+            Bipolar = bipolar, WheelStep = wheelStep, Height = Ui.S(36)
         };
         s.SetValueSilent(def);
         s.EditBegin += (_, _) => EditBegin?.Invoke();
@@ -38,13 +38,14 @@ public abstract class AdjustPanelBase : SectionPanel
         return s;
     }
 
-    /// <summary>Create a wired slider and place it into ContentArea at the given bounds.</summary>
+    /// <summary>Create a wired slider and place it into ContentArea at the given bounds.
+    /// x/y/w/h 是 96 DPI 設計座標，這裡統一乘上 Ui.Scale。</summary>
     protected AdjustmentSlider AddSliderAt(int x, int y, int w, int h, string label,
         double min, double max, double def, string fmt, bool bipolar,
         Func<ImageAdjustments, double> get, Action<ImageAdjustments, double> set, double wheelStep = double.NaN)
     {
         var s = CreateSlider(label, min, max, def, fmt, bipolar, get, set, wheelStep);
-        s.SetBounds(x, y, w, h);
+        Ui.Place(s, x, y, w, h);
         ContentArea.Controls.Add(s);
         return s;
     }

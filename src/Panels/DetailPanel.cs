@@ -1,4 +1,4 @@
-using System.Drawing;
+using AwayPhotoRawEditor.Controls;
 
 namespace AwayPhotoRawEditor.Panels;
 
@@ -7,7 +7,7 @@ public sealed class DetailPanel : AdjustPanelBase
 {
     public DetailPanel() : base("細節")
     {
-        Size = new Size(310, 145);
+        Size = Ui.Sz(310, 145);
         AddSliderAt(12, 4, 286, 34, "銳利度", -100, 100, 0, "0", true, a => a.Sharpening, (a, v) => a.Sharpening = v, 1);
         AddSliderAt(12, 39, 286, 34, "暗角", -100, 100, 0, "0", true, a => a.Vignette, (a, v) => a.Vignette = v, 1);
         AddSliderAt(12, 74, 286, 34, "降噪", 0, 100, 0, "0", false, a => a.NoiseReduction, (a, v) => a.NoiseReduction = v, 1);

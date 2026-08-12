@@ -11,8 +11,9 @@ namespace AwayPhotoRawEditor.Controls;
 /// </summary>
 public class SectionPanel : Control
 {
-    public const int HeaderH = 30;
-    private const int Pad = 10;
+    // 96 DPI 設計值 → 實際像素（只在本檔內使用）。
+    public static int HeaderH => Ui.S(30);
+    private static int Pad => Ui.S(10);
 
     private readonly Panel _content;
     private bool _collapsed;
@@ -44,7 +45,7 @@ public class SectionPanel : Control
         Dock = DockStyle.Top;
         _content = new Panel { BackColor = Theme.PanelBg, Left = 0, Top = HeaderH };
         Controls.Add(_content);
-        Height = HeaderH + 6;
+        Height = HeaderH + Ui.S(6);
     }
 
     /// <summary>Add a child stacked below the previous one (auto-stack mode).</summary>
@@ -76,21 +77,21 @@ public class SectionPanel : Control
                 return;
             }
 
-            int y = 4;
-            int w = Math.Max(10, Width - 2 * Pad);
+            int y = Ui.S(4);
+            int w = Math.Max(Ui.S(10), Width - 2 * Pad);
             foreach (Control c in _content.Controls)
             {
-                int gap = c.Tag is int g ? g : 0;
+                int gap = c.Tag is int g ? Ui.S(g) : 0;   // AddContent 的 extraTopGap 也是設計值
                 y += gap;
                 c.Left = Pad;
                 c.Top = y;
                 c.Width = w;
-                y += c.Height + 6;
+                y += c.Height + Ui.S(6);
             }
             _content.Width = Width;
-            _content.Height = y + 2;
+            _content.Height = y + Ui.S(2);
             _content.Visible = !_collapsed;
-            Height = HeaderH + (_collapsed ? 4 : _content.Height);
+            Height = HeaderH + (_collapsed ? Ui.S(4) : _content.Height);
         }
         finally { _inRelayout = false; }
     }
@@ -126,16 +127,24 @@ public class SectionPanel : Control
 
         if (!ManualLayout)
         {
-            int cx = Width - 20, cy = HeaderH / 2;
-            using var pen = new Pen(Theme.TextDim, 1.6f);
-            if (_collapsed) { g.DrawLine(pen, cx - 3, cy - 3, cx + 2, cy); g.DrawLine(pen, cx + 2, cy, cx - 3, cy + 3); }
-            else { g.DrawLine(pen, cx - 4, cy - 2, cx, cy + 3); g.DrawLine(pen, cx, cy + 3, cx + 4, cy - 2); }
+            float cx = Width - Ui.S(20f), cy = HeaderH / 2f;
+            using var pen = new Pen(Theme.TextDim, Ui.S(1.6f));
+            if (_collapsed)
+            {
+                g.DrawLine(pen, cx - Ui.S(3f), cy - Ui.S(3f), cx + Ui.S(2f), cy);
+                g.DrawLine(pen, cx + Ui.S(2f), cy, cx - Ui.S(3f), cy + Ui.S(3f));
+            }
+            else
+            {
+                g.DrawLine(pen, cx - Ui.S(4f), cy - Ui.S(2f), cx, cy + Ui.S(3f));
+                g.DrawLine(pen, cx, cy + Ui.S(3f), cx + Ui.S(4f), cy - Ui.S(2f));
+            }
         }
 
-        TextRenderer.DrawText(g, Title, Theme.Header, new Rectangle(Pad, 0, Width - 20, HeaderH),
+        TextRenderer.DrawText(g, Title, Theme.Header, new Rectangle(Pad, 0, Width - Ui.S(20), HeaderH),
             Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
-        using (var pen = new Pen(Theme.Border))
-            g.DrawLine(pen, Pad, HeaderH - 1, Width - Pad, HeaderH - 1);
+        using (var pen = new Pen(Theme.Border, Ui.SMin(1)))
+            g.DrawLine(pen, Pad, HeaderH - Ui.SMin(1), Width - Pad, HeaderH - Ui.SMin(1));
     }
 }

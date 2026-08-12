@@ -19,13 +19,15 @@ public sealed class FlatButton : Control
     /// <summary>Left-align the caption with a small inset (for list/sidebar rows).</summary>
     public bool LeftAlign { get; set; }
 
+    /// <summary>CornerRadius 與內縮值都是 96 DPI 設計值，繪製時才乘 Ui.Scale。</summary>
+
     public FlatButton()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
         Font = Theme.Normal;
         ForeColor = Theme.Text;
-        Size = new Size(120, 30);
+        Size = Ui.Sz(120, 30);
         Cursor = Cursors.Hand;
     }
 
@@ -46,11 +48,13 @@ public sealed class FlatButton : Control
                 : (_pressed ? Theme.PanelBg3 : _hover ? Theme.PanelBg3 : Theme.PanelBg2));
         if (!Enabled) back = Theme.PanelBg2;
 
-        PaintHelpers.FillRounded(g, r, CornerRadius, back);
-        if (!Primary) PaintHelpers.DrawRounded(g, r, CornerRadius, _hover ? Theme.BorderLight : Theme.Border);
+        PaintHelpers.FillRounded(g, r, Ui.S(CornerRadius), back);
+        if (!Primary) PaintHelpers.DrawRounded(g, r, Ui.S(CornerRadius), _hover ? Theme.BorderLight : Theme.Border);
 
         Color fg = !Enabled ? Theme.TextFaint : Primary ? Color.White : ForeColor;
-        var textRect = LeftAlign ? new Rectangle(12, 0, Width - 16, Height) : new Rectangle(0, 0, Width, Height);
+        var textRect = LeftAlign
+            ? new Rectangle(Ui.S(12), 0, Width - Ui.S(16), Height)
+            : new Rectangle(0, 0, Width, Height);
         var align = LeftAlign ? TextFormatFlags.Left : TextFormatFlags.HorizontalCenter;
         TextRenderer.DrawText(g, Text, Font, textRect, fg,
             align | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);

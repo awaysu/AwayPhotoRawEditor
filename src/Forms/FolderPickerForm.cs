@@ -29,40 +29,41 @@ public sealed class FolderPickerForm : Form
         BackColor = Theme.WindowBg;
         ForeColor = Theme.Text;
         Font = Theme.Normal;
-        ClientSize = new Size(680, 500);
+        ClientSize = Ui.FitWorkArea(680, 500);
         StartPosition = FormStartPosition.CenterParent;
-        MinimumSize = new Size(560, 420);
+        MinimumSize = Ui.FitWorkArea(560, 420);
 
-        // ---- bottom action bar ----
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 56, BackColor = Theme.PanelBg2 };
+        // ---- bottom action bar ----（座標一律是 96 DPI 設計值）
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = Ui.S(56), BackColor = Theme.PanelBg2 };
         _picked = new Label
         {
-            Left = 16, Top = 0, Height = 56, Width = 340, ForeColor = Theme.TextDim, Font = Theme.Normal,
+            ForeColor = Theme.TextDim, Font = Theme.Normal,
             TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
         };
-        var ok = new FlatButton { Text = "選擇此資料夾", Primary = true, Width = 140, Height = 34, Top = 11, Anchor = AnchorStyles.Right | AnchorStyles.Top };
-        var cancel = new FlatButton { Text = "取消", Width = 88, Height = 34, Top = 11, Anchor = AnchorStyles.Right | AnchorStyles.Top };
-        void PlaceButtons() { ok.Left = bottom.Width - 16 - 140; cancel.Left = ok.Left - 8 - 88; _picked.Width = Math.Max(80, cancel.Left - 24); }
+        Ui.Place(_picked, 16, 0, 340, 56);
+        var ok = new FlatButton { Text = "選擇此資料夾", Primary = true, Width = Ui.S(140), Height = Ui.S(34), Top = Ui.S(11), Anchor = AnchorStyles.Right | AnchorStyles.Top };
+        var cancel = new FlatButton { Text = "取消", Width = Ui.S(88), Height = Ui.S(34), Top = Ui.S(11), Anchor = AnchorStyles.Right | AnchorStyles.Top };
+        void PlaceButtons() { ok.Left = bottom.Width - Ui.S(16) - ok.Width; cancel.Left = ok.Left - Ui.S(8) - cancel.Width; _picked.Width = Math.Max(Ui.S(80), cancel.Left - Ui.S(24)); }
         bottom.Resize += (_, _) => PlaceButtons();
         ok.Click += (_, _) => { SelectedPath = _current; DialogResult = DialogResult.OK; Close(); };
         cancel.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
         bottom.Controls.AddRange(new Control[] { _picked, ok, cancel });
 
         // ---- quick-access sidebar ----
-        var sidebar = new Panel { Dock = DockStyle.Left, Width = 168, BackColor = Theme.PanelBg };
+        var sidebar = new Panel { Dock = DockStyle.Left, Width = Ui.S(168), BackColor = Theme.PanelBg };
         var sideTitle = new Label
         {
-            Dock = DockStyle.Top, Height = 34, Text = "常用位置", ForeColor = Theme.TextFaint, Font = Theme.UI(9f, FontStyle.Bold),
-            TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(14, 0, 0, 0)
+            Dock = DockStyle.Top, Height = Ui.S(34), Text = "常用位置", ForeColor = Theme.TextFaint, Font = Theme.UIPx(Theme.Sizes.Normal, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleLeft, Padding = Ui.Pad(14, 0, 0, 0)
         };
         var places = new FlowLayoutPanel
         {
             Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            BackColor = Theme.PanelBg, Padding = new Padding(8, 4, 8, 8)
+            BackColor = Theme.PanelBg, Padding = Ui.Pad(8, 4, 8, 8)
         };
         void AddPlace(string glyph, string caption, Action act)
         {
-            var b = new FlatButton { Text = $"{glyph}   {L.T(caption)}", LeftAlign = true, Width = 148, Height = 34, Margin = new Padding(0, 0, 0, 4) };
+            var b = new FlatButton { Text = $"{glyph}   {L.T(caption)}", LeftAlign = true, Width = Ui.S(148), Height = Ui.S(34), Margin = Ui.Pad(0, 0, 0, 4) };
             b.Click += (_, _) => act();
             places.Controls.Add(b);
         }
@@ -74,19 +75,20 @@ public sealed class FolderPickerForm : Form
         sidebar.Controls.Add(places);
         sidebar.Controls.Add(sideTitle);
 
-        var sideSep = new Panel { Dock = DockStyle.Left, Width = 1, BackColor = Theme.Border };
+        var sideSep = new Panel { Dock = DockStyle.Left, Width = Ui.SMin(1), BackColor = Theme.Border };
 
         // ---- path bar (up button + current path) ----
-        var pathBar = new Panel { Dock = DockStyle.Top, Height = 48, BackColor = Theme.WindowBg, Padding = new Padding(12, 8, 12, 8) };
-        var upBtn = new FlatButton { Text = "↑  上一層", Width = 92, Height = 32, Left = 12, Top = 8 };
+        var pathBar = new Panel { Dock = DockStyle.Top, Height = Ui.S(48), BackColor = Theme.WindowBg, Padding = Ui.Pad(12, 8, 12, 8) };
+        var upBtn = new FlatButton { Text = "↑  上一層" };
+        Ui.Place(upBtn, 12, 8, 92, 32);
         upBtn.Click += (_, _) => { var p = Directory.GetParent(_current)?.FullName; if (p != null) Navigate(p); else ShowDrives(); };
         _path = new Label
         {
-            Left = 116, Top = 8, Height = 32, ForeColor = Theme.Text, BackColor = Theme.PanelBg2, Font = Theme.Normal,
-            TextAlign = ContentAlignment.MiddleLeft, Padding = new Padding(12, 0, 0, 0), AutoEllipsis = true,
+            Left = Ui.S(116), Top = Ui.S(8), Height = Ui.S(32), ForeColor = Theme.Text, BackColor = Theme.PanelBg2, Font = Theme.Normal,
+            TextAlign = ContentAlignment.MiddleLeft, Padding = Ui.Pad(12, 0, 0, 0), AutoEllipsis = true,
             Anchor = AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top
         };
-        _path.Width = pathBar.Width - 12 - _path.Left;
+        _path.Width = pathBar.Width - Ui.S(12) - _path.Left;
         pathBar.Controls.AddRange(new Control[] { upBtn, _path });
 
         // ---- folder list ----
@@ -161,7 +163,7 @@ public sealed class FolderPickerForm : Form
         private bool _drives;
         private int _hover = -1;
         private int _scroll;
-        private const int RowH = 32;
+        private static int RowH => Ui.S(32);   // 96 DPI 設計值
 
         public event Action<string>? ItemActivated;
 
@@ -187,7 +189,7 @@ public sealed class FolderPickerForm : Form
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
-            _scroll = Math.Clamp(_scroll - e.Delta, 0, MaxScroll);
+            _scroll = Math.Clamp(_scroll - Ui.S(e.Delta), 0, MaxScroll);
             _hover = IndexAt(e.Y);
             Invalidate();
             base.OnMouseWheel(e);
@@ -224,14 +226,14 @@ public sealed class FolderPickerForm : Form
             if (_items.Count == 0)
             {
                 TextRenderer.DrawText(g, L.T("（此資料夾沒有子資料夾）"), Theme.Normal,
-                    new Rectangle(0, 0, Width, RowH + 8), Theme.TextFaint,
+                    new Rectangle(0, 0, Width, RowH + Ui.S(8)), Theme.TextFaint,
                     TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
                 return;
             }
 
             int first = Math.Max(0, _scroll / RowH);
             int last = Math.Min(_items.Count - 1, (_scroll + Height) / RowH);
-            using var glyphFont = new Font(Theme.FontFamily, 11f);
+            using var glyphFont = Theme.UIPx(Theme.Sizes.FolderGlyph);
             for (int i = first; i <= last; i++)
             {
                 int y = i * RowH - _scroll;
@@ -241,10 +243,10 @@ public sealed class FolderPickerForm : Form
                         g.FillRectangle(b, row);
 
                 TextRenderer.DrawText(g, _drives ? "💽" : "📁", glyphFont,
-                    new Rectangle(12, y, 26, RowH), Theme.TextDim,
+                    new Rectangle(Ui.S(12), y, Ui.S(26), RowH), Theme.TextDim,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
                 TextRenderer.DrawText(g, _items[i], Theme.Normal,
-                    new Rectangle(44, y, Width - 56, RowH), Theme.Text,
+                    new Rectangle(Ui.S(44), y, Width - Ui.S(56), RowH), Theme.Text,
                     TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
             }
         }

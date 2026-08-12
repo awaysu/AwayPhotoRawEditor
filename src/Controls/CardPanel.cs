@@ -27,7 +27,7 @@ public sealed class CardPanel : Panel
         var g = e.Graphics;
         PaintHelpers.EnableHighQuality(g);
         var r = new RectangleF(0.5f, 0.5f, Width - 1, Height - 1);
-        PaintHelpers.FillRounded(g, r, CornerRadius, CardColor);
-        if (BorderColor is { } bc) PaintHelpers.DrawRounded(g, r, CornerRadius, bc);
+        PaintHelpers.FillRounded(g, r, Ui.S(CornerRadius), CardColor);
+        if (BorderColor is { } bc) PaintHelpers.DrawRounded(g, r, Ui.S(CornerRadius), bc);
     }
 }

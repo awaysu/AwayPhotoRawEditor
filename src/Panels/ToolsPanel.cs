@@ -33,20 +33,20 @@ public sealed class ToolsPanel : AdjustPanelBase
 
     public ToolsPanel() : base("工具")
     {
-        Size = new Size(290, 355);
+        Size = Ui.Sz(290, 355);
 
         // ---- tool tabs (裁切/漸層/修護), deselectable ----
         _tab = new TopTab { Tabs = new[] { "裁切", "漸層", "修護" }, AllowDeselect = true };
-        _tab.SetBounds(12, 6, 266, 32);
+        Ui.Place(_tab, 12, 6, 266, 32);
         _tab.SelectedIndexChanged += (_, _) => ApplyTab(_tab.SelectedIndex);
         ContentArea.Controls.Add(_tab);
 
         // ---- ribbon host (266x260) ----
         _ribbonHost = new Panel { BackColor = Theme.PanelBg };
-        _ribbonHost.SetBounds(12, 50, 266, 260);
+        Ui.Place(_ribbonHost, 12, 50, 266, 260);
         foreach (var r in new[] { _crop, _grad, _heal })
         {
-            r.SetBounds(0, 0, 266, 260);
+            Ui.Place(r, 0, 0, 266, 260);
             r.BackColor = Theme.PanelBg;
             r.Visible = false;
             _ribbonHost.Controls.Add(r);
@@ -82,11 +82,11 @@ public sealed class ToolsPanel : AdjustPanelBase
 
     private void BuildCrop()
     {
-        var lblRatio = UiFactory.Label("比例", Theme.TextDim); lblRatio.SetBounds(0, 2, 42, 26);
-        _aspect = UiFactory.Combo("原始", "3:2", "4:3", "16:9", "1:1", "自訂"); _aspect.SetBounds(46, 0, 92, 28);
-        _cw = UiFactory.Numeric(1, 99, 3); _cw.SetBounds(146, 0, 48, 28);
-        var colon = UiFactory.Label(":", Theme.Text); colon.SetBounds(198, 2, 10, 26);
-        _ch = UiFactory.Numeric(1, 99, 2); _ch.SetBounds(212, 0, 48, 28);
+        var lblRatio = UiFactory.Label("比例", Theme.TextDim); Ui.Place(lblRatio, 0, 2, 42, 26);
+        _aspect = UiFactory.Combo("原始", "3:2", "4:3", "16:9", "1:1", "自訂"); Ui.Place(_aspect, 46, 0, 92, 28);
+        _cw = UiFactory.Numeric(1, 99, 3); Ui.Place(_cw, 146, 0, 48, 28);
+        var colon = UiFactory.Label(":", Theme.Text); Ui.Place(colon, 198, 2, 10, 26);
+        _ch = UiFactory.Numeric(1, 99, 2); Ui.Place(_ch, 212, 0, 48, 28);
         _cw.Enabled = _ch.Enabled = false;
 
         _aspect.SelectedIndex = 0;
@@ -118,17 +118,17 @@ public sealed class ToolsPanel : AdjustPanelBase
         // 角度：與廣角變形相同的滑桿（拖曳時即時重算畫面；預覽在裁切工具下也會旋轉）。
         // UI 值＝−CropAngle：使用者要求方向相反；只翻轉操作方向，儲存值意義不變（舊 XML 不受影響）。
         var angle = CreateSlider("角度", -45, 45, 0, "0.0", true, a => -a.CropAngle, (a, v) => a.CropAngle = -v, 0.5);
-        angle.SetBounds(0, 38, 266, 36);
+        Ui.Place(angle, 0, 38, 266, 36);
 
         var distortion = CreateSlider("廣角變形", -100, 100, 0, "0", true, a => a.Distortion, (a, v) => a.Distortion = v, 1);
-        distortion.SetBounds(0, 76, 266, 36);
+        Ui.Place(distortion, 0, 76, 266, 36);
 
-        var rotL = new FlatButton { Text = "照片左轉90度" }; rotL.SetBounds(0, 122, 126, 28);
-        var rotR = new FlatButton { Text = "照片右轉90度" }; rotR.SetBounds(134, 122, 126, 28);
+        var rotL = new FlatButton { Text = "照片左轉90度" }; Ui.Place(rotL, 0, 122, 126, 28);
+        var rotR = new FlatButton { Text = "照片右轉90度" }; Ui.Place(rotR, 134, 122, 126, 28);
         rotL.Click += (_, _) => RotateLeft?.Invoke();
         rotR.Click += (_, _) => RotateRight?.Invoke();
 
-        var reset = new FlatButton { Text = "裁切重設" }; reset.SetBounds(0, 158, 260, 28);
+        var reset = new FlatButton { Text = "裁切重設" }; Ui.Place(reset, 0, 158, 260, 28);
         reset.Click += (_, _) => ResetCrop?.Invoke();
 
         _crop.Controls.AddRange(new Control[] { lblRatio, _aspect, _cw, colon, _ch, angle, distortion, rotL, rotR, reset });
@@ -150,10 +150,10 @@ public sealed class ToolsPanel : AdjustPanelBase
         AddGradSlider(108, "暗部", -100, 100, 0, "0", 1, g => g.Shadows, (g, v) => g.Shadows = v);
         AddGradSlider(144, "飽和度", -100, 100, 0, "0", 1, g => g.Saturation, (g, v) => g.Saturation = v);
 
-        var add = new FlatButton { Text = "新增線性漸層", Primary = true }; add.SetBounds(0, 184, 266, 30);
+        var add = new FlatButton { Text = "新增線性漸層", Primary = true }; Ui.Place(add, 0, 184, 266, 30);
         add.Click += (_, _) => AddGradient?.Invoke();
 
-        var reset = new FlatButton { Text = "漸層重設（清除全部）" }; reset.SetBounds(0, 218, 266, 30);
+        var reset = new FlatButton { Text = "漸層重設（清除全部）" }; Ui.Place(reset, 0, 218, 266, 30);
         reset.Click += (_, _) =>
         {
             if (Adj == null) return;
@@ -174,7 +174,7 @@ public sealed class ToolsPanel : AdjustPanelBase
             a => a.ActiveGradient is { } g ? get(g) : def,
             (a, v) => { if (a.ActiveGradient is { } g) set(g, v); },
             step);
-        s.SetBounds(0, top, 266, 36);
+        Ui.Place(s, 0, top, 266, 36);
         _grad.Controls.Add(s);
         _gradSliders.Add(s);
     }
@@ -190,17 +190,17 @@ public sealed class ToolsPanel : AdjustPanelBase
 
     private void BuildHeal()
     {
-        _cloneBtn = new FlatButton { Text = "仿製" }; _cloneBtn.SetBounds(0, 0, 130, 30);
-        _inpaintBtn = new FlatButton { Text = "修補" }; _inpaintBtn.SetBounds(136, 0, 130, 30);
+        _cloneBtn = new FlatButton { Text = "仿製" }; Ui.Place(_cloneBtn, 0, 0, 130, 30);
+        _inpaintBtn = new FlatButton { Text = "修補" }; Ui.Place(_inpaintBtn, 136, 0, 130, 30);
         _cloneBtn.Primary = true;
         _cloneBtn.Click += (_, _) => SetHealMode(HealMode.Clone);
         _inpaintBtn.Click += (_, _) => SetHealMode(HealMode.Inpaint);
 
         var size = CreateSlider("大小", 0, 50, 10, "0", false, a => a.HealSize, (a, v) => a.HealSize = v, 1);
-        size.SetBounds(0, 40, 266, 36);
+        Ui.Place(size, 0, 40, 266, 36);
         size.ValueChanged += (_, _) => HealSizeChanged?.Invoke(size.Value);
 
-        var reset = new FlatButton { Text = "修護重設" }; reset.SetBounds(0, 84, 266, 30);
+        var reset = new FlatButton { Text = "修護重設" }; Ui.Place(reset, 0, 84, 266, 30);
         reset.Click += (_, _) => ClearHeal?.Invoke();
 
         _heal.Controls.AddRange(new Control[] { _cloneBtn, _inpaintBtn, size, reset });

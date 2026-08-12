@@ -29,7 +29,7 @@ public sealed class MainForm : Form
 
     // panels / controls
     private readonly ImageViewer _viewer = new() { Dock = DockStyle.Fill };
-    private readonly ThumbnailStrip _strip = new() { Dock = DockStyle.Top, Height = 158, ShowNumber = AppSettings.Current.ShowThumbnailNumber };
+    private readonly ThumbnailStrip _strip = new() { Dock = DockStyle.Top, Height = Ui.S(158), ShowNumber = AppSettings.Current.ShowThumbnailNumber };
     private readonly HistogramPanel _hist = new();
     private readonly PhotoInfoPanel _photoInfo = new();
     private readonly BasicAdjustPanel _basic = new();
@@ -84,8 +84,10 @@ public sealed class MainForm : Form
         BackColor = Theme.WindowBg;
         ForeColor = Theme.Text;
         Font = Theme.Normal;
-        ClientSize = new Size(1366, 820);
-        MinimumSize = new Size(1100, 700);
+        // 夾進工作區：150% 以上時 1100×700 的設計最小尺寸會超過螢幕，
+        // 視窗會變成無法正常縮放（左右欄本來就有 DarkScrollHost 可捲動）。
+        ClientSize = Ui.FitWorkArea(1366, 820);
+        MinimumSize = Ui.FitWorkArea(1100, 700);
         StartPosition = FormStartPosition.CenterScreen;
         WindowState = FormWindowState.Maximized;
         KeyPreview = true;
@@ -138,7 +140,7 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.WindowBg, Margin = Padding.Empty
         };
-        leftCenter.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 330));
+        leftCenter.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Ui.S(330)));
         leftCenter.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         leftCenter.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         leftCenter.Controls.Add(BuildLeftColumn(), 0, 0);
@@ -153,7 +155,7 @@ public sealed class MainForm : Form
             Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 1, BackColor = Theme.WindowBg, Margin = Padding.Empty
         };
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 320));
+        body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, Ui.S(320)));
         body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
         body.Controls.Add(leftCenterHost, 0, 0);
         body.Controls.Add(BuildRightColumn(), 1, 0);
@@ -166,32 +168,37 @@ public sealed class MainForm : Form
 
     private Panel BuildTopBar()
     {
-        var top = new Panel { Dock = DockStyle.Top, Height = 60, BackColor = Theme.PanelBg2 };
+        var top = new Panel { Dock = DockStyle.Top, Height = Ui.S(60), BackColor = Theme.PanelBg2 };
 
-        var appMenu = new IconButton { Glyph = "☰", GlyphSize = 20f, Left = 14, Top = 9, Width = 46, Height = 42 };
+        var appMenu = new IconButton { Glyph = "☰", GlyphPx = Theme.Sizes.MenuGlyph };
+        Ui.Place(appMenu, 14, 9, 46, 42);
         appMenu.Click += (_, _) => ShowAppMenu(appMenu);
 
-        var logo = new Label { Text = "AwayPhotoRawEditor", Left = 72, Top = 0, Width = 290, Height = 60, ForeColor = Theme.Text, Font = Theme.UI(15f, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+        // 標題寬度要容得下 15pt 粗體的 "AwayPhotoRawEditor"：96 DPI 約 223px，
+        // 高 DPI 下字會等比放大，所以框寬也必須跟著縮放（否則 125% 起就會被截斷）。
+        var logo = new Label { Text = "AwayPhotoRawEditor", ForeColor = Theme.Text, Font = Theme.UIPx(Theme.Sizes.Logo, FontStyle.Bold), TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(logo, 72, 0, 290, 60);
 
-        var openBtn = new FlatButton { Text = "📁  開啟資料夾", Primary = true, Left = 370, Top = 14, Width = 132, Height = 32 };
+        var openBtn = new FlatButton { Text = "📁  開啟資料夾", Primary = true };
+        Ui.Place(openBtn, 370, 14, 132, 32);
         openBtn.Click += (_, _) => PickFolder();
 
-        const int pathLeft = 516;
-        _pathLabel = new Label { Left = pathLeft, Top = 0, Height = 60, ForeColor = Theme.TextDim, Font = Theme.Normal, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Text = "尚未選擇資料夾" };
+        int pathLeft = Ui.S(516);
+        _pathLabel = new Label { Left = pathLeft, Top = 0, Height = Ui.S(60), ForeColor = Theme.TextDim, Font = Theme.Normal, TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true, Text = "尚未選擇資料夾" };
 
-        var exportBtn = new FlatButton { Text = "匯出全部照片", Primary = true, Width = 180, Height = 32, Top = 14, Anchor = AnchorStyles.Top | AnchorStyles.Right };
-        exportBtn.Left = top.Width - 16 - 180;
+        var exportBtn = new FlatButton { Text = "匯出全部照片", Primary = true, Width = Ui.S(180), Height = Ui.S(32), Top = Ui.S(14), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        exportBtn.Left = top.Width - Ui.S(16) - exportBtn.Width;
         exportBtn.Click += (_, _) => ExportAll();
 
-        var exportCurBtn = new FlatButton { Text = "匯出目前照片", Primary = true, Width = 140, Height = 32, Top = 14, Anchor = AnchorStyles.Top | AnchorStyles.Right };
-        exportCurBtn.Left = exportBtn.Left - 8 - 140;
+        var exportCurBtn = new FlatButton { Text = "匯出目前照片", Primary = true, Width = Ui.S(140), Height = Ui.S(32), Top = Ui.S(14), Anchor = AnchorStyles.Top | AnchorStyles.Right };
+        exportCurBtn.Left = exportBtn.Left - Ui.S(8) - exportCurBtn.Width;
         exportCurBtn.Click += (_, _) => ExportCurrent();
 
         top.Resize += (_, _) =>
         {
-            exportBtn.Left = top.Width - 16 - 180;
-            exportCurBtn.Left = exportBtn.Left - 8 - 140;
-            _pathLabel.Width = Math.Max(40, exportCurBtn.Left - pathLeft - 12);
+            exportBtn.Left = top.Width - Ui.S(16) - exportBtn.Width;
+            exportCurBtn.Left = exportBtn.Left - Ui.S(8) - exportCurBtn.Width;
+            _pathLabel.Width = Math.Max(Ui.S(40), exportCurBtn.Left - pathLeft - Ui.S(12));
         };
         top.Controls.AddRange(new Control[] { appMenu, logo, openBtn, _pathLabel, exportCurBtn, exportBtn });
         return top;
@@ -202,32 +209,33 @@ public sealed class MainForm : Form
         var flow = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            AutoScroll = false, BackColor = Theme.PanelBg, Padding = new Padding(10, 4, 10, 8)
+            AutoScroll = false, BackColor = Theme.PanelBg, Padding = Ui.Pad(10, 4, 10, 8)
         };
         foreach (var s in new SectionPanel[] { _basic, _color, _detail })
         {
             s.Dock = DockStyle.None;
-            s.Margin = new Padding(0, 0, 0, 10);
+            s.Margin = Ui.Pad(0, 0, 0, 10);
             flow.Controls.Add(s);
         }
-        _basic.Margin = new Padding(0, 0, 0, 4);   // 色彩、細節上方留 4px
-        _color.Margin = new Padding(0, 0, 0, 4);
+        _basic.Margin = Ui.Pad(0, 0, 0, 4);   // 色彩、細節上方留 4px
+        _color.Margin = Ui.Pad(0, 0, 0, 4);
 
         // 基本 / 色彩 / 細節 重設 (below 細節)
-        _bcdResetBtn = new FlatButton { Text = "基本／色彩／細節 重設", Margin = new Padding(0, 0, 0, 10) };
-        _bcdResetBtn.Size = new Size(310, 30);
+        _bcdResetBtn = new FlatButton { Text = "基本／色彩／細節 重設", Margin = Ui.Pad(0, 0, 0, 10) };
+        _bcdResetBtn.Size = Ui.Sz(310, 30);
         _bcdResetBtn.Click += (_, _) => ResetBasicColorDetail();
         flow.Controls.Add(_bcdResetBtn);
 
         _preset.Dock = DockStyle.None;
-        _preset.Margin = new Padding(0, 0, 0, 10);
+        _preset.Margin = Ui.Pad(0, 0, 0, 10);
         flow.Controls.Add(_preset);
 
         // 視窗太矮時可垂直捲動（自繪深色捲軸；由設定「顯示捲軸」開關，預設關）
         _leftScroll = new DarkScrollHost(flow)
         {
             Dock = DockStyle.Fill, BackColor = Theme.PanelBg, Margin = Padding.Empty,
-            ScrollEnabled = AppSettings.Current.ShowColumnScrollBars
+            // 使用者把介面大小指定成螢幕放不下的倍率時，強制開捲軸——否則整塊區域會被裁掉看不到。
+            ScrollEnabled = AppSettings.Current.ShowColumnScrollBars || Ui.ExceedsScreen
         };
         return _leftScroll;
     }
@@ -236,16 +244,16 @@ public sealed class MainForm : Form
     {
         var center = new Panel { Dock = DockStyle.Fill, BackColor = Theme.WindowBg, Margin = Padding.Empty };
 
-        var toolbar = new Panel { Dock = DockStyle.Bottom, Height = 36, BackColor = Theme.PanelBg2 };
-        var fitBtn = new FlatButton { Text = "適合", Left = 10, Top = 5, Width = 60, Height = 26 };
-        var z100 = new FlatButton { Text = "100%", Left = 76, Top = 5, Width = 60, Height = 26 };
-        var z200 = new FlatButton { Text = "200%", Left = 142, Top = 5, Width = 60, Height = 26 };
+        var toolbar = new Panel { Dock = DockStyle.Bottom, Height = Ui.S(36), BackColor = Theme.PanelBg2 };
+        var fitBtn = new FlatButton { Text = "適合" }; Ui.Place(fitBtn, 10, 5, 60, 26);
+        var z100 = new FlatButton { Text = "100%" }; Ui.Place(z100, 76, 5, 60, 26);
+        var z200 = new FlatButton { Text = "200%" }; Ui.Place(z200, 142, 5, 60, 26);
         fitBtn.Click += (_, _) => { _viewer.ZoomFit(); UpdateStatus(); };
         z100.Click += (_, _) => { _viewer.Zoom100(); UpdateStatus(); };
         z200.Click += (_, _) => { _viewer.Zoom200(); UpdateStatus(); };
-        _origBtn = new FlatButton { Text = "對照原圖", Left = 216, Top = 5, Width = 88, Height = 26 };
+        _origBtn = new FlatButton { Text = "對照原圖" }; Ui.Place(_origBtn, 216, 5, 88, 26);
         _origBtn.Click += (_, _) => ToggleShowOriginal();
-        _status = new Label { Dock = DockStyle.Right, Width = 160, ForeColor = Theme.TextDim, Font = Theme.Small, TextAlign = ContentAlignment.MiddleCenter, Padding = new Padding(0, 0, 12, 0), Text = "未使用LibRaw讀取" };
+        _status = new Label { Dock = DockStyle.Right, Width = Ui.S(160), ForeColor = Theme.TextDim, Font = Theme.Small, TextAlign = ContentAlignment.MiddleCenter, Padding = Ui.Pad(0, 0, 12, 0), Text = "未使用LibRaw讀取" };
         toolbar.Controls.AddRange(new Control[] { fitBtn, z100, z200, _origBtn, _status });
 
         _viewer.BackColor = Theme.ViewerBg;
@@ -260,22 +268,22 @@ public sealed class MainForm : Form
         var flow = new FlowLayoutPanel
         {
             FlowDirection = FlowDirection.TopDown, WrapContents = false,
-            AutoScroll = false, BackColor = Theme.PanelBg, Padding = new Padding(15, 4, 15, 8)
+            AutoScroll = false, BackColor = Theme.PanelBg, Padding = Ui.Pad(15, 4, 15, 8)
         };
         foreach (var s in new SectionPanel[] { _hist, _photoInfo, _tools })
         {
             s.Dock = DockStyle.None;
-            s.Margin = new Padding(0, 0, 0, 14);
+            s.Margin = Ui.Pad(0, 0, 0, 14);
             flow.Controls.Add(s);
         }
 
         // 重設 (原始狀態) + 恢復上一步 pinned to the bottom of the right column
-        var actionHost = new Panel { Dock = DockStyle.Bottom, Height = 96, BackColor = Theme.PanelBg };
+        var actionHost = new Panel { Dock = DockStyle.Bottom, Height = Ui.S(96), BackColor = Theme.PanelBg };
         _resetAllBtn = new FlatButton { Text = "全部重設" };
-        _resetAllBtn.SetBounds(15, 8, 290, 34);
+        Ui.Place(_resetAllBtn, 15, 8, 290, 34);
         _resetAllBtn.Click += (_, _) => ResetAllAdjustments();
         _undoStepBtn = new FlatButton { Text = "恢復上一步" };
-        _undoStepBtn.SetBounds(15, 50, 290, 34);
+        Ui.Place(_undoStepBtn, 15, 50, 290, 34);
         _undoStepBtn.Click += (_, _) => DoUndo();
         actionHost.Controls.AddRange(new Control[] { _resetAllBtn, _undoStepBtn });
 
@@ -283,7 +291,8 @@ public sealed class MainForm : Form
         _rightScroll = new DarkScrollHost(flow)
         {
             Dock = DockStyle.Fill, BackColor = Theme.PanelBg,
-            ScrollEnabled = AppSettings.Current.ShowColumnScrollBars
+            // 使用者把介面大小指定成螢幕放不下的倍率時，強制開捲軸——否則整塊區域會被裁掉看不到。
+            ScrollEnabled = AppSettings.Current.ShowColumnScrollBars || Ui.ExceedsScreen
         };
         host.Controls.Add(_rightScroll); // Fill first
         host.Controls.Add(actionHost);  // Bottom last -> claims the bottom
@@ -1381,10 +1390,16 @@ public sealed class MainForm : Form
     {
         var previousStyle = AppSettings.Current.InterfaceStyle;
         var previousLanguage = AppSettings.Current.UiLanguage;
+        var previousScale = AppSettings.Current.UiScalePercent;
+        var previousFonts = AppSettings.Current.FontSizes.Signature();
         using var dlg = new SettingsForm();
         if (dlg.ShowDialog(this) == DialogResult.OK)
         {
-            if (previousLanguage != AppSettings.Current.UiLanguage)
+            // 語言 / 介面大小 / 字體大小 都需要以新的字型與版面常數重建整個 UI，直接重啟最乾淨
+            // （Theme.Small/Normal/Header/Mono 是快取的靜態欄位）。
+            if (previousLanguage != AppSettings.Current.UiLanguage ||
+                previousScale != AppSettings.Current.UiScalePercent ||
+                previousFonts != AppSettings.Current.FontSizes.Signature())
             {
                 Application.Restart();
                 Close();
@@ -1393,8 +1408,9 @@ public sealed class MainForm : Form
             if (previousStyle != AppSettings.Current.InterfaceStyle)
                 Theme.Apply(AppSettings.Current.InterfaceStyle, this);
             _strip.ShowNumber = AppSettings.Current.ShowThumbnailNumber;
-            if (_leftScroll != null) _leftScroll.ScrollEnabled = AppSettings.Current.ShowColumnScrollBars;
-            if (_rightScroll != null) _rightScroll.ScrollEnabled = AppSettings.Current.ShowColumnScrollBars;
+            bool scroll = AppSettings.Current.ShowColumnScrollBars || Ui.ExceedsScreen;
+            if (_leftScroll != null) _leftScroll.ScrollEnabled = scroll;
+            if (_rightScroll != null) _rightScroll.ScrollEnabled = scroll;
             _loader.SyncFromSettings();
             // Adjustments unaffected, but re-render in case precision/decoder changed.
             if (_current != null) LoadPhoto(_current, force: true);

@@ -16,7 +16,18 @@ public sealed class SettingsForm : Form
     private readonly UiStyleCard _classicCard;
     private readonly UiStyleCard _paperCard;
     private readonly ComboBox _language;
+    private readonly ComboBox _uiScale;
+    private readonly Label _fontSummary;
+    private FontSizes _fonts;
     private UiStyle _selectedStyle;
+
+    /// <summary>可選的固定介面倍率（0 = 自動，另外列在最前面）。</summary>
+    private static readonly int[] ScalePercents = { 100, 125, 150, 175, 200 };
+
+    private sealed record ScaleChoice(int Percent, string Display)
+    {
+        public override string ToString() => Display;
+    }
 
     public SettingsForm()
     {
@@ -27,28 +38,27 @@ public sealed class SettingsForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(548, 562);
+        ClientSize = Ui.FitWorkArea(548, 668);
 
-        var header = new Label
-        {
-            Text = "設定", Font = Theme.UI(13f, FontStyle.Bold), ForeColor = Theme.Text,
-            Left = 20, Top = 14, Width = 500, Height = 28
-        };
+        // 以下座標一律是 96 DPI 設計值，透過 Ui.Place / Ui.S 縮放。
+        var header = new Label { Text = "設定", Font = Theme.UIPx(Theme.Sizes.DialogTitle, FontStyle.Bold), ForeColor = Theme.Text };
+        Ui.Place(header, 20, 14, 500, 28);
         var themeLabel = SectionLabel("介面風格", 48);
         var themeHint = new Label
         {
             Text = "點選預覽即可切換，套用後立即生效",
-            ForeColor = Theme.TextFaint, Font = Theme.Small,
-            Left = 225, Top = 50, Width = 303, Height = 20
+            ForeColor = Theme.TextFaint, Font = Theme.Small
         };
+        Ui.Place(themeHint, 225, 50, 303, 20);
 
+        _fonts = AppSettings.Current.FontSizes.Clone();   // 按確定才寫回
         _selectedStyle = AppSettings.Current.InterfaceStyle;
         _classicCard = new UiStyleCard(
             UiStyle.ClassicDark, L.T("經典深色"), L.T("低亮度專業工作區\n藍色重點操作"));
-        _classicCard.SetBounds(20, 74, 248, 112);
+        Ui.Place(_classicCard, 20, 74, 248, 112);
         _paperCard = new UiStyleCard(
             UiStyle.WarmPaper, L.T("暖白相紙"), L.T("明亮暖灰工作區\n陶土橘重點操作"));
-        _paperCard.SetBounds(280, 74, 248, 112);
+        Ui.Place(_paperCard, 280, 74, 248, 112);
         _classicCard.Click += (_, _) => SelectStyle(UiStyle.ClassicDark);
         _paperCard.Click += (_, _) => SelectStyle(UiStyle.WarmPaper);
         SelectStyle(_selectedStyle);
@@ -63,33 +73,68 @@ public sealed class SettingsForm : Form
             L.LanguageDisplayName(AppLanguage.German),
             L.LanguageDisplayName(AppLanguage.French),
             L.LanguageDisplayName(AppLanguage.Spanish));
-        _language.SetBounds(20, 234, 260, 28);
+        Ui.Place(_language, 20, 234, 260, 28);
         _language.SelectedIndex = System.Math.Clamp((int)AppSettings.Current.UiLanguage, 0, 7);
         var languageHint = new Label
         {
             Text = "變更語言後將自動重新啟動程式",
-            ForeColor = Theme.TextFaint, Font = Theme.Small,
-            Left = 294, Top = 237, Width = 234, Height = 22
+            ForeColor = Theme.TextFaint, Font = Theme.Small
         };
+        Ui.Place(languageHint, 294, 237, 234, 22);
 
-        var optionsLabel = SectionLabel("一般選項", 280);
-        _useLibRaw = NewCheck("使用 LibRaw", AppSettings.Current.UseLibRaw, 306);
-        _highPrecision = NewCheck("高精度 RAW 處理流程 (16-bit / float)", AppSettings.Current.UseHighPrecisionRawPipeline, 336);
-        _showNumber = NewCheck("在縮圖左上顯示編號 (#1, #2 …)", AppSettings.Current.ShowThumbnailNumber, 366);
-        _showScrollBars = NewCheck("顯示捲軸（視窗過矮時左右欄可捲動）", AppSettings.Current.ShowColumnScrollBars, 396);
+        // 介面大小：自動 = 跟隨系統縮放，但不超過螢幕容得下的大小。
+        var scaleLabel = SectionLabel("介面大小", 280);
+        _uiScale = UiFactory.Combo();
+        _uiScale.Items.Add(new ScaleChoice(0, $"{L.T("自動（依螢幕大小）")}　—　{Ui.AutoFitScale() * 100:0}%"));
+        foreach (int p in ScalePercents) _uiScale.Items.Add(new ScaleChoice(p, $"{p}%"));
+        Ui.Place(_uiScale, 20, 304, 260, 28);
+        int curScale = AppSettings.Current.UiScalePercent;
+        _uiScale.SelectedIndex = Math.Max(0, _uiScale.Items.Cast<ScaleChoice>().ToList().FindIndex(c => c.Percent == curScale));
+        var scaleHint = new Label
+        {
+            Text = "變更介面大小後將自動重新啟動程式",
+            ForeColor = Theme.TextFaint, Font = Theme.Small
+        };
+        Ui.Place(scaleHint, 294, 307, 234, 22);
+
+        // 字體大小…：逐項微調各字級（介面大小是等比縮放整份 UI，這個是個別字級的比例）
+        var fontBtn = new FlatButton { Text = "字體大小…" };
+        Ui.Place(fontBtn, 20, 338, 130, 30);
+        fontBtn.Click += (_, _) =>
+        {
+            using var dlg = new FontSizeForm(_fonts);
+            if (dlg.ShowDialog(this) == DialogResult.OK)
+            {
+                _fonts = dlg.Result;
+                UpdateFontSummary();
+            }
+        };
+        _fontSummary = new Label { ForeColor = Theme.TextFaint, Font = Theme.Small, TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(_fontSummary, 158, 341, 370, 24);
+        UpdateFontSummary();
+
+        var optionsLabel = SectionLabel("一般選項", 386);
+        _useLibRaw = NewCheck("使用 LibRaw", AppSettings.Current.UseLibRaw, 412);
+        _highPrecision = NewCheck("高精度 RAW 處理流程 (16-bit / float)", AppSettings.Current.UseHighPrecisionRawPipeline, 442);
+        _showNumber = NewCheck("在縮圖左上顯示編號 (#1, #2 …)", AppSettings.Current.ShowThumbnailNumber, 472);
+        _showScrollBars = NewCheck("顯示捲軸（視窗過矮時左右欄可捲動）", AppSettings.Current.ShowColumnScrollBars, 502);
 
         string libState = LibRawInterop.Available ? "libraw.dll 已載入" : "libraw.dll 未找到（將退回 WIC / 嵌入預覽）";
-        var note = new Label { Text = libState, ForeColor = Theme.TextFaint, Font = Theme.Small, Left = 20, Top = 432, Width = 500, Height = 20 };
+        var note = new Label { Text = libState, ForeColor = Theme.TextFaint, Font = Theme.Small };
+        Ui.Place(note, 20, 538, 500, 20);
         string exifState = Exif.ExifReader.ExifToolAvailable ? "exiftool.exe 已載入" : "exiftool.exe 未找到（將退回 WIC metadata）";
-        var note2 = new Label { Text = exifState, ForeColor = Theme.TextFaint, Font = Theme.Small, Left = 20, Top = 452, Width = 500, Height = 20 };
+        var note2 = new Label { Text = exifState, ForeColor = Theme.TextFaint, Font = Theme.Small };
+        Ui.Place(note2, 20, 558, 500, 20);
 
-        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 60, BackColor = Theme.PanelBg2 };
-        var ok = new FlatButton { Text = "套用", Primary = true, Left = 340, Top = 14, Width = 88, Height = 32 };
-        var cancel = new FlatButton { Text = "取消", Left = 436, Top = 14, Width = 96, Height = 32 };
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = Ui.S(60), BackColor = Theme.PanelBg2 };
+        var ok = new FlatButton { Text = "套用", Primary = true }; Ui.Place(ok, 340, 14, 88, 32);
+        var cancel = new FlatButton { Text = "取消" }; Ui.Place(cancel, 436, 14, 96, 32);
         void ApplyAndClose()
         {
             AppSettings.Current.InterfaceStyle = _selectedStyle;
             AppSettings.Current.UiLanguage = (AppLanguage)Math.Max(0, _language.SelectedIndex);
+            if (_uiScale.SelectedItem is ScaleChoice sc) AppSettings.Current.UiScalePercent = sc.Percent;
+            AppSettings.Current.FontSizes = _fonts;
             AppSettings.Current.UseLibRaw = _useLibRaw.Checked;
             AppSettings.Current.UseHighPrecisionRawPipeline = _highPrecision.Checked;
             AppSettings.Current.ShowThumbnailNumber = _showNumber.Checked;
@@ -110,7 +155,8 @@ public sealed class SettingsForm : Form
         Controls.AddRange(new Control[]
         {
             header, themeLabel, themeHint, _classicCard, _paperCard,
-            languageLabel, _language, languageHint, optionsLabel,
+            languageLabel, _language, languageHint,
+            scaleLabel, _uiScale, scaleHint, fontBtn, _fontSummary, optionsLabel,
             _useLibRaw, _highPrecision, _showNumber, _showScrollBars, note, note2, bottom
         });
         L.Apply(this);
@@ -126,11 +172,12 @@ public sealed class SettingsForm : Form
         };
     }
 
-    private static Label SectionLabel(string text, int top) => new()
+    private static Label SectionLabel(string text, int top)
     {
-        Text = text, ForeColor = Theme.Accent, Font = Theme.UI(9f, FontStyle.Bold),
-        Left = 20, Top = top, Width = 180, Height = 20
-    };
+        var l = new Label { Text = text, ForeColor = Theme.Accent, Font = Theme.UIPx(Theme.Sizes.Normal, FontStyle.Bold) };
+        Ui.Place(l, 20, top, 180, 20);
+        return l;
+    }
 
     private static DarkCheckBox NewCheck(string text, bool value, int top)
     {
@@ -138,8 +185,19 @@ public sealed class SettingsForm : Form
         {
             Text = text, BackColor = Theme.WindowBg, Checked = value
         };
-        check.SetBounds(20, top, 500, 24);
+        Ui.Place(check, 20, top, 500, 24);
         return check;
+    }
+
+    /// <summary>按鈕右側的一行摘要：預設就寫「預設比例」，改過才列出主要字級。</summary>
+    private void UpdateFontSummary()
+    {
+        var def = new FontSizes();
+        bool isDefault = _fonts.Signature() == def.Signature();
+        _fontSummary.Text = isDefault
+            ? L.T("預設比例")
+            : L.F("已自訂：一般 {0}px、區塊標題 {1}px、小字 {2}px",
+                _fonts.Normal, _fonts.SectionTitle, _fonts.Small);
     }
 
     private void SelectStyle(UiStyle style)
@@ -220,49 +278,50 @@ public sealed class SettingsForm : Form
             var card = new RectangleF(1, 1, Width - 2, Height - 2);
             var fill = _hover ? Theme.PanelBg3 : Theme.PanelBg;
             var border = Selected || Focused ? Theme.Accent : _hover ? Theme.BorderLight : Theme.Border;
-            PaintHelpers.FillRounded(g, card, 8, fill);
-            PaintHelpers.DrawRounded(g, card, 8, border, Selected ? 2f : 1f);
+            PaintHelpers.FillRounded(g, card, Ui.S(8f), fill);
+            PaintHelpers.DrawRounded(g, card, Ui.S(8f), border, Selected ? Ui.S(2f) : Ui.SMin(1));
 
-            TextRenderer.DrawText(g, _title, Theme.Header, new Rectangle(12, 8, Width - 50, 22),
+            TextRenderer.DrawText(g, _title, Theme.Header, new Rectangle(Ui.S(12), Ui.S(8), Width - Ui.S(50), Ui.S(22)),
                 Theme.Text, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
 
             // Selection indicator.
-            var ring = new RectangleF(Width - 29, 10, 16, 16);
+            var ring = new RectangleF(Width - Ui.S(29f), Ui.S(10f), Ui.S(16f), Ui.S(16f));
             using (var ringFill = new SolidBrush(Theme.PanelBg3)) g.FillEllipse(ringFill, ring);
-            using (var ringPen = new Pen(Selected ? Theme.Accent : Theme.BorderLight, Selected ? 2f : 1f))
+            using (var ringPen = new Pen(Selected ? Theme.Accent : Theme.BorderLight, Selected ? Ui.S(2f) : Ui.SMin(1)))
                 g.DrawEllipse(ringPen, ring);
             if (Selected)
             {
                 using var dot = new SolidBrush(Theme.Accent);
-                g.FillEllipse(dot, Width - 24.5f, 14.5f, 7, 7);
+                g.FillEllipse(dot, Width - Ui.S(24.5f), Ui.S(14.5f), Ui.S(7f), Ui.S(7f));
             }
 
-            DrawPreview(g, Theme.PaletteFor(Style), new Rectangle(12, 38, 92, 60));
+            DrawPreview(g, Theme.PaletteFor(Style), Ui.Rect(12, 38, 92, 60));
             TextRenderer.DrawText(g, _description, Theme.Small,
-                new Rectangle(116, 40, Width - 126, 52), Theme.TextDim,
+                new Rectangle(Ui.S(116), Ui.S(40), Width - Ui.S(126), Ui.S(52)), Theme.TextDim,
                 TextFormatFlags.Left | TextFormatFlags.WordBreak);
         }
 
+        /// <summary>迷你 UI 縮圖預覽：座標同樣是 96 DPI 設計值。</summary>
         private static void DrawPreview(Graphics g, Theme.Palette p, Rectangle r)
         {
-            PaintHelpers.FillRounded(g, r, 5, p.WindowBg);
-            using (var border = new Pen(p.Border)) g.DrawRectangle(border, r);
+            PaintHelpers.FillRounded(g, r, Ui.S(5f), p.WindowBg);
+            using (var border = new Pen(p.Border, Ui.SMin(1))) g.DrawRectangle(border, r);
             using (var bar = new SolidBrush(p.PanelBg2))
-                g.FillRectangle(bar, r.X + 1, r.Y + 1, r.Width - 2, 13);
+                g.FillRectangle(bar, r.X + Ui.S(1), r.Y + Ui.S(1), r.Width - Ui.S(2), Ui.S(13));
             using (var side = new SolidBrush(p.PanelBg))
             {
-                g.FillRectangle(side, r.X + 1, r.Y + 15, 23, r.Height - 16);
-                g.FillRectangle(side, r.Right - 20, r.Y + 15, 19, r.Height - 16);
+                g.FillRectangle(side, r.X + Ui.S(1), r.Y + Ui.S(15), Ui.S(23), r.Height - Ui.S(16));
+                g.FillRectangle(side, r.Right - Ui.S(20), r.Y + Ui.S(15), Ui.S(19), r.Height - Ui.S(16));
             }
             using (var viewer = new SolidBrush(p.ViewerBg))
-                g.FillRectangle(viewer, r.X + 26, r.Y + 17, r.Width - 48, r.Height - 24);
+                g.FillRectangle(viewer, r.X + Ui.S(26), r.Y + Ui.S(17), r.Width - Ui.S(48), r.Height - Ui.S(24));
             using (var accent = new SolidBrush(p.Accent))
-                g.FillRectangle(accent, r.X + 65, r.Y + 5, 19, 5);
-            using (var text = new Pen(p.TextDim, 1))
+                g.FillRectangle(accent, r.X + Ui.S(65), r.Y + Ui.S(5), Ui.S(19), Ui.S(5));
+            using (var text = new Pen(p.TextDim, Ui.SMin(1)))
             {
-                g.DrawLine(text, r.X + 5, r.Y + 22, r.X + 19, r.Y + 22);
-                g.DrawLine(text, r.X + 5, r.Y + 28, r.X + 17, r.Y + 28);
-                g.DrawLine(text, r.Right - 16, r.Y + 23, r.Right - 5, r.Y + 23);
+                g.DrawLine(text, r.X + Ui.S(5), r.Y + Ui.S(22), r.X + Ui.S(19), r.Y + Ui.S(22));
+                g.DrawLine(text, r.X + Ui.S(5), r.Y + Ui.S(28), r.X + Ui.S(17), r.Y + Ui.S(28));
+                g.DrawLine(text, r.Right - Ui.S(16), r.Y + Ui.S(23), r.Right - Ui.S(5), r.Y + Ui.S(23));
             }
         }
     }

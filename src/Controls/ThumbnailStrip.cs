@@ -24,9 +24,10 @@ public sealed class ThumbnailStrip : Control
     private bool _draggingScroll;
     private int _scrollDragOffset;
 
-    private const int CellW = 180;
-    private const int TextH = 18;
-    private const int BarH = 16;
+    // 96 DPI 設計值 → 實際像素。
+    private static int CellW => Ui.S(180);
+    private static int TextH => Ui.S(18);
+    private static int BarH => Ui.S(16);
 
     private bool _showNumber = true;
 
@@ -47,7 +48,7 @@ public sealed class ThumbnailStrip : Control
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw |
                  ControlStyles.Selectable, true);
         BackColor = Theme.PanelBg2;
-        Height = 104;
+        Height = Ui.S(104);
     }
 
     public IReadOnlyList<PhotoItem> Items => _cells.Select(c => c.Item).ToList();
@@ -124,9 +125,9 @@ public sealed class ThumbnailStrip : Control
 
     private int ContentWidth => _cells.Count * CellW;
     private int MaxScroll => Math.Max(0, ContentWidth - Width);
-    private int CellImageH => Height - TextH - BarH - 6;
+    private int CellImageH => Height - TextH - BarH - Ui.S(6);
 
-    private Rectangle CellRect(int i) => new(i * CellW - _scrollX, 2, CellW, Height - BarH - 2);
+    private Rectangle CellRect(int i) => new(i * CellW - _scrollX, Ui.S(2), CellW, Height - BarH - Ui.S(2));
     private int IndexAt(Point p)
     {
         if (p.Y > Height - BarH) return -1;
@@ -144,7 +145,7 @@ public sealed class ThumbnailStrip : Control
 
     protected override void OnMouseWheel(MouseEventArgs e)
     {
-        _scrollX = Math.Clamp(_scrollX - e.Delta, 0, MaxScroll);
+        _scrollX = Math.Clamp(_scrollX - Ui.S(e.Delta), 0, MaxScroll);   // 每格捲動量隨縮放，手感一致
         UpdateHover(e.Location);
         Invalidate();
         base.OnMouseWheel(e);
@@ -245,9 +246,9 @@ public sealed class ThumbnailStrip : Control
     {
         if (MaxScroll <= 0) return Rectangle.Empty;
         float frac = Width / (float)ContentWidth;
-        int tw = Math.Max(30, (int)(Width * frac));
+        int tw = Math.Max(Ui.S(30), (int)(Width * frac));
         int tx = (int)((_scrollX / (float)MaxScroll) * (Width - tw));
-        return new Rectangle(tx, Height - BarH + 1, tw, BarH - 2);
+        return new Rectangle(tx, Height - BarH + Ui.S(1), tw, BarH - Ui.S(2));
     }
 
     // ---- paint -----------------------------------------------------------
@@ -267,7 +268,7 @@ public sealed class ThumbnailStrip : Control
         {
             using var track = new SolidBrush(Theme.PanelBg);
             g.FillRectangle(track, 0, Height - BarH, Width, BarH);
-            PaintHelpers.FillRounded(g, ScrollThumbRect(), 3, Theme.BorderLight);
+            PaintHelpers.FillRounded(g, ScrollThumbRect(), Ui.S(3f), Theme.BorderLight);
         }
     }
 
@@ -277,9 +278,9 @@ public sealed class ThumbnailStrip : Control
         var rect = CellRect(i);
         bool selected = _selected.Contains(i);
 
-        var pad = new Rectangle(rect.X + 4, rect.Y + 2, rect.Width - 8, CellImageH);
+        var pad = new Rectangle(rect.X + Ui.S(4), rect.Y + Ui.S(2), rect.Width - Ui.S(8), CellImageH);
         using (var bg = new SolidBrush(selected ? Theme.PanelBg3 : (i == _hoverIndex ? Theme.PanelBg : Theme.PanelBg2)))
-            g.FillRectangle(bg, rect.X + 2, rect.Y, rect.Width - 4, rect.Height);
+            g.FillRectangle(bg, rect.X + Ui.S(2), rect.Y, rect.Width - Ui.S(4), rect.Height);
 
         // image
         Rectangle photoRect = pad;
@@ -298,14 +299,14 @@ public sealed class ThumbnailStrip : Control
 
         // filename
         TextRenderer.DrawText(g, cell.Item.FileName, Theme.Small,
-            new Rectangle(rect.X + 4, rect.Bottom - TextH, rect.Width - 8, TextH),
+            new Rectangle(rect.X + Ui.S(4), rect.Bottom - TextH, rect.Width - Ui.S(8), TextH),
             selected ? Theme.Text : Theme.TextDim,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.EndEllipsis);
 
         // selection border
         if (selected)
-            using (var pen = new Pen(Theme.Accent, 2))
-                g.DrawRectangle(pen, rect.X + 2, rect.Y + 1, rect.Width - 5, rect.Height - 2);
+            using (var pen = new Pen(Theme.Accent, Ui.S(2f)))
+                g.DrawRectangle(pen, rect.X + Ui.S(2), rect.Y + Ui.S(1), rect.Width - Ui.S(5), rect.Height - Ui.S(2));
 
         // index number (top-left, starting from #1) — DisplayNumber counts the folder's full
         // list including hidden photos, so numbers skip when a photo is hidden (#1, #3…).
@@ -313,44 +314,46 @@ public sealed class ThumbnailStrip : Control
         {
             string num = "#" + (cell.Item.DisplayNumber > 0 ? cell.Item.DisplayNumber : i + 1);
             var numSize = TextRenderer.MeasureText(num, Theme.Small);
-            var numRect = new Rectangle(photoRect.X + 3, photoRect.Y + 3, numSize.Width + 8, 15);
-            PaintHelpers.FillRounded(g, numRect, 3, Color.FromArgb(185, 90, 90, 98));
+            var numRect = new Rectangle(photoRect.X + Ui.S(3), photoRect.Y + Ui.S(3),
+                numSize.Width + Ui.S(8), Math.Max(numSize.Height, Ui.S(15)));
+            PaintHelpers.FillRounded(g, numRect, Ui.S(3f), Color.FromArgb(185, 90, 90, 98));
             TextRenderer.DrawText(g, num, Theme.Small, numRect,
                 selected ? Color.White : Color.FromArgb(235, 235, 240),
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
         }
 
         // status markers (top-right, right-aligned)
-        int rx = photoRect.Right - 4, ry = photoRect.Y + 4;
+        int rx = photoRect.Right - Ui.S(4), ry = photoRect.Y + Ui.S(4);
         if (cell.Item.IsHidden)
         {
             // 隱藏 icon：劃了斜線的眼睛（隱藏且不輸出的照片，「顯示全部」模式下可見）。
-            var r = new Rectangle(rx - 18, ry, 18, 13);
-            PaintHelpers.FillRounded(g, r, 3, Color.FromArgb(205, 40, 40, 46));
-            using (var pen = new Pen(Color.FromArgb(240, 240, 244), 1.4f))
+            var r = new Rectangle(rx - Ui.S(18), ry, Ui.S(18), Ui.S(13));
+            PaintHelpers.FillRounded(g, r, Ui.S(3f), Color.FromArgb(205, 40, 40, 46));
+            using (var pen = new Pen(Color.FromArgb(240, 240, 244), Ui.S(1.4f)))
             {
-                g.DrawEllipse(pen, r.X + 4f, r.Y + 3.5f, 10f, 6f);
-                g.DrawLine(pen, r.X + 3f, r.Bottom - 2f, r.Right - 3f, r.Y + 2f);
+                g.DrawEllipse(pen, r.X + Ui.S(4f), r.Y + Ui.S(3.5f), Ui.S(10f), Ui.S(6f));
+                g.DrawLine(pen, r.X + Ui.S(3f), r.Bottom - Ui.S(2f), r.Right - Ui.S(3f), r.Y + Ui.S(2f));
             }
-            rx -= 22;
+            rx -= Ui.S(22);
         }
         if (cell.Item.IsVirtualCopy)
         {
-            var r = new Rectangle(rx - 30, ry, 30, 12);
-            PaintHelpers.FillRounded(g, r, 3, Theme.CopyBadge);
+            var r = new Rectangle(rx - Ui.S(30), ry, Ui.S(30), Ui.S(12));
+            PaintHelpers.FillRounded(g, r, Ui.S(3f), Theme.CopyBadge);
             TextRenderer.DrawText(g, "copy", Theme.Small, r, Color.Black,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
-            rx -= 34;
+            rx -= Ui.S(34);
         }
         if (cell.Item.IsEdited)
         {
             using var b = new SolidBrush(Theme.EditedBadge);
-            g.FillEllipse(b, rx - 9, ry, 9, 9);
-            rx -= 13;
+            g.FillEllipse(b, rx - Ui.S(9f), ry, Ui.S(9f), Ui.S(9f));
+            rx -= Ui.S(13);
         }
         if (cell.Item.IsCopySettingsSource)
-            using (var pen = new Pen(Theme.CopyBadge, 2) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
-                g.DrawRectangle(pen, photoRect.X + 1, photoRect.Y + 1, photoRect.Width - 2, photoRect.Height - 2);
+            using (var pen = new Pen(Theme.CopyBadge, Ui.S(2f)) { DashStyle = System.Drawing.Drawing2D.DashStyle.Dash })
+                g.DrawRectangle(pen, photoRect.X + Ui.S(1), photoRect.Y + Ui.S(1),
+                    photoRect.Width - Ui.S(2), photoRect.Height - Ui.S(2));
     }
 
     private static Rectangle FitRect(Size src, Rectangle bounds)

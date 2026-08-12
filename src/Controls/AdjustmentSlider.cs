@@ -36,13 +36,16 @@ public sealed class AdjustmentSlider : Control
     /// <summary>Fires whenever the value changes.</summary>
     public event EventHandler? ValueChanged;
 
-    private const int TrackTop = 24;
+    // 96 DPI 設計值，取用時才乘 Ui.Scale。
+    private static int TrackTop => Ui.S(24);
+    /// <summary>右上角數值欄的寬度（點進去可直接打字）。</summary>
+    private static int ValueWidth => Ui.S(70);
 
     public AdjustmentSlider()
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Height = 40;
+        Height = Ui.S(40);
         Font = Theme.Normal;
         Cursor = Cursors.Hand;
     }
@@ -61,7 +64,7 @@ public sealed class AdjustmentSlider : Control
     private double Step => double.IsNaN(WheelStep) ? (Max - Min) / 200.0 : WheelStep;
 
     // Map value <-> track x
-    private RectangleF TrackRect => new(2, TrackTop, Width - 4, 6);
+    private RectangleF TrackRect => new(Ui.S(2f), TrackTop, Width - Ui.S(4f), Ui.S(6f));
     private float ValueToX(double v)
     {
         double t = (v - Min) / (Max - Min);
@@ -84,7 +87,7 @@ public sealed class AdjustmentSlider : Control
         if (e.Button == MouseButtons.Left)
         {
             // Click on the value text (top-right) -> inline numeric edit.
-            if (e.Y < TrackTop && e.X > Width - 70)
+            if (e.Y < TrackTop && e.X > Width - ValueWidth)
             {
                 BeginEdit();
             }
@@ -108,7 +111,7 @@ public sealed class AdjustmentSlider : Control
 
     protected override void OnMouseDoubleClick(MouseEventArgs e)
     {
-        if (e.Y >= TrackTop || e.X <= Width - 70)
+        if (e.Y >= TrackTop || e.X <= Width - ValueWidth)
         {
             EditBegin?.Invoke(this, EventArgs.Empty);
             SetValue(DefaultValue, raiseBegin: false, user: true);
@@ -134,7 +137,7 @@ public sealed class AdjustmentSlider : Control
             BackColor = Theme.PanelBg3,
             ForeColor = Theme.Text,
             Text = _value.ToString(Format, CultureInfo.InvariantCulture),
-            Bounds = new Rectangle(Width - 68, 1, 64, 20),
+            Bounds = new Rectangle(Width - Ui.S(68), Ui.S(1), Ui.S(64), Ui.S(20)),
             TextAlign = HorizontalAlignment.Right
         };
         _editor.SelectAll();
@@ -174,15 +177,15 @@ public sealed class AdjustmentSlider : Control
         PaintHelpers.EnableHighQuality(g);
         g.Clear(Theme.PanelBg);
 
-        TextRenderer.DrawText(g, Label, Font, new Rectangle(0, 2, Width - 70, 18), Theme.TextDim,
-            TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
+        TextRenderer.DrawText(g, Label, Font, new Rectangle(0, Ui.S(2), Width - ValueWidth, Ui.S(18)),
+            Theme.TextDim, TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
         if (_editor is null)
             TextRenderer.DrawText(g, _value.ToString(Format, CultureInfo.InvariantCulture), Font,
-                new Rectangle(Width - 70, 2, 68, 18), Theme.Text,
+                new Rectangle(Width - ValueWidth, Ui.S(2), Ui.S(68), Ui.S(18)), Theme.Text,
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
 
         var tr = TrackRect;
-        PaintHelpers.FillRounded(g, tr, 3, Theme.SliderTrack);
+        PaintHelpers.FillRounded(g, tr, Ui.S(3f), Theme.SliderTrack);
 
         // fill
         float knobX = ValueToX(_value);
@@ -190,21 +193,22 @@ public sealed class AdjustmentSlider : Control
         {
             float midX = ValueToX(0);
             float x0 = Math.Min(midX, knobX), x1 = Math.Max(midX, knobX);
-            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), 3, Theme.SliderFill);
+            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
         }
         else
         {
             float x0 = ValueToX(Min);
             float x1 = knobX;
             if (x1 < x0) (x0, x1) = (x1, x0);
-            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), 3, Theme.SliderFill);
+            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
         }
 
         // knob
         float ky = tr.Y + tr.Height / 2f;
+        float kr = Ui.S(6f), kd = Ui.S(12f);
         using (var b = new SolidBrush(Theme.SliderKnob))
-            g.FillEllipse(b, knobX - 6, ky - 6, 12, 12);
-        using (var pen = new Pen(Theme.WindowBg, 1.5f))
-            g.DrawEllipse(pen, knobX - 6, ky - 6, 12, 12);
+            g.FillEllipse(b, knobX - kr, ky - kr, kd, kd);
+        using (var pen = new Pen(Theme.WindowBg, Ui.S(1.5f)))
+            g.DrawEllipse(pen, knobX - kr, ky - kr, kd, kd);
     }
 }

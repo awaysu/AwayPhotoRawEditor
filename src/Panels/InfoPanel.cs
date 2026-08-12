@@ -17,16 +17,16 @@ public sealed class HistogramPanel : SectionPanel
     public HistogramPanel() : base("直方圖")
     {
         ManualLayout = true;
-        Size = new Size(290, 158);
+        Size = Ui.Sz(290, 158);
 
         _hist = new HistogramControl();
-        _hist.SetBounds(11, 4, 268, 98);
+        Ui.Place(_hist, 11, 4, 268, 98);
         _mean = new Label
         {
             ForeColor = Theme.TextDim, Font = Theme.Mono, TextAlign = ContentAlignment.MiddleLeft,
             Text = "R 0.0   G 0.0   B 0.0"
         };
-        _mean.SetBounds(11, 104, 268, 22);
+        Ui.Place(_mean, 11, 104, 268, 22);
 
         ContentArea.Controls.Add(_hist);
         ContentArea.Controls.Add(_mean);
@@ -44,9 +44,9 @@ public sealed class PhotoInfoPanel : SectionPanel
     public PhotoInfoPanel() : base("照片資訊")
     {
         ManualLayout = true;
-        Size = new Size(290, 285);
+        Size = Ui.Sz(290, 285);
         _exif = new ExifView();
-        _exif.SetBounds(11, 4, 268, 245);
+        Ui.Place(_exif, 11, 4, 268, 245);
         ContentArea.Controls.Add(_exif);
     }
 
@@ -73,7 +73,7 @@ public sealed class ExifView : Control
         g.Clear(Theme.PanelBg);
         if (_data is null)
         {
-            TextRenderer.DrawText(g, "—", Theme.Normal, new Rectangle(0, 2, Width, 20), Theme.TextFaint, TextFormatFlags.Left);
+            TextRenderer.DrawText(g, "—", Theme.Normal, new Rectangle(0, Ui.S(2), Width, Ui.S(20)), Theme.TextFaint, TextFormatFlags.Left);
             return;
         }
 
@@ -93,9 +93,17 @@ public sealed class ExifView : Control
             (L.T("檔案大小"), _data.FileSizeDisplay),
         };
 
-        int y = 2;
-        int keyW = L.CurrentLanguage is AppLanguage.TraditionalChinese or AppLanguage.SimplifiedChinese ? 64 : 94;
-        const int lineH = 20;
+        int y = Ui.S(2);
+        // 欄位名欄寬與列高都用實測值：字級可由使用者調整（設定 →「字體大小」），
+        // 寫死 64/94 與 20 在大字級下會讓「曝光補償」貼上右邊的數值、或讓上下列相黏。
+        int keyW = Ui.S(L.CurrentLanguage is AppLanguage.TraditionalChinese or AppLanguage.SimplifiedChinese ? 64 : 94);
+        foreach (var (k, _) in rows)
+            keyW = Math.Max(keyW, TextRenderer.MeasureText(g, k, Theme.Small).Width + Ui.S(8));
+        keyW = Math.Min(keyW, Width * 45 / 100);   // 別把數值欄擠掉
+        // 列高刻意維持 20：12 列 × 20 = 240 剛好放進 ExifView 的 245 高。
+        // 若改成隨字級長高（15px → 23），12 列變 276 就會把最後幾列裁掉——
+        // 而放大 ExifView 又會讓右欄超過螢幕。字要塞進固定的框，不是反過來。
+        int lineH = Ui.S(20);
         foreach (var (k, v) in rows)
         {
             if (string.IsNullOrWhiteSpace(v)) continue;

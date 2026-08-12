@@ -27,10 +27,11 @@ public static class PaintHelpers
         g.FillPath(b, p);
     }
 
-    public static void DrawRounded(Graphics g, RectangleF r, float radius, Color color, float width = 1f)
+    /// <param name="width">線寬（實際像素）。0 = 自動，取隨 DPI 縮放的 1 設計像素。</param>
+    public static void DrawRounded(Graphics g, RectangleF r, float radius, Color color, float width = 0f)
     {
         using var p = RoundedRect(r, radius);
-        using var pen = new Pen(color, width);
+        using var pen = new Pen(color, width > 0 ? width : Ui.SMin(1));
         g.DrawPath(pen, p);
     }
 

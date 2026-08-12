@@ -106,6 +106,23 @@ public static class L
         ["一般選項"] = new("General", "一般", "일반", "常规", "Allgemein", "Général", "General"),
         ["介面風格"] = new("Interface style", "インターフェーススタイル", "인터페이스 스타일", "界面风格", "Oberflächenstil", "Style d'interface", "Estilo de interfaz"),
         ["語言"] = new("Language", "言語", "언어", "语言", "Sprache", "Langue", "Idioma"),
+        ["介面大小"] = new("UI size", "UI サイズ", "UI 크기", "界面大小", "UI-Größe", "Taille de l'UI", "Tamaño de UI"),
+        ["自動（依螢幕大小）"] = new(
+            "Automatic (fit screen)",
+            "自動（画面に合わせる）",
+            "자동 (화면에 맞춤)",
+            "自动（适应屏幕）",
+            "Automatisch (Bildschirm)",
+            "Automatique (écran)",
+            "Automático (pantalla)"),
+        ["變更介面大小後將自動重新啟動程式"] = new(
+            "Restarts after a UI size change",
+            "UI サイズ変更後に自動で再起動します",
+            "UI 크기 변경 후 앱 재시작",
+            "更改界面大小后将自动重新启动程序",
+            "Neustart nach Größenwechsel",
+            "Redémarre après changement de taille",
+            "Se reinicia al cambiar el tamaño"),
         ["變更語言後將自動重新啟動程式"] = new(
             "Restarts after a language change",
             "言語変更後に自動で再起動します",

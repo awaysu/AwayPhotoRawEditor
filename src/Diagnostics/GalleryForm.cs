@@ -19,18 +19,18 @@ public sealed class GalleryForm : Form
         BackColor = Theme.WindowBg;
         ForeColor = Theme.Text;
         Font = Theme.Normal;
-        ClientSize = new Size(1180, 760);
+        ClientSize = Ui.Sz(1180, 760);
         StartPosition = FormStartPosition.CenterScreen;
 
         // ---- Left column: sections with sliders + buttons ----
-        var left = new Panel { BackColor = Theme.PanelBg, Dock = DockStyle.Left, Width = 320, AutoScroll = true };
+        var left = new Panel { BackColor = Theme.PanelBg, Dock = DockStyle.Left, Width = Ui.S(320), AutoScroll = true };
         Controls.Add(left);
 
-        var presetPanel = new Panel { Dock = DockStyle.Top, Height = 96, BackColor = Theme.PanelBg };
+        var presetPanel = new Panel { Dock = DockStyle.Top, Height = Ui.S(96), BackColor = Theme.PanelBg };
         var combo = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList, FlatStyle = FlatStyle.Flat, BackColor = Theme.PanelBg3, ForeColor = Theme.Text };
         combo.Items.AddRange(new object[] { L.T("預設時設定"), L.T("風景"), L.T("人像"), L.T("鮮豔"), L.T("黑白") });
         combo.SelectedIndex = 1;
-        presetPanel.Controls.Add(new FlatButton { Text = "儲存風格檔", Dock = DockStyle.Bottom, Height = 28 });
+        presetPanel.Controls.Add(new FlatButton { Text = "儲存風格檔", Dock = DockStyle.Bottom, Height = Ui.S(28) });
         presetPanel.Controls.Add(combo);
 
         var color = new SectionPanel("色彩");
@@ -52,23 +52,23 @@ public sealed class GalleryForm : Form
         left.Controls.Add(basic);
 
         // ---- Right column: histogram, tabs, ratings, buttons ----
-        var right = new Panel { BackColor = Theme.PanelBg, Dock = DockStyle.Right, Width = 300, Padding = new Padding(12) };
+        var right = new Panel { BackColor = Theme.PanelBg, Dock = DockStyle.Right, Width = Ui.S(300), Padding = Ui.Pad(12) };
         Controls.Add(right);
 
         var hist = new HistogramControl { Dock = DockStyle.Top, Histogram = SampleHistogram() };
-        var tab = new TopTab { Dock = DockStyle.Top, Tabs = new[] { "裁切", "漸層", "修護", "標誌" }, SelectedIndex = 0, Margin = new Padding(0, 8, 0, 0) };
-        var dropper = new IconButton { Glyph = "🖉", Checkable = true, Dock = DockStyle.Top, Height = 32 };
-        var primaryBtn = new FlatButton { Text = "匯出全部照片", Primary = true, Dock = DockStyle.Top, Height = 32 };
-        var normalBtn = new FlatButton { Text = "恢復上一步", Dock = DockStyle.Top, Height = 30 };
+        var tab = new TopTab { Dock = DockStyle.Top, Tabs = new[] { "裁切", "漸層", "修護", "標誌" }, SelectedIndex = 0, Margin = Ui.Pad(0, 8, 0, 0) };
+        var dropper = new IconButton { Glyph = "🖉", Checkable = true, Dock = DockStyle.Top, Height = Ui.S(32) };
+        var primaryBtn = new FlatButton { Text = "匯出全部照片", Primary = true, Dock = DockStyle.Top, Height = Ui.S(32) };
+        var normalBtn = new FlatButton { Text = "恢復上一步", Dock = DockStyle.Top, Height = Ui.S(30) };
         foreach (var c in new Control[] { normalBtn, primaryBtn, dropper, tab, hist })
         {
-            c.Margin = new Padding(0, 6, 0, 6);
+            c.Margin = Ui.Pad(0, 6, 0, 6);
             right.Controls.Add(c);
             c.BringToFront();
         }
 
         // ---- Bottom: thumbnail strip ----
-        var strip = new ThumbnailStrip { Dock = DockStyle.Bottom, Height = 108 };
+        var strip = new ThumbnailStrip { Dock = DockStyle.Bottom, Height = Ui.S(108) };
         Controls.Add(strip);
         var items = new List<PhotoItem>();
         for (int i = 0; i < 8; i++)
@@ -102,7 +102,7 @@ public sealed class GalleryForm : Form
         => new()
         {
             Label = label, Min = min, Max = max, DefaultValue = def, Format = fmt, Bipolar = bipolar,
-            Value = val, Height = 40
+            Value = val, Height = Ui.S(40)
         };
 
     private static Histogram SampleHistogram()

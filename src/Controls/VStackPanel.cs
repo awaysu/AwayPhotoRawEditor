@@ -9,7 +9,9 @@ public sealed class VStackPanel : Panel
 {
     private readonly List<Control> _order = new();
     private bool _inRelayout;
+    /// <summary>96 DPI 設計值，排版時才乘 Ui.Scale。</summary>
     public int Gap { get; set; } = 6;
+    /// <summary>96 DPI 設計值，排版時才乘 Ui.Scale。</summary>
     public int SidePad { get; set; } = 0;
 
     public VStackPanel()
@@ -44,12 +46,13 @@ public sealed class VStackPanel : Panel
         try
         {
             int y = 0;
-            int w = Math.Max(10, Width - 2 * SidePad);
+            int pad = Ui.S(SidePad), gap = Ui.S(Gap);
+            int w = Math.Max(Ui.S(10), Width - 2 * pad);
             foreach (var c in _order)
             {
                 if (!c.Visible) continue;
-                c.Left = SidePad; c.Top = y; c.Width = w;
-                y += c.Height + Gap;
+                c.Left = pad; c.Top = y; c.Width = w;
+                y += c.Height + gap;
             }
             Height = Math.Max(0, y);
         }

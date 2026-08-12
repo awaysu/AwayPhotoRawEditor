@@ -8,7 +8,7 @@ namespace AwayPhotoRawEditor.Controls;
 public sealed class DarkCheckBox : CheckBox
 {
     private bool _hover;
-    private const int Box = 17;
+    private static int Box => Ui.S(17);   // 96 DPI 設計值
 
     public DarkCheckBox()
     {
@@ -20,7 +20,7 @@ public sealed class DarkCheckBox : CheckBox
         Font = Theme.Normal;
         AutoSize = false;
         Cursor = Cursors.Hand;
-        Height = 24;
+        Height = Ui.S(24);
         CheckedChanged += (_, _) => Invalidate();
     }
 
@@ -33,21 +33,29 @@ public sealed class DarkCheckBox : CheckBox
         PaintHelpers.EnableHighQuality(g);
         using (var bg = new SolidBrush(BackColor)) g.FillRectangle(bg, ClientRectangle);
 
-        int by = (Height - Box) / 2;
-        var r = new RectangleF(0.5f, by + 0.5f, Box, Box);
+        int box = Box;
+        int by = (Height - box) / 2;
+        var r = new RectangleF(0.5f, by + 0.5f, box, box);
         if (Checked)
         {
-            PaintHelpers.FillRounded(g, r, 4, Enabled ? Theme.Accent : Theme.AccentDim);
-            using var pen = new Pen(Color.White, 2f) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
-            g.DrawLines(pen, new[] { new PointF(4, by + 9), new PointF(7.5f, by + 12.5f), new PointF(13, by + 5) });
+            PaintHelpers.FillRounded(g, r, Ui.S(4f), Enabled ? Theme.Accent : Theme.AccentDim);
+            using var pen = new Pen(Color.White, Ui.S(2f)) { StartCap = System.Drawing.Drawing2D.LineCap.Round, EndCap = System.Drawing.Drawing2D.LineCap.Round };
+            g.DrawLines(pen, new[]
+            {
+                new PointF(Ui.S(4f), by + Ui.S(9f)),
+                new PointF(Ui.S(7.5f), by + Ui.S(12.5f)),
+                new PointF(Ui.S(13f), by + Ui.S(5f))
+            });
         }
         else
         {
-            PaintHelpers.FillRounded(g, r, 4, Theme.PanelBg3);
-            PaintHelpers.DrawRounded(g, r, 4, _hover && Enabled ? Theme.Accent : Theme.BorderLight, _hover ? 1.5f : 1f);
+            PaintHelpers.FillRounded(g, r, Ui.S(4f), Theme.PanelBg3);
+            PaintHelpers.DrawRounded(g, r, Ui.S(4f), _hover && Enabled ? Theme.Accent : Theme.BorderLight,
+                _hover ? Ui.S(1.5f) : Ui.SMin(1));
         }
 
-        var textRect = new Rectangle(Box + 9, 0, Width - Box - 9, Height);
+        int gap = Ui.S(9);
+        var textRect = new Rectangle(box + gap, 0, Width - box - gap, Height);
         TextRenderer.DrawText(g, Text, Font, textRect, Enabled ? ForeColor : Theme.TextFaint,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }

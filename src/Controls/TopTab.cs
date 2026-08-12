@@ -36,7 +36,7 @@ public sealed class TopTab : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Height = 32;
+        Height = Ui.S(32);
         Font = Theme.Normal;
     }
 
@@ -71,13 +71,15 @@ public sealed class TopTab : Control
         {
             var r = new RectangleF(i * tw, 0, tw, Height);
             bool sel = i == _selected;
-            if (sel) PaintHelpers.FillRounded(g, new RectangleF(r.X + 2, 3, r.Width - 4, Height - 6), 4, Theme.PanelBg3);
+            if (sel)
+                PaintHelpers.FillRounded(g, new RectangleF(r.X + Ui.S(2f), Ui.S(3f),
+                    r.Width - Ui.S(4f), Height - Ui.S(6f)), Ui.S(4f), Theme.PanelBg3);
             Color fg = sel ? Theme.Text : i == _hoverIndex ? Theme.Text : Theme.TextDim;
             TextRenderer.DrawText(g, _tabs[i], Font, Rectangle.Round(r), fg,
                 TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
             if (sel)
-                using (var pen = new Pen(Theme.Accent, 2))
-                    g.DrawLine(pen, r.X + 8, Height - 2, r.Right - 8, Height - 2);
+                using (var pen = new Pen(Theme.Accent, Ui.S(2f)))
+                    g.DrawLine(pen, r.X + Ui.S(8f), Height - Ui.S(2f), r.Right - Ui.S(8f), Height - Ui.S(2f));
         }
     }
 }

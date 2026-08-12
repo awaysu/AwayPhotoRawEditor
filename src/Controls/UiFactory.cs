@@ -18,8 +18,8 @@ public static class UiFactory
             BackColor = Theme.PanelBg3,
             ForeColor = Theme.Text,
             Font = Theme.Normal,
-            Height = 24,
-            ItemHeight = 20
+            Height = Ui.S(24),
+            ItemHeight = Ui.S(20)
         };
         c.Items.AddRange(items.Select(L.T).Cast<object>().ToArray());
         c.DrawItem += (s, e) =>
@@ -45,22 +45,13 @@ public static class UiFactory
             Font = Theme.Normal,
             Text = text
         };
-        MatchDpiFont(t);
         return t;
     }
 
-    /// <summary>原生 EDIT 類控制項（TextBox/NumericUpDown）的字型不會隨 DPI 放大，
-    /// owner-draw 的下拉選單（TextRenderer 依 DC DPI 換算）則會，導致兩者字級不一致。
-    /// handle 建立後依 DeviceDpi 放大字型，讓文字大小與下拉選單一致。</summary>
-    private static void MatchDpiFont(Control c)
-    {
-        c.HandleCreated += (s, _) =>
-        {
-            var ctl = (Control)s!;
-            float scale = ctl.DeviceDpi / 96f;
-            if (scale > 1.01f) ctl.Font = Theme.UI(9f * scale);
-        };
-    }
+    // 註：舊版有個 MatchDpiFont，會在 handle 建立後把 TextBox/NumericUpDown 的字型再放大
+    // DeviceDpi/96 倍——那是 PerMonitorV2 但完全沒做 DPI 縮放時的權宜之計。改成 SystemAware
+    // 之後原生 EDIT 控制項的字型已經正確跟著系統 DPI 放大，再乘一次會變成 1.5×1.5，
+    // 輸入框的字明顯大過旁邊的標籤與下拉選單，所以移除。
 
     public static CheckBox Check(string text, bool @checked = false)
     {
@@ -91,7 +82,6 @@ public static class UiFactory
             Font = Theme.Normal,
             TextAlign = HorizontalAlignment.Left
         };
-        MatchDpiFont(n);
         return n;
     }
 

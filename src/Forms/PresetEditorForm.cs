@@ -37,54 +37,58 @@ public sealed class PresetEditorForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(598, 732);
+        // 這是最高的對話框：150% 以上時可能高過螢幕工作區，夾住尺寸並允許捲動。
+        ClientSize = Ui.FitWorkArea(598, 732);
+        AutoScroll = true;
 
-        var header = new Label { Text = "編輯風格檔", Font = Theme.Header, ForeColor = Theme.Text, Left = 16, Top = 14, Width = 300, Height = 24 };
+        // 座標一律是 96 DPI 設計值。
+        var header = new Label { Text = "編輯風格檔", Font = Theme.Header, ForeColor = Theme.Text };
+        Ui.Place(header, 16, 14, 300, 24);
 
         _list = new ListBox
         {
             BackColor = Theme.PanelBg2, ForeColor = Theme.Text, BorderStyle = BorderStyle.FixedSingle,
-            DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = 30, IntegralHeight = false
+            DrawMode = DrawMode.OwnerDrawFixed, ItemHeight = Ui.S(30), IntegralHeight = false
         };
-        _list.SetBounds(16, 50, 240, 468);
+        Ui.Place(_list, 16, 50, 240, 468);
         _list.DrawItem += DrawListItem;
         _list.SelectedIndexChanged += (_, _) => { if (_list.SelectedItem is string n && n != _cur) SelectPreset(n); };
 
         var nameLbl = UiFactory.Label("新增自訂風格檔", Theme.TextDim);
-        nameLbl.SetBounds(16, 528, 240, 20);
+        Ui.Place(nameLbl, 16, 528, 240, 20);
         _nameBox = UiFactory.Text();
-        _nameBox.SetBounds(16, 552, 152, 28);
+        Ui.Place(_nameBox, 16, 552, 152, 28);
         var addBtn = new FlatButton { Text = "新增" };
-        addBtn.SetBounds(174, 551, 82, 28);
+        Ui.Place(addBtn, 174, 551, 82, 28);
         addBtn.Click += (_, _) => AddCustom();
 
         var hint = UiFactory.Label("「新增」以目前顯示的設定建立\n修改會自動儲存", Theme.TextFaint);
         hint.Font = Theme.Small;
-        hint.SetBounds(16, 588, 240, 36);
+        Ui.Place(hint, 16, 588, 240, 36);
 
         // right column: the same three adjust panels as the main window
         // (SectionPanel defaults to Dock.Top — switch to absolute placement first)
         _basic.Dock = _color.Dock = _detail.Dock = DockStyle.None;
-        _basic.Location = new Point(272, 50);
-        _color.Location = new Point(272, 305);
-        _detail.Location = new Point(272, 525);
+        _basic.Location = Ui.Pt(272, 50);
+        _color.Location = Ui.Pt(272, 305);
+        _detail.Location = Ui.Pt(272, 525);
         _color.SetTemperatureMode(true);   // 風格檔一律以 Kelvin 儲存
         _color.HideWhiteBalanceRow();      // 沒有目標照片，滴管/拍攝時設定不適用
 
         var backupBtn = new FlatButton { Text = "備份全部" };
-        backupBtn.SetBounds(16, 646, 116, 32);
+        Ui.Place(backupBtn, 16, 646, 116, 32);
         backupBtn.Click += (_, _) => BackupAll();
 
         var restoreBtn = new FlatButton { Text = "還原全部" };
-        restoreBtn.SetBounds(140, 646, 116, 32);
+        Ui.Place(restoreBtn, 140, 646, 116, 32);
         restoreBtn.Click += (_, _) => RestoreAll();
 
         var resetBtn = new FlatButton { Text = "恢復預設" };
-        resetBtn.SetBounds(16, 686, 240, 32);
+        Ui.Place(resetBtn, 16, 686, 240, 32);
         resetBtn.Click += (_, _) => ResetAllPresets();
 
         var closeBtn = new FlatButton { Text = "關閉", Primary = true };
-        closeBtn.SetBounds(502, 686, 80, 32);
+        Ui.Place(closeBtn, 502, 686, 80, 32);
         closeBtn.Click += (_, _) => Close();
 
         Controls.AddRange(new Control[] { header, _list, nameLbl, _nameBox, addBtn, hint, _basic, _color, _detail, backupBtn, restoreBtn, resetBtn, closeBtn });
@@ -120,7 +124,7 @@ public sealed class PresetEditorForm : Form
         string name = _list.Items[e.Index] as string ?? "";
         string text = PresetProfile.BuiltIn.ContainsKey(name) ? L.T(name) : name + L.T("（自訂）");
         TextRenderer.DrawText(e.Graphics, text, Font,
-            new Rectangle(e.Bounds.X + 10, e.Bounds.Y, e.Bounds.Width - 12, e.Bounds.Height),
+            new Rectangle(e.Bounds.X + Ui.S(10), e.Bounds.Y, e.Bounds.Width - Ui.S(12), e.Bounds.Height),
             sel ? Color.White : Theme.Text,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }

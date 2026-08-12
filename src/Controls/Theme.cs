@@ -164,12 +164,25 @@ public static class Theme
         AppLanguage.German or AppLanguage.French or AppLanguage.Spanish => "Segoe UI",
         _ => "Microsoft JhengHei UI"
     };
+    /// <summary>字級的正式單位是「100%（96 DPI）下的整數像素」，換算 pt = px × 0.75。
+    /// GDI+ 會依系統 DPI 把點數換回像素，所以這裡<b>不</b>乘 <c>Ui.Scale</c>（那是版面座標用的），
+    /// 只乘 <c>Ui.FontScale</c>——它負責在「系統 DPI」與「介面大小」不一致時補上差額。</summary>
+    public static Font UIPx(int px, FontStyle style = FontStyle.Regular) =>
+        new(FontFamily, px * 0.75f * Ui.FontScale, style);
+
+    /// <summary>以點數建立（僅供仍以 pt 思考的少數呼叫點；新程式請用 <see cref="UIPx"/>）。</summary>
     public static Font UI(float size = 9f, FontStyle style = FontStyle.Regular) =>
-        new(FontFamily, size, style);
-    public static readonly Font Small = UI(8f);
-    public static readonly Font Normal = UI(9f);
-    public static readonly Font Header = UI(10f, FontStyle.Bold);
-    public static readonly Font Mono = new("Consolas", 8.5f);
+        new(FontFamily, size * Ui.FontScale, style);
+
+    /// <summary>使用者可微調的字級（設定 →「字體大小…」）。</summary>
+    public static FontSizes Sizes => AppSettings.Current.FontSizes;
+
+    // 快取常用字型：這些會在每次 OnPaint 用到，不能每次 new。
+    // 使用者改了字級之後由 Application.Restart() 重建（同語言/介面大小的做法）。
+    public static readonly Font Small = UIPx(Sizes.Small);
+    public static readonly Font Normal = UIPx(Sizes.Normal);
+    public static readonly Font Header = UIPx(Sizes.SectionTitle, FontStyle.Bold);
+    public static readonly Font Mono = new("Consolas", Sizes.Mono * 0.75f * Ui.FontScale);
 
     public static readonly StringFormat CenterLeft = new()
     {

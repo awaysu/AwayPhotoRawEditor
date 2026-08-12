@@ -8,7 +8,7 @@ namespace AwayPhotoRawEditor.Controls;
 public sealed class DarkRadioButton : RadioButton
 {
     private bool _hover;
-    private const int Ring = 17;
+    private static int Ring => Ui.S(17);   // 96 DPI 設計值
 
     public DarkRadioButton()
     {
@@ -20,7 +20,7 @@ public sealed class DarkRadioButton : RadioButton
         Font = Theme.Normal;
         AutoSize = false;
         Cursor = Cursors.Hand;
-        Height = 24;
+        Height = Ui.S(24);
         CheckedChanged += (_, _) => Invalidate();
     }
 
@@ -33,19 +33,21 @@ public sealed class DarkRadioButton : RadioButton
         PaintHelpers.EnableHighQuality(g);
         using (var bg = new SolidBrush(BackColor)) g.FillRectangle(bg, ClientRectangle);
 
-        int cy = Height / 2;
-        var ringRect = new RectangleF(0.5f, cy - Ring / 2f + 0.5f, Ring, Ring);
+        int cy = Height / 2, ring = Ring;
+        var ringRect = new RectangleF(0.5f, cy - ring / 2f + 0.5f, ring, ring);
         using (var fill = new SolidBrush(Theme.PanelBg3)) g.FillEllipse(fill, ringRect);
-        using (var pen = new Pen(Checked ? Theme.Accent : (_hover && Enabled ? Theme.Accent : Theme.BorderLight), Checked || _hover ? 1.6f : 1f))
+        using (var pen = new Pen(Checked ? Theme.Accent : (_hover && Enabled ? Theme.Accent : Theme.BorderLight),
+                   Checked || _hover ? Ui.S(1.6f) : Ui.SMin(1)))
             g.DrawEllipse(pen, ringRect);
         if (Checked)
         {
-            const int dot = 8;
+            float dot = Ui.S(8f);
             using var b = new SolidBrush(Enabled ? Theme.Accent : Theme.AccentDim);
-            g.FillEllipse(b, (Ring - dot) / 2f + 0.5f, cy - dot / 2f, dot, dot);
+            g.FillEllipse(b, (ring - dot) / 2f + 0.5f, cy - dot / 2f, dot, dot);
         }
 
-        var textRect = new Rectangle(Ring + 9, 0, Width - Ring - 9, Height);
+        int gap = Ui.S(9);
+        var textRect = new Rectangle(ring + gap, 0, Width - ring - gap, Height);
         TextRenderer.DrawText(g, Text, Font, textRect, Enabled ? ForeColor : Theme.TextFaint,
             TextFormatFlags.Left | TextFormatFlags.VerticalCenter | TextFormatFlags.EndEllipsis);
     }

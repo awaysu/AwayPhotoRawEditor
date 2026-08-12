@@ -27,6 +27,76 @@ public enum AppLanguage
 }
 
 /// <summary>
+/// 全部 UI 字級，單位是「100%（96 DPI）下的像素」——刻意用整數像素而不是點數，
+/// 這樣使用者在設定裡看到與微調的都是沒有小數的數字（點數換算為 px × 0.75）。
+/// 實際渲染時 <c>Theme</c> 會再乘上 <c>Ui.FontScale</c> 對應系統 DPI 與介面大小。
+///
+/// 欄位新增一律往後加；舊 settings.xml 缺少的欄位會沿用這裡的預設值。
+/// </summary>
+public sealed class FontSizes
+{
+    // 預設值＝使用者在 v1.0.6 實機調整後認定「100% 下剛好」的比例
+    // （原始設計值較小：Small 11 / Normal 12 / SectionTitle 13 / Logo 20）。
+
+    /// <summary>小字：縮圖檔名、#編號/copy 標記、EXIF 欄位名、灰色提示、進度條 %。</summary>
+    public int Small { get; set; } = 15;
+    /// <summary>等寬（Consolas）：直方圖下方 R/G/B 平均值。</summary>
+    public int Mono { get; set; } = 11;
+    /// <summary>一般（預設字級）：調整區滑桿標籤與數值、EXIF 值、下拉、輸入框、按鈕、工具分頁。</summary>
+    public int Normal { get; set; } = 15;
+    /// <summary>區塊標題（粗體）：基本調整／色彩／細節／直方圖／照片資訊／工具／風格檔種類。</summary>
+    public int SectionTitle { get; set; } = 16;
+    /// <summary>關於視窗內文。</summary>
+    public int AboutBody { get; set; } = 13;
+    /// <summary>選擇資料夾清單的 📁 / 💽 圖示。</summary>
+    public int FolderGlyph { get; set; } = 15;
+    /// <summary>小圖示按鈕（白平衡滴管等）。</summary>
+    public int IconGlyph { get; set; } = 16;
+    /// <summary>進度視窗標題（粗體）。</summary>
+    public int ProgressTitle { get; set; } = 16;
+    /// <summary>對話框標題（粗體）：匯出照片／設定。</summary>
+    public int DialogTitle { get; set; } = 17;
+    /// <summary>關於視窗標題（粗體）。</summary>
+    public int AboutTitle { get; set; } = 19;
+    /// <summary>左上 logo「AwayPhotoRawEditor」（粗體）。</summary>
+    public int Logo { get; set; } = 22;
+    /// <summary>左上漢堡選單 ☰。</summary>
+    public int MenuGlyph { get; set; } = 27;
+
+    /// <summary>可調範圍（px @100%）。太小看不見、太大會撐破固定寬度的框。</summary>
+    public const int MinPx = 8;
+    public const int MaxPx = 48;
+
+    /// <summary>把所有欄位夾回合法範圍（防手改壞 settings.xml 造成介面不可用）。</summary>
+    public void Clamp()
+    {
+        foreach (var p in typeof(FontSizes).GetProperties())
+        {
+            if (!p.CanWrite || p.PropertyType != typeof(int)) continue;
+            int v = (int)(p.GetValue(this) ?? 0);
+            p.SetValue(this, Math.Clamp(v, MinPx, MaxPx));
+        }
+    }
+
+    public FontSizes Clone()
+    {
+        var c = new FontSizes();
+        foreach (var p in typeof(FontSizes).GetProperties())
+            if (p.CanWrite && p.PropertyType == typeof(int)) p.SetValue(c, p.GetValue(this));
+        return c;
+    }
+
+    /// <summary>用於偵測「使用者改了字級 → 需要重啟」。</summary>
+    public string Signature()
+    {
+        var sb = new System.Text.StringBuilder();
+        foreach (var p in typeof(FontSizes).GetProperties())
+            if (p.CanWrite && p.PropertyType == typeof(int)) sb.Append(p.GetValue(this)).Append(',');
+        return sb.ToString();
+    }
+}
+
+/// <summary>
 /// Persistent application settings (settings.xml under %AppData%\AwayPhotoRawEditor).
 /// Governs RawLoader behaviour.
 /// </summary>
@@ -53,6 +123,14 @@ public sealed class AppSettings
 
     /// <summary>介面語言；舊版設定檔未含此欄位時維持繁體中文。</summary>
     public AppLanguage UiLanguage { get; set; } = AppLanguage.TraditionalChinese;
+
+    /// <summary>介面大小（%）。0 = 自動：跟隨系統縮放，但不超過螢幕容得下的大小
+    /// （版面是照 100% 螢幕設計的，1920×1080 開 150% 硬放大會裁掉整塊區域）。
+    /// 指定 100/125/150/175/200 則固定該倍率，放不下時左右欄自動出現捲軸。</summary>
+    public int UiScalePercent { get; set; } = 0;
+
+    /// <summary>全部 UI 字級（100% 下的整數像素）。設定 →「字體大小…」可微調。</summary>
+    public FontSizes FontSizes { get; set; } = new();
 
     // Last used folder — convenience, restored at startup.
     public string LastFolder { get; set; } = "";
@@ -87,6 +165,8 @@ public sealed class AppSettings
             // Corrupt settings -> keep defaults.
             Current = new AppSettings();
         }
+        Current.FontSizes ??= new FontSizes();   // 舊設定檔沒有這個節點
+        Current.FontSizes.Clamp();
     }
 
     public void Save()

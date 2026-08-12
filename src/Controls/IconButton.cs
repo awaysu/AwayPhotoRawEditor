@@ -13,7 +13,8 @@ public sealed class IconButton : Control
     private bool _checked;
 
     public string Glyph { get; set; } = "";
-    public float GlyphSize { get; set; } = 12f;
+    /// <summary>圖示字級，單位是 100% 下的像素（設定 →「字體大小」可調）。</summary>
+    public int GlyphPx { get; set; } = Theme.Sizes.IconGlyph;
     public bool Checkable { get; set; }
 
     public bool Checked
@@ -28,7 +29,7 @@ public sealed class IconButton : Control
     {
         SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.UserPaint |
                  ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
-        Size = new Size(30, 30);
+        Size = Ui.Sz(30, 30);
         ForeColor = Theme.Text;
         Cursor = Cursors.Hand;
     }
@@ -52,10 +53,10 @@ public sealed class IconButton : Control
 
         Color back = _checked ? Theme.Accent
             : _pressed ? Theme.PanelBg3 : _hover ? Theme.PanelBg3 : Theme.PanelBg2;
-        PaintHelpers.FillRounded(g, r, 4f, back);
-        PaintHelpers.DrawRounded(g, r, 4f, _checked ? Theme.AccentHover : (_hover ? Theme.BorderLight : Theme.Border));
+        PaintHelpers.FillRounded(g, r, Ui.S(4f), back);
+        PaintHelpers.DrawRounded(g, r, Ui.S(4f), _checked ? Theme.AccentHover : (_hover ? Theme.BorderLight : Theme.Border));
 
-        using var f = new Font(Theme.FontFamily, GlyphSize);
+        using var f = Theme.UIPx(GlyphPx);   // 字級由 GDI+ 依 DPI 換算，不乘 Ui.Scale
         Color fg = _checked ? Color.White : Enabled ? ForeColor : Theme.TextFaint;
         TextRenderer.DrawText(g, Glyph, f, new Rectangle(0, 0, Width, Height), fg,
             TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);

@@ -45,7 +45,7 @@ public sealed class ProgressForm : Form
         StartPosition = FormStartPosition.CenterParent;
         MaximizeBox = false; MinimizeBox = false;
         bool hasSub = !string.IsNullOrEmpty(subtitle);
-        ClientSize = new Size(480, hasSub ? 224 : 176);
+        ClientSize = Ui.FitWorkArea(480, hasSub ? 224 : 176);
         BackColor = Theme.WindowBg;
         ForeColor = Theme.Text;
         Font = Theme.Normal;
@@ -53,19 +53,24 @@ public sealed class ProgressForm : Form
 
         Controls.Add(BuildHeader());
 
+        // 座標一律是 96 DPI 設計值。
         int msgTop = 68;
         if (hasSub)
         {
             // Centered, multi-line "please wait" note.
-            var sub = new Label { Text = L.T(subtitle!), ForeColor = Theme.Accent, Left = 20, Top = 60, Width = 440, Height = 44, BackColor = Theme.WindowBg, TextAlign = ContentAlignment.MiddleCenter };
+            var sub = new Label { Text = L.T(subtitle!), ForeColor = Theme.Accent, BackColor = Theme.WindowBg, TextAlign = ContentAlignment.MiddleCenter };
+            Ui.Place(sub, 20, 60, 440, 44);
             Controls.Add(sub);
             msgTop = 114;
         }
 
-        _msg = new Label { Text = "準備中…", ForeColor = Theme.TextDim, Left = 20, Top = msgTop, Width = 440, Height = 20, AutoEllipsis = true, BackColor = Theme.WindowBg };
-        _bar = new Panel { Left = 20, Top = msgTop + 28, Width = 440, Height = 18, BackColor = Theme.WindowBg };
+        _msg = new Label { Text = "準備中…", ForeColor = Theme.TextDim, AutoEllipsis = true, BackColor = Theme.WindowBg };
+        Ui.Place(_msg, 20, msgTop, 440, 20);
+        _bar = new Panel { BackColor = Theme.WindowBg };
+        Ui.Place(_bar, 20, msgTop + 28, 440, 18);
         _bar.Paint += PaintBar;
-        _cancel = new FlatButton { Text = "取消", Width = 90, Height = 30, Top = msgTop + 62, Left = 370 };
+        _cancel = new FlatButton { Text = "取消" };
+        Ui.Place(_cancel, 370, msgTop + 62, 90, 30);
         _cancel.Click += (_, _) => { _cts.Cancel(); _cancel.Enabled = false; _cancel.Text = L.T("取消中…"); };
 
         Controls.AddRange(new Control[] { _msg, _bar, _cancel });
@@ -78,17 +83,18 @@ public sealed class ProgressForm : Form
 
     private Panel BuildHeader()
     {
-        var header = new Panel { Left = 0, Top = 0, Width = 480, Height = 52, BackColor = Theme.PanelBg2 };
+        var header = new Panel { BackColor = Theme.PanelBg2 };
+        Ui.Place(header, 0, 0, 480, 52);
         header.Paint += (_, e) =>
         {
             var g = e.Graphics;
             PaintHelpers.EnableHighQuality(g);
             using (var accent = new SolidBrush(Theme.Accent))
-                g.FillRectangle(accent, 0, 0, 4, header.Height);
-            using (var line = new Pen(Color.FromArgb(60, Theme.Accent)))
-                g.DrawLine(line, 0, header.Height - 1, header.Width, header.Height - 1);
-            TextRenderer.DrawText(g, _title, Theme.UI(12f, FontStyle.Bold),
-                new Rectangle(20, 0, 448, header.Height), Theme.Text,
+                g.FillRectangle(accent, 0, 0, Ui.S(4), header.Height);
+            using (var line = new Pen(Color.FromArgb(60, Theme.Accent), Ui.SMin(1)))
+                g.DrawLine(line, 0, header.Height - Ui.SMin(1), header.Width, header.Height - Ui.SMin(1));
+            TextRenderer.DrawText(g, _title, Theme.UIPx(Theme.Sizes.ProgressTitle, FontStyle.Bold),
+                new Rectangle(Ui.S(20), 0, Ui.S(448), header.Height), Theme.Text,
                 TextFormatFlags.Left | TextFormatFlags.VerticalCenter);
         };
         return header;
@@ -109,14 +115,15 @@ public sealed class ProgressForm : Form
             g.SetClip(clip);
             using (var grad = new LinearGradientBrush(new RectangleF(0, 0, fillW, h), Theme.AccentDim, Theme.AccentHover, LinearGradientMode.Horizontal))
                 g.FillRectangle(grad, 0, 0, fillW, h);
-            // moving highlight sweep
-            int sx = _shimmer % (fillW + 120) - 60;
-            using (var shine = new LinearGradientBrush(new RectangleF(sx, 0, 80, h),
+            // moving highlight sweep（寬度隨 DPI 縮放，視覺比例才一致）
+            int half = Ui.S(40), full = half * 2;
+            int sx = _shimmer % (fillW + full) - half;
+            using (var shine = new LinearGradientBrush(new RectangleF(sx, 0, full, h),
                 Color.FromArgb(0, 255, 255, 255), Color.FromArgb(70, 255, 255, 255), LinearGradientMode.Horizontal))
-                g.FillRectangle(shine, sx, 0, 40, h);
-            using (var shine2 = new LinearGradientBrush(new RectangleF(sx + 40, 0, 80, h),
+                g.FillRectangle(shine, sx, 0, half, h);
+            using (var shine2 = new LinearGradientBrush(new RectangleF(sx + half, 0, full, h),
                 Color.FromArgb(70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Horizontal))
-                g.FillRectangle(shine2, sx + 40, 0, 40, h);
+                g.FillRectangle(shine2, sx + half, 0, half, h);
             g.Restore(save);
         }
 
@@ -128,7 +135,7 @@ public sealed class ProgressForm : Form
 
     private void AnimTick()
     {
-        _shimmer += 6;
+        _shimmer += Ui.S(6);
         // Ease the displayed fill toward the reported target.
         double d = _frac - _dispFrac;
         if (Math.Abs(d) > 0.001) _dispFrac += d * 0.2;

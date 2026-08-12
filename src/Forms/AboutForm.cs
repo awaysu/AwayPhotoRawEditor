@@ -21,23 +21,27 @@ public sealed class AboutForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = new Size(500, 420);
+        ClientSize = Ui.FitWorkArea(500, 420);
 
-        var body = Theme.UI(10f);
+        var body = Theme.UIPx(Theme.Sizes.AboutBody);
 
-        var header = new Label { Text = "AwayPhotoRawEditor", Font = Theme.UI(14f, FontStyle.Bold), ForeColor = Theme.Text, Left = 16, Top = 16, Width = 460, Height = 30 };
+        // 座標一律是 96 DPI 設計值。
+        var header = new Label { Text = "AwayPhotoRawEditor", Font = Theme.UIPx(Theme.Sizes.AboutTitle, FontStyle.Bold), ForeColor = Theme.Text };
+        Ui.Place(header, 16, 16, 460, 30);
 
-        var version = new Label { Text = L.T("版本：") + AppVersion.Version, Font = body, ForeColor = Theme.Text, Left = 20, Top = 58, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
+        var version = new Label { Text = L.T("版本：") + AppVersion.Version, Font = body, ForeColor = Theme.Text, TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(version, 20, 58, 460, 26);
 
         // 作者: 與 Email 圖片同一行（圖片接在翻譯後的標題右側）
-        var authorCap = new Label { Text = "作者:", Font = body, ForeColor = Theme.Text, AutoSize = true, Left = 20, Top = 108, BackColor = Theme.WindowBg };
+        var authorCap = new Label { Text = "作者:", Font = body, ForeColor = Theme.Text, AutoSize = true, Left = Ui.S(20), Top = Ui.S(108), BackColor = Theme.WindowBg };
         var emailImg = LoadEmailImage();
         var authorPic = new PictureBox { Image = emailImg, SizeMode = PictureBoxSizeMode.Zoom, BackColor = Theme.WindowBg };
 
-        var srcCap = new Label { Text = "Source Code:", Font = body, ForeColor = Theme.Text, Left = 20, Top = 158, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
+        var srcCap = new Label { Text = "Source Code:", Font = body, ForeColor = Theme.Text, TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(srcCap, 20, 158, 460, 26);
         var link = new LinkLabel
         {
-            Text = RepoUrl, Font = body, Left = 20, Top = 186, AutoSize = true, BackColor = Theme.WindowBg,
+            Text = RepoUrl, Font = body, Left = Ui.S(20), Top = Ui.S(186), AutoSize = true, BackColor = Theme.WindowBg,
             LinkColor = Theme.AccentHover, ActiveLinkColor = Theme.Accent, VisitedLinkColor = Theme.AccentHover,
             LinkBehavior = LinkBehavior.HoverUnderline
         };
@@ -47,13 +51,16 @@ public sealed class AboutForm : Form
             catch { /* 無瀏覽器可開就算了 */ }
         };
 
-        var buildTime = new Label { Text = L.T("編譯時間：") + AppVersion.BuildTime, Font = body, ForeColor = Theme.Text, Left = 20, Top = 234, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
+        var buildTime = new Label { Text = L.T("編譯時間：") + AppVersion.BuildTime, Font = body, ForeColor = Theme.Text, TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(buildTime, 20, 234, 460, 26);
 
         // 第三方元件聲明（LGPL/Artistic 署名；元件名稱與授權為專有名詞，不翻譯）
-        var thirdCap = new Label { Text = "第三方元件:", Font = body, ForeColor = Theme.Text, Left = 20, Top = 282, Width = 460, Height = 26, TextAlign = ContentAlignment.MiddleLeft };
-        var thirdList = new Label { Text = "LibRaw (LGPL 2.1)\nExifTool by Phil Harvey (Perl Artistic License)", Font = body, ForeColor = Theme.Text, Left = 20, Top = 310, Width = 460, Height = 48, TextAlign = ContentAlignment.TopLeft };
+        var thirdCap = new Label { Text = "第三方元件:", Font = body, ForeColor = Theme.Text, TextAlign = ContentAlignment.MiddleLeft };
+        Ui.Place(thirdCap, 20, 282, 460, 26);
+        var thirdList = new Label { Text = "LibRaw (LGPL 2.1)\nExifTool by Phil Harvey (Perl Artistic License)", Font = body, ForeColor = Theme.Text, TextAlign = ContentAlignment.TopLeft };
+        Ui.Place(thirdList, 20, 310, 460, 48);
 
-        var ok = new FlatButton { Text = "確定", Primary = true, Left = 404, Top = 372, Width = 80, Height = 32 };
+        var ok = new FlatButton { Text = "確定", Primary = true }; Ui.Place(ok, 404, 372, 80, 32);
         ok.Click += (_, _) => Close();
 
         Controls.AddRange(new Control[] { header, version, authorCap, authorPic, srcCap, link, buildTime, thirdCap, thirdList, ok });
@@ -62,9 +69,9 @@ public sealed class AboutForm : Form
         // 圖以 2×(20pt) 產生：縮到 10pt 等效大小並跟著 DPI 放大，接在（翻譯後的）「作者:」右側置中
         if (emailImg != null)
         {
-            float scale = DeviceDpi / 96f / 2f;
+            float scale = Ui.Scale / 2f;   // 圖是 2×(20pt) 產生的，縮回 10pt 等效再乘 DPI
             authorPic.Size = new Size((int)(emailImg.Width * scale), (int)(emailImg.Height * scale));
-            authorPic.Left = authorCap.Right + 8;
+            authorPic.Left = authorCap.Right + Ui.S(8);
             authorPic.Top = authorCap.Top + (authorCap.Height - authorPic.Height) / 2;
         }
     }
