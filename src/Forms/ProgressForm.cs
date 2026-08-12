@@ -26,7 +26,6 @@ public sealed class ProgressForm : Form
     private readonly System.Windows.Forms.Timer _anim;
     private double _frac;        // target fraction from the worker
     private double _dispFrac;    // eased, displayed fraction
-    private int _shimmer;        // moving-highlight phase, in px
     private bool _indeterminate = true;
 
     public Exception? Error { get; private set; }
@@ -89,8 +88,7 @@ public sealed class ProgressForm : Form
         {
             var g = e.Graphics;
             PaintHelpers.EnableHighQuality(g);
-            using (var accent = new SolidBrush(Theme.Accent))
-                g.FillRectangle(accent, 0, 0, Ui.S(4), header.Height);
+            // 標題左側原本有一條 4px 的藍色直條，使用者覺得多餘，已移除（只留下緣分隔線）
             using (var line = new Pen(Color.FromArgb(60, Theme.Accent), Ui.SMin(1)))
                 g.DrawLine(line, 0, header.Height - Ui.SMin(1), header.Width, header.Height - Ui.SMin(1));
             TextRenderer.DrawText(g, _title, Theme.UIPx(Theme.Sizes.ProgressTitle, FontStyle.Bold),
@@ -110,20 +108,15 @@ public sealed class ProgressForm : Form
         int fillW = (int)Math.Round(w * Math.Clamp(_dispFrac, 0, 1));
         if (fillW > h)
         {
+            // 只畫靜態的水平漸層。原本還有一道來回掃的高光，但它的位置是
+            // `_shimmer % (fillW + 寬度)`——fillW 每處理完一張照片就變，週期跟著變，
+            // 高光會不連續地跳位，看起來就是一直閃。進度本身已由 _dispFrac 平滑推進，
+            // 不需要額外的動態元素。
             using var clip = PaintHelpers.RoundedRect(new RectangleF(0, 0, fillW, h), h / 2);
             var save = g.Save();
             g.SetClip(clip);
             using (var grad = new LinearGradientBrush(new RectangleF(0, 0, fillW, h), Theme.AccentDim, Theme.AccentHover, LinearGradientMode.Horizontal))
                 g.FillRectangle(grad, 0, 0, fillW, h);
-            // moving highlight sweep（寬度隨 DPI 縮放，視覺比例才一致）
-            int half = Ui.S(40), full = half * 2;
-            int sx = _shimmer % (fillW + full) - half;
-            using (var shine = new LinearGradientBrush(new RectangleF(sx, 0, full, h),
-                Color.FromArgb(0, 255, 255, 255), Color.FromArgb(70, 255, 255, 255), LinearGradientMode.Horizontal))
-                g.FillRectangle(shine, sx, 0, half, h);
-            using (var shine2 = new LinearGradientBrush(new RectangleF(sx + half, 0, full, h),
-                Color.FromArgb(70, 255, 255, 255), Color.FromArgb(0, 255, 255, 255), LinearGradientMode.Horizontal))
-                g.FillRectangle(shine2, sx + half, 0, half, h);
             g.Restore(save);
         }
 
@@ -135,12 +128,11 @@ public sealed class ProgressForm : Form
 
     private void AnimTick()
     {
-        _shimmer += Ui.S(6);
         // Ease the displayed fill toward the reported target.
         double d = _frac - _dispFrac;
-        if (Math.Abs(d) > 0.001) _dispFrac += d * 0.2;
-        else _dispFrac = _frac;
-        _bar.Invalidate();
+        if (Math.Abs(d) > 0.001) { _dispFrac += d * 0.2; _bar.Invalidate(); }
+        else if (_dispFrac != _frac) { _dispFrac = _frac; _bar.Invalidate(); }
+        // 已經到位就不重畫：原本每 30ms 無條件 Invalidate 一次，靜止時也在閃
     }
 
     protected override async void OnShown(EventArgs e)

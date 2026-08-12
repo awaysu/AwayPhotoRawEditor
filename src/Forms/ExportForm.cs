@@ -202,8 +202,7 @@ public sealed class ExportForm : Form
         {
             var g = e.Graphics;
             PaintHelpers.EnableHighQuality(g);
-            using (var accent = new SolidBrush(Theme.Accent))
-                g.FillRectangle(accent, 0, 0, Ui.S(4), header.Height);            // accent bar
+            // 標題左側原本有一條 4px 的藍色直條，使用者覺得多餘，已移除（只留下緣分隔線）
             using (var line = new Pen(Color.FromArgb(60, Theme.Accent), Ui.SMin(1)))
                 g.DrawLine(line, 0, header.Height - Ui.SMin(1), header.Width, header.Height - Ui.SMin(1));
             TextRenderer.DrawText(g, L.T("匯出照片"), Theme.UIPx(Theme.Sizes.DialogTitle, FontStyle.Bold),

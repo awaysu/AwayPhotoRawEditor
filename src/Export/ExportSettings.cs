@@ -30,8 +30,8 @@ public sealed class ExportSettings
     public ConflictMode Conflict { get; set; } = ConflictMode.AppendNumber;
 
     public ExportFormat Format { get; set; } = ExportFormat.Jpeg;
-    /// <summary>輸出長邊上限（像素）：把影像縮到寬、長中較長的一邊等於此值，維持比例。預設 3200。</summary>
-    public int MaxLongEdge { get; set; } = 3200;
+    /// <summary>輸出長邊上限（像素）：把影像縮到寬、長中較長的一邊等於此值，維持比例。預設 2400。</summary>
+    public int MaxLongEdge { get; set; } = 2400;
     /// <summary>輸出解析度（像素/英寸，DPI），預設 300。</summary>
     public int Resolution { get; set; } = 300;
     public int JpegQuality { get; set; } = 100;
