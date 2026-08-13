@@ -28,12 +28,24 @@ src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 
 ### 發佈 / 簽章 / 安裝檔（2026-07 起）
 1. `dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contained true`
-2. 簽 exe：自簽憑證 **CN=AwayTerminal (awaysu), O=AwayTerminal, C=TW**
-   （`CurrentUser\My`，指紋 `7B11D2A5062A07C5BDD440A8C6B34FD3D7E5719D`，2031/7/21 到期；
-   公鑰在 `installer\AwayTerminalCodeSigning.cer`）——
-   `Set-AuthenticodeSignature -HashAlgorithm SHA256 -TimestampServer http://timestamp.digicert.com`
-   - **2026-08 起改用這張**（v1.0.9 是第一個實際簽章發布的版本）。舊文件記的 `CN=Awaysu`
-     指紋 `D092…7876` 只存在於另一台電腦、從未用於發布，`installer\AwaysuCodeSigning.cer` 僅作歷史保留
+2. 簽 exe：自簽憑證 **`CN=Awaysu, O=Awaysu, C=TW`**
+   （`CurrentUser\My`，指紋 `997D278FE3FD6FFA1F8E43683047530DE7210C66`，RSA 3072 / SHA256，
+   2036-08-13 到期；公鑰在 `installer\AwaysuCodeSigning2026.cer`）
+
+   ```powershell
+   $c = Get-Item Cert:\CurrentUser\My\997D278FE3FD6FFA1F8E43683047530DE7210C66
+   Set-AuthenticodeSignature -FilePath <檔案> -Certificate $c `
+       -HashAlgorithm SHA256 -TimestampServer "http://timestamp.digicert.com"
+   ```
+   - **⚠️ 一律用指紋指定憑證，不要用 `-like "*Awaysu*"` 挑** —— 作廢的
+     `CN=AwayTerminal (awaysu)` 也含 "awaysu"，會同時 match 到而簽錯身分
+   - **Subject 是「發行者身分」，不是產品名**：Windows 的 SmartScreen / UAC 顯示的發行者就是 CN，
+     一個身分簽所有專案（AwayPhotoRawEditor、AwayTerminal…）。曾經誤用 `CN=AwayTerminal (awaysu)`
+     去簽 AwayPhotoRawEditor，安裝時發行者顯示成不相干的程式名
+   - 作廢憑證（都**從未用於任何發布**，僅歷史保留）：
+     `CN=AwayTerminal (awaysu)` 指紋 `7B11…719D`、`CN=Awaysu` 指紋 `D092…7876`（在另一台電腦）
+   - 刪掉存放區裡的舊憑證**不會**讓已簽章的檔案失效——Authenticode 把簽署者憑證嵌在檔案裡，
+     驗證不需要本機存放區有它；刪除只是無法再用它簽新檔案
    - `Set-AuthenticodeSignature` 會回 `UnknownError` / `UntrustedRoot`——那是**驗證**結果
      （自簽憑證的根不在信任存放區），不是簽章失敗；用 `Get-AuthenticodeSignature` 確認
      `SignatureType=Authenticode`、`SignerCertificate` 與 `TimeStamperCertificate` 都在即可
