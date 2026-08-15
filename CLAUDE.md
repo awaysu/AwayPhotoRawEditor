@@ -10,7 +10,8 @@
 - **DPI**：見下方「高 DPI 縮放」——**所有版面數字都是 96 DPI 設計值，一律經過 `Ui.S()` / `Ui.Place()`**
 - **程式 icon**：`src\icon\icon.ico`（csproj `<ApplicationIcon>`；MainForm 以 `Icon.ExtractAssociatedIcon` 帶入視窗/工作列）。由 `src\icon\icon.png` 產生：`src\icon\make_icon.ps1`（用 powershell.exe 跑）會 flood-fill 去白底（保留鏡頭白圈）、裁切置中、輸出 256~16 多尺寸 ICO；換圖後重跑即可
 - **外部工具**（已內建於 `tools/`，執行期自動偵測，抓不到自動退回）：
-  - LibRaw 0.22.1 → `tools/libraw/LibRaw-0.22.1/bin/libraw.dll`（RAW 解碼，P/Invoke）
+  - LibRaw 0.22.2 → `tools/libraw/LibRaw-x.y.z/bin/libraw.dll`（RAW 解碼，P/Invoke）
+    **版本資料夾用萬用字元搜尋**（`AppPaths.FindLibRawVersioned`，多版本並存取名稱最大者），升級時不必改程式
   - ExifTool 13.59 → `tools/exiftool/exiftool.exe`（需 `exiftool_files/` 同目錄）
 
 ## 建置 / 執行
@@ -171,7 +172,7 @@ Top Bar (Dock Top, 60) → 縮圖列 (Dock Top, **158**) → body = 3 欄 TableL
 - **ExifTool**：文字欄位(WhiteBalance/MeteringMode)保留友善字串，數值欄位用 `-Tag#` 強制數字。
 - **⚠️ LibRaw 不認識的機型會輸出遮罩邊 → 照片右側與下方出現黑邊**（2026-08 修，v1.0.7）。
   - 症狀：proxy 與匯出的照片右／下各有一條純黑帶，**縮圖正常**（縮圖走相機內嵌預覽，不經全解碼）
-  - 實例：`ILCE-7RM6` 配 LibRaw 0.22.1 → `libraw sizes` 顯示 `raw 10240x7168 / visible 10240x7168 / margin L0 T0`，也就是**完全沒有裁切表**，可見區其實只有 9984×6656（3:2）
+  - 實例：`ILCE-7RM6` 配 LibRaw 0.22.1／0.22.2 → `libraw sizes` 顯示 `raw 10240x7168 / visible 10240x7168 / margin L0 T0`，也就是**完全沒有裁切表**，可見區其實只有 9984×6656（3:2）
   - 修法：`ExifReader.ReadVisibleSize()`（ExifTool `FullImageSize`，有快取）把可見尺寸傳給 `LibRawInterop.DecodeToBitmap/DecodeToFloat`，在複製出 managed buffer 前就裁掉
   - **`FullImageSize` 不能用 `-fast2` 讀**：它在 Sony maker notes 裡，-fast2 會跳過 → 必須獨立一次查詢（`ExifReader.Read` 的主查詢仍保留 -fast2 求快）
   - **不要只靠「掃純黑邊」**：遮罩邊界有去馬賽克造成的過渡帶，純黑掃描會少裁幾十個像素（實測 10017×6673 vs 正確的 9984×6656，還是留了一條細黑線）。掃描只用來判斷 padding 在哪一邊（LibRaw 內部已套用 flip，直幅照片的遮罩邊不在右下），以及沒有 EXIF 尺寸時的退路（此時會用常見長寬比驗證，不像正常比例就不敢裁）

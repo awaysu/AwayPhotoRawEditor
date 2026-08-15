@@ -112,14 +112,34 @@ public static class AppPaths
     private static string? _cachedLibRaw;
     private static string? _cachedExifTool;
 
-    /// <summary>Full path to libraw.dll if it can be located, else null.</summary>
+    /// <summary>Full path to libraw.dll if it can be located, else null.
+    /// 版本資料夾（`libraw\LibRaw-x.y.z\bin`）用萬用字元搜尋，升級 LibRaw 時不必改程式；
+    /// 有多個版本並存時取名稱排序最大的那個。</summary>
     public static string? FindLibRawDll() =>
-        _cachedLibRaw ??= FindTool(new[]
+        _cachedLibRaw ??= FindLibRawVersioned() ?? FindTool(new[]
         {
-            "libraw\\LibRaw-0.22.1\\bin\\libraw.dll",
             "libraw\\bin\\libraw.dll",
             "libraw.dll",
         }, "libraw.dll");
+
+    private static string? FindLibRawVersioned()
+    {
+        foreach (var root in ToolsRoots())
+        {
+            var libRawDir = Path.Combine(root, "libraw");
+            if (!Directory.Exists(libRawDir)) continue;
+            try
+            {
+                var hit = Directory.GetDirectories(libRawDir, "LibRaw-*")
+                    .OrderByDescending(d => Path.GetFileName(d), StringComparer.OrdinalIgnoreCase)
+                    .Select(d => Path.Combine(d, "bin", "libraw.dll"))
+                    .FirstOrDefault(File.Exists);
+                if (hit is not null) return hit;
+            }
+            catch { /* 權限或路徑問題就換下一個 root */ }
+        }
+        return null;
+    }
 
     /// <summary>Full path to exiftool.exe if it can be located, else null.</summary>
     public static string? FindExifTool() =>

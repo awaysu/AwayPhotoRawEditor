@@ -57,11 +57,11 @@ dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contai
 iscc installer\AwayPhotoRawEditor.iss
 ```
 
-外部工具已內建於 `tools/`（LibRaw 0.22.1、ExifTool 13.59），執行期自動偵測。
+外部工具已內建於 `tools/`（LibRaw 0.22.2、ExifTool 13.59），執行期自動偵測。
 
 ## 第三方元件
 
-- [LibRaw](https://www.libraw.org/) 0.22.1 — LGPL 2.1（以動態連結使用，原始碼一併散布於 `tools/libraw/`）
+- [LibRaw](https://www.libraw.org/) 0.22.2 — LGPL 2.1（以動態連結使用，原始碼一併散布於 `tools/libraw/`）
 - [ExifTool](https://exiftool.org/) 13.59 by Phil Harvey — Perl Artistic License（以獨立行程呼叫）
 
 ## 授權 / License

@@ -282,12 +282,21 @@ public static class LibRawInterop
             lr = libraw_init(0);
             if (lr == IntPtr.Zero) return null;
             if (libraw_open_wfile(lr, path) != 0) return null;
-            if (libraw_unpack(lr) != 0) return null;
+
             ushort U(int i) => (ushort)Marshal.ReadInt16(lr, SizesOffset + i * 2);
-            return new RawSizes(
+            RawSizes Snapshot() => new(
                 RawWidth: U(1), RawHeight: U(0), Width: U(3), Height: U(2),
                 LeftMargin: U(5), TopMargin: U(4), IWidth: U(7), IHeight: U(6),
                 Flip: Marshal.ReadInt32(lr, SizesFlipOffset));
+
+            // 取兩次快照：
+            //  • open 之後  = 標頭值，但部分格式尚未修正可見區（Nikon 此時仍是 8280x5520）
+            //  • unpack 之後 = 最終值（Nikon 修正為 8256x5504），但 unpack 失敗時 LibRaw 會
+            //    呼叫 recycle() 把整個結構清零，此時要退回前一份快照
+            var afterOpen = Snapshot();
+            libraw_unpack(lr);                       // 刻意不檢查回傳值
+            var afterUnpack = Snapshot();
+            return afterUnpack.RawWidth > 0 && afterUnpack.RawHeight > 0 ? afterUnpack : afterOpen;
         }
         catch { return null; }
         finally { if (lr != IntPtr.Zero) libraw_close(lr); }
