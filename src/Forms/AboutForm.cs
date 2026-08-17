@@ -73,7 +73,7 @@ public sealed class AboutForm : Form
 
         // 本程式自己的授權。不是法律義務（授權約束的是再散布的人，不是著作權人），
         // 但緊接在下方「二次開發」的請求上面，剛好示範：聲明就是放這個位置。
-        var license = Text0(L.T("授權：") + "BSD 3-Clause　© 2026 Awaysu", body, y, lineH);
+        var license = Text0(L.T("授權：") + "BSD 3-Clause　© 2026 Chih-Wei Su (Awaysu)", body, y, lineH);
         y += gap;
 
         // 二次開發說明（與 README 同一段文字）

@@ -27,7 +27,7 @@
          此處不翻譯：一個 exe 對應八種語言，版本資源只能有一份。 -->
     <AssemblyTitle>AwayPhotoRawEditor - RAW photo editor</AssemblyTitle>
     <Description>AwayPhotoRawEditor - RAW photo editor</Description>
-    <Copyright>Copyright (c) 2026 Awaysu</Copyright>
+    <Copyright>Copyright (c) 2026 Chih-Wei Su (Awaysu)</Copyright>
     <!-- 產品版本顯示成乾淨的 1.0.11，不要附加 +git commit hash -->
     <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>icon\icon.ico</ApplicationIcon>

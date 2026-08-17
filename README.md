@@ -66,13 +66,13 @@ iscc installer\AwayPhotoRawEditor.iss
 
 ## 授權 / License
 
-本專案以 [BSD 3-Clause](LICENSE) 授權 — Copyright (c) 2026, Awaysu
+本專案以 [BSD 3-Clause](LICENSE) 授權 — Copyright (c) 2026, Chih-Wei Su (Awaysu)
 
 上述第三方元件維持各自的授權，不受本授權影響。
 
 ## 作者
 
-Awaysu (awaysu@gmail.com)
+Chih-Wei Su (Awaysu) — awaysu@gmail.com
 
 ## 二次開發 / Modifying this project
 
