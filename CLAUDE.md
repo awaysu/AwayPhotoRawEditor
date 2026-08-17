@@ -60,18 +60,29 @@ src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 - **⚠️ 順序不能顛倒**：exe 是被打包進安裝檔與 zip 的，所以一定是「簽 exe → ISCC / 打包 zip → 簽安裝檔」。
   先做安裝檔再簽 exe 完全沒有用。簽章會改變檔案內容，**SHA256 必須在簽完之後才算**
 - 自簽憑證在別人電腦仍會被 SmartScreen 警告（點「其他資訊→仍要執行」），正式消除需 EV / Trusted Signing 憑證
-- **誤判為病毒 / SmartScreen 警告的處理**（2026-08 有多位使用者回報）——三件事要分開：
-  1. **防毒真的判成病毒**（跳「已偵測到威脅」、檔案被刪）→ 誤判，免費解：向
-     [WDSI](https://www.microsoft.com/en-us/wdsi/filesubmission) 以 **Software developer** 身分申訴。
-     **每次改版 hash 變了要重送**。頭號嫌疑是 `tools/exiftool/exiftool.exe`——PAR 打包的 Perl 執行檔，
-     執行時自解壓到 `%TEMP%\par-*`，是典型 dropper 特徵，上游論壇早有 `HW32.Packed` 誤判紀錄。
-     出事先把安裝檔／zip／主 exe／exiftool.exe **分別**丟 VirusTotal，才知道是誰被抓
-  2. **SmartScreen「不明的發行者」** → 不是病毒，是信譽不足。自簽憑證對此**零幫助**。
-     根治要公信 CA 憑證（Certum 開源開發者憑證首年約 €70–120／續約 €29，個人可申請、需提供開源專案 URL），
-     信譽累積在**憑證**上，之後每一版新檔案自動繼承。EV 要公司法人；
-     Azure Artifact Signing（原 Trusted Signing，US$9.99/月）個人限美/加，台灣不符資格
-  3. **zip 解壓後才跳警告** → MOTW，下載標記會從 zip 傳染給解出來的每個檔案。
-     教使用者下載後先「右鍵→內容→解除封鎖」再解壓縮
+- **「被當成病毒」的回報（2026-08 多位使用者）＝ SmartScreen，不是防毒誤判**——已用資料排除：
+  - **2026-08-17 VirusTotal 實測全部 0 命中**：安裝檔 `7D22DFD5…4053` **0/68**、
+    攜帶版 zip `2FBAEA7A…E981` **0/62**、`tools/exiftool/exiftool.exe` `68C079C3…3385` **0/71**
+    （Microsoft 引擎有給結論且為 clean；沒給結論的都是 Avast-Mobile / SymantecMobileInsight
+    這類手機導向引擎）。**曾懷疑是 ExifTool 的 Perl 執行環境**（`exiftool_files\` 有 508 個未簽章檔案，
+    含 `perl.exe`／`perl532.dll`／約 40 個 `.xs.dll`，涵蓋 crypto/socket/壓縮，輪廓確實像 dropper）
+    ——**實測推翻，它自己單獨掃也是 0/71**
+  - 所以使用者看到的是 **SmartScreen「Windows 已保護您的電腦」**。它的正式名稱是
+    Microsoft Defender **SmartScreen**，名字裡有 Defender，一般人會直接讀成「防毒說這是病毒」
+  - **零命中就沒有東西可以向 WDSI 申訴**；而 SmartScreen 的「不明的發行者」**沒有官方申訴管道**，
+    只能靠下載量累積信譽，或用 EV 憑證直接跳過
+  - **根治只有一條路：公信 CA 憑證**。自簽憑證在微軟眼中等同沒簽，憑證信譽永遠是零，
+    每出一版都從頭開始——這正好對應「很多人反應」而不是「偶爾有人反應」。
+    Certum 開源開發者憑證首年約 €70–120／續約 €29，個人可申請（需身分驗證 + 開源專案 URL，
+    本專案 BSD-3 + 公開 repo 符合資格）。⚠️ 它**不是 EV**，第一版仍會跳警告，但信譽累積在**憑證**上，
+    爬升一次之後每一版自動繼承；⚠️ 其 Subject 通常是 `Open Source Developer, <本名>`，
+    **SmartScreen / UAC 顯示的發行者會變成那個而不是「Awaysu」**，購買前先確認可用的 CN 形式。
+    EV 要公司法人；Azure Artifact Signing（原 Trusted Signing，US$9.99/月）個人限美/加，台灣不符資格
+  - **zip 解壓後才跳警告** → MOTW，下載標記會從 zip 傳染給解出來的每個檔案。
+    教使用者下載後先「右鍵→內容→解除封鎖」再解壓縮
+  - 之後每次改版要複驗：VirusTotal **網頁是純 JS 前端抓不到內容、未帶金鑰打內部 API 一律 429**，
+    要用 API v3（`https://www.virustotal.com/api/v3/files/<sha256>`，header `x-apikey`，
+    免費金鑰約 4 req/min，所以每次查詢之間要 sleep）。**金鑰不要進版控**
 - **csproj 的 Win32 版本資源要填滿**（`Product` / `Company` / `AssemblyTitle` / `Copyright`）：
   空白的 CompanyName / FileDescription / LegalCopyright 是防毒啟發式的扣分項。
   ⚠️ **`FileDescription` 來自 `AssemblyTitle`，不是 `Description`**（`Description` 只進
