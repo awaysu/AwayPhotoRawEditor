@@ -5,9 +5,9 @@ using AwayPhotoRawEditor.Controls;
 
 namespace AwayPhotoRawEditor.Forms;
 
-/// <summary>關於：版本 / 作者(「作者:」與 Email 圖片同一行；Email 以嵌入資源 Assets\email.png
-/// 顯示、非文字) / 下載 / Source Code（都是可點的連結）/ 編譯時間 / 第三方元件（版本為執行期
-/// 讀取，不寫死）/ 二次開發說明，各項之間空一行。
+/// <summary>關於：版本 / 編譯時間 / 作者(「作者:」與 Email 圖片同一行；Email 以嵌入資源
+/// Assets\email.png 顯示、非文字) / 下載 / Source Code（都是可點的連結）/
+/// 第三方元件（版本為執行期讀取，不寫死）/ 授權 / 二次開發說明，各項之間空一行。
 ///
 /// 內文字級用 <c>Theme.Sizes.AboutBody</c>（設定 →「字體大小」可調）；email.png 是以
 /// Segoe UI 20pt（≈26.67px @96dpi）產生的圖，所以縮放倍率要跟著 AboutBody 走，
@@ -43,6 +43,10 @@ public sealed class AboutForm : Form
         var version = Text0(L.T("版本：") + AppVersion.Version, body, y, lineH);
         y += gap;
 
+        // 編譯時間緊接版本：兩者都是「這份執行檔是哪一版」的資訊，放一起才好對照
+        var buildTime = Text0(L.T("編譯時間：") + AppVersion.BuildTime, body, y, lineH);
+        y += gap;
+
         // 作者: 與 Email 圖片同一行（圖片接在翻譯後的標題右側）
         var authorCap = new Label { Text = "作者:", Font = body, ForeColor = Theme.Text, AutoSize = true, Left = Ui.S(TextX), Top = Ui.S(y), BackColor = Theme.WindowBg };
         var emailImg = LoadEmailImage();
@@ -59,14 +63,6 @@ public sealed class AboutForm : Form
         var srcLink = MakeLink(RepoUrl, body, y);
         y += gap;
 
-        var buildTime = Text0(L.T("編譯時間：") + AppVersion.BuildTime, body, y, lineH);
-        y += gap;
-
-        // 本程式自己的授權。不是法律義務（授權約束的是再散布的人，不是著作權人），
-        // 但擺在這裡剛好向下方「二次開發」的請求示範：聲明就是放這個位置。
-        var license = Text0(L.T("授權：") + "BSD 3-Clause　© 2026 Awaysu", body, y, lineH);
-        y += gap;
-
         // 第三方元件聲明（LGPL/Artistic 署名；元件名稱與授權為專有名詞，不翻譯）
         // 版本在執行期讀取：升級 tools/ 之後這裡不會變成過期資訊。
         var thirdCap = Text0("第三方元件:", body, y, lineH);
@@ -74,6 +70,11 @@ public sealed class AboutForm : Form
         var thirdList = Text0(ThirdPartyText(), body, y, lineH * 2 + 4);
         thirdList.TextAlign = ContentAlignment.TopLeft;
         y += lineH * 2 + 4 + 16;
+
+        // 本程式自己的授權。不是法律義務（授權約束的是再散布的人，不是著作權人），
+        // 但緊接在下方「二次開發」的請求上面，剛好示範：聲明就是放這個位置。
+        var license = Text0(L.T("授權：") + "BSD 3-Clause　© 2026 Awaysu", body, y, lineH);
+        y += gap;
 
         // 二次開發說明（與 README 同一段文字）
         var modifyNote = Text0(
@@ -90,8 +91,8 @@ public sealed class AboutForm : Form
 
         Controls.AddRange(new Control[]
         {
-            header, version, authorCap, authorPic, dlCap, dlLink,
-            srcCap, srcLink, buildTime, license, thirdCap, thirdList, modifyNote, ok
+            header, version, buildTime, authorCap, authorPic, dlCap, dlLink,
+            srcCap, srcLink, thirdCap, thirdList, license, modifyNote, ok
         });
         L.Apply(this);
 

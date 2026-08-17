@@ -37,8 +37,8 @@ Get-FileHash installer\Output\AwayPhotoRawEditor-v1.0.12.zip -Algorithm SHA256
 這是誤判，請將檔案還原並加入白名單；也歡迎回報給我，我會向防毒廠商提交誤判申訴。
 您也可以先用 [VirusTotal](https://www.virustotal.com/) 檢查，或核對下方的 SHA256 確認檔案完整。
 
-安裝檔 SHA256：`（簽章後填入）`
-攜帶版 SHA256：`（簽章後填入）`
+安裝檔 SHA256：`7D22DFD54B135D315F5BD80335C894582D4833FF3C3250E1CC8DEBECB71D4053`
+攜帶版 SHA256：`2FBAEA7A2302E094D1C191342CA96408C6808B5B15501EB3F7B94C48D463E981`
 
 ---
 
@@ -67,8 +67,8 @@ This is a false positive. Please restore the file and add it to your exclusions 
 know, so I can submit a false-positive report to the vendor. You can also scan it on
 [VirusTotal](https://www.virustotal.com/) or verify the SHA256 checksums below.
 
-Installer SHA256: `(fill in after signing)`
-Portable SHA256: `(fill in after signing)`
+Installer SHA256: `7D22DFD54B135D315F5BD80335C894582D4833FF3C3250E1CC8DEBECB71D4053`
+Portable SHA256: `2FBAEA7A2302E094D1C191342CA96408C6808B5B15501EB3F7B94C48D463E981`
 
 ---
 
@@ -117,9 +117,9 @@ Portable SHA256: `(fill in after signing)`
 
   <p class="checksums">
     <code>AwayPhotoRawEditor-Setup-v1.0.12.exe</code> SHA256:
-    <code>（簽章後填入 / fill in after signing）</code><br>
+    <code>7D22DFD54B135D315F5BD80335C894582D4833FF3C3250E1CC8DEBECB71D4053</code><br>
     <code>AwayPhotoRawEditor-v1.0.12.zip</code> SHA256:
-    <code>（簽章後填入 / fill in after signing）</code>
+    <code>2FBAEA7A2302E094D1C191342CA96408C6808B5B15501EB3F7B94C48D463E981</code>
   </p>
 </section>
 ```
