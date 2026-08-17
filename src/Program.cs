@@ -27,6 +27,18 @@ internal static class Program
             language = diagnosticLanguage;
             AppSettings.Current.UiLanguage = diagnosticLanguage; // in-memory only
         }
+        // 第一次執行（還沒有 settings.xml）先問語言，讓非中文使用者一開始就看得懂介面。
+        // ⚠️ 一定要在 L.SetLanguage / Theme 之前：Theme 的快取靜態字型是依 L.CurrentLanguage
+        // 決定字型家族的，先碰到 Theme 就得靠 Application.Restart() 才能換回來。
+        // FirstRunLanguageForm 為此完全不引用 Theme（見該檔說明）。
+        else if (AppSettings.IsFirstRun && !(args.Length > 0 && args[0].StartsWith("--")))
+        {
+            using var picker = new FirstRunLanguageForm(L.GuessFromSystem());
+            picker.ShowDialog();
+            language = picker.SelectedLanguage;
+            AppSettings.Current.UiLanguage = language;
+            AppSettings.Current.Save();   // 存起來才不會每次啟動都問
+        }
         L.SetLanguage(language);
 
         var style = AppSettings.Current.InterfaceStyle;
@@ -105,6 +117,7 @@ internal static class Program
                 "gradoverlay" => BuildGradientOverlayProbe(),
                 "presets" => new Forms.PresetEditorForm(),
                 "about" => new Forms.AboutForm(),
+                "firstrun" => new Forms.FirstRunLanguageForm(L.GuessFromSystem()),
                 "fonts" => new Forms.FontSizeForm(AppSettings.Current.FontSizes),
                 _ => new Forms.SettingsForm()
             };

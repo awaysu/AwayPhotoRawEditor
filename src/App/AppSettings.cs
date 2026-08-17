@@ -149,8 +149,13 @@ public sealed class AppSettings
 
     [XmlIgnore] public static AppSettings Current { get; private set; } = new();
 
+    /// <summary>啟動時 settings.xml 不存在＝第一次執行（舊版名稱資料夾的設定已由 AppPaths
+    /// 複製過來，所以搬家過來的使用者不算）。用來決定要不要先跳語言選擇畫面。</summary>
+    public static bool IsFirstRun { get; private set; }
+
     public static void Load()
     {
+        IsFirstRun = !File.Exists(AppPaths.SettingsPath);
         try
         {
             if (File.Exists(AppPaths.SettingsPath))

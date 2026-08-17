@@ -16,8 +16,20 @@
     <!-- SystemAware：process 的 DPI 固定，Ui.Scale 取一次即可，不必在執行期重算整份版面。
          代價是拖到不同縮放的第二螢幕時由 Windows 拉伸（尺寸正確、略糊）。 -->
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
-    <Version>1.0.11</Version>
+    <Version>1.0.12</Version>
+    <!-- Win32 版本資源：空白的 CompanyName / FileDescription / LegalCopyright 是防毒
+         啟發式的扣分項（也會讓檔案內容頁一片空白），四項都填滿。
+         Product→ProductName、Company→CompanyName、Description→FileDescription、
+         Copyright→LegalCopyright -->
     <Product>AwayPhotoRawEditor</Product>
+    <Company>Awaysu</Company>
+    <!-- FileDescription 來自 AssemblyTitle（不是 Description）；工作管理員與檔案內容頁顯示的就是它。
+         此處不翻譯：一個 exe 對應八種語言，版本資源只能有一份。 -->
+    <AssemblyTitle>AwayPhotoRawEditor - RAW photo editor</AssemblyTitle>
+    <Description>AwayPhotoRawEditor - RAW photo editor</Description>
+    <Copyright>Copyright (c) 2026 Awaysu</Copyright>
+    <!-- 產品版本顯示成乾淨的 1.0.11，不要附加 +git commit hash -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
     <ApplicationIcon>icon\icon.ico</ApplicationIcon>
   </PropertyGroup>
 

@@ -70,6 +70,28 @@ public static class L
         _ => zh
     };
 
+    /// <summary>依 Windows 的顯示語言猜第一次執行要預選哪個語言（FirstRunLanguageForm 用）。
+    /// 用 InstalledUICulture 而不是 CurrentUICulture——後者可能已被 SetLanguage 改掉。
+    /// 認不得的語言退回英文：會需要自己改語言的多半不是中文使用者。</summary>
+    public static AppLanguage GuessFromSystem()
+    {
+        var c = CultureInfo.InstalledUICulture;
+        if (c.TwoLetterISOLanguageName == "zh")
+            return c.Name.Contains("Hant", StringComparison.OrdinalIgnoreCase)
+                   || c.Name is "zh-TW" or "zh-HK" or "zh-MO"
+                ? AppLanguage.TraditionalChinese
+                : AppLanguage.SimplifiedChinese;
+        return c.TwoLetterISOLanguageName switch
+        {
+            "ja" => AppLanguage.Japanese,
+            "ko" => AppLanguage.Korean,
+            "de" => AppLanguage.German,
+            "fr" => AppLanguage.French,
+            "es" => AppLanguage.Spanish,
+            _ => AppLanguage.English
+        };
+    }
+
     public static string LanguageDisplayName(AppLanguage language) => language switch
     {
         AppLanguage.TraditionalChinese => "繁體中文（台灣）",
