@@ -42,6 +42,15 @@ public static class AdjustmentXmlStore
     public static ExifData? LoadExif(string imagePath, int copyIndex = 0)
         => LoadDocument(AppPaths.AdjustmentXmlPath(imagePath, copyIndex))?.Exif;
 
+    /// <summary>Everything in the document in a single read — Load / LoadExif /
+    /// IsDefaultPlaceholder each re-parse the file, which adds up over a whole folder.</summary>
+    public static (ImageAdjustments? Adjustments, ExifData? Exif, bool IsPlaceholder) LoadAll(
+        string imagePath, int copyIndex = 0)
+    {
+        var doc = LoadDocument(AppPaths.AdjustmentXmlPath(imagePath, copyIndex));
+        return (doc?.Adjustments, doc?.Exif, doc?.IsPlaceholder ?? false);
+    }
+
     /// <summary>
     /// Returns the stored adjustments, or creates a default placeholder (marked
     /// IsPlaceholder) and returns fresh defaults if no XML exists yet.

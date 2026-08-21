@@ -5,6 +5,14 @@ using AwayPhotoRawEditor.App;
 namespace AwayPhotoRawEditor.Controls;
 
 /// <summary>
+/// Colour hint painted along a slider track so the direction of travel reads at a
+/// glance. Only used where the colour meaning is unambiguous — the tonal sliders
+/// (曝光/亮部/…) keep the plain track + fill, since a grayscale ramp is invisible
+/// on the dark theme and just adds noise.
+/// </summary>
+public enum SliderGradient { None, Temperature, Tint, Saturation }
+
+/// <summary>
 /// Central switchable palette, fonts and small drawing helpers shared by all
 /// custom-drawn controls. ClassicDark preserves the original UI exactly.
 /// </summary>
@@ -89,6 +97,67 @@ public static class Theme
     /// <summary>Returns a palette for drawing theme previews without changing the app.</summary>
     public static Palette PaletteFor(UiStyle style) =>
         style == UiStyle.WarmPaper ? WarmPaper : ClassicDark;
+
+    // ---- slider track gradients -----------------------------------------
+    // 這些顏色不進 Palette record：Palette 的每個欄位都會被 Remap 逐一比對，
+    // 而漸層色只在自繪的軌道上用、不會出現在任何控制項的 BackColor/ForeColor。
+
+    /// <summary>Evenly spaced left-to-right colour stops for a gradient slider track.
+    /// WarmPaper gets desaturated variants — full-strength colour looks garish on the
+    /// light paper background.</summary>
+    public static Color[] GradientStops(SliderGradient kind)
+    {
+        bool warm = CurrentStyle == UiStyle.WarmPaper;
+        return kind switch
+        {
+            // 冷 → 暖。Kelvin 滑桿往右＝畫面變暖，和實際色溫的物理方向相反，
+            // 但這是 Lightroom 以來的慣例，使用者預期的就是這個。
+            SliderGradient.Temperature => warm
+                ? new[] { Color.FromArgb(0x7E, 0x9C, 0xC4), Color.FromArgb(0xC6, 0xBE, 0xB3), Color.FromArgb(0xD8, 0xAC, 0x74) }
+                : new[] { Color.FromArgb(0x3A, 0x6E, 0xC8), Color.FromArgb(0x78, 0x78, 0x80), Color.FromArgb(0xD6, 0x96, 0x3E) },
+            // 綠 → 洋紅。
+            SliderGradient.Tint => warm
+                ? new[] { Color.FromArgb(0x8C, 0xB8, 0x94), Color.FromArgb(0xC6, 0xBE, 0xB3), Color.FromArgb(0xC6, 0x92, 0xBA) }
+                : new[] { Color.FromArgb(0x46, 0xA5, 0x5A), Color.FromArgb(0x78, 0x78, 0x80), Color.FromArgb(0xBE, 0x50, 0xAA) },
+            SliderGradient.Saturation => SaturationStops(warm),
+            _ => Array.Empty<Color>()
+        };
+    }
+
+    /// <summary>灰 → 彩：色相繞一圈，飽和度由左至右從 0 拉滿，所以軌道左端是中性灰、
+    /// 右端才開出顏色——正好對應「往左去色、往右加色」。</summary>
+    private static Color[] SaturationStops(bool warm)
+    {
+        const int n = 7;
+        float satMax = warm ? 0.45f : 0.75f;
+        float valFrom = warm ? 0.78f : 0.40f, valTo = warm ? 0.84f : 0.72f;
+        var stops = new Color[n];
+        for (int i = 0; i < n; i++)
+        {
+            float t = i / (float)(n - 1);
+            stops[i] = FromHsv(20f + t * 300f, t * satMax, valFrom + t * (valTo - valFrom));
+        }
+        return stops;
+    }
+
+    private static Color FromHsv(float hue, float sat, float val)
+    {
+        float c = val * sat;
+        float h = (hue % 360f) / 60f;
+        float x = c * (1 - Math.Abs(h % 2 - 1));
+        (float r, float g, float b) = h switch
+        {
+            < 1 => (c, x, 0f),
+            < 2 => (x, c, 0f),
+            < 3 => (0f, c, x),
+            < 4 => (0f, x, c),
+            < 5 => (x, 0f, c),
+            _ => (c, 0f, x)
+        };
+        float m = val - c;
+        static int To255(float v) => (int)Math.Round(Math.Clamp(v, 0f, 1f) * 255);
+        return Color.FromArgb(To255(r + m), To255(g + m), To255(b + m));
+    }
 
     /// <summary>
     /// Switches the active palette. When a live root is supplied, colors captured

@@ -27,6 +27,32 @@ public static class PaintHelpers
         g.FillPath(b, p);
     }
 
+    public static void FillRounded(Graphics g, RectangleF r, float radius, Brush brush)
+    {
+        using var p = RoundedRect(r, radius);
+        g.FillPath(brush, p);
+    }
+
+    /// <summary>Fill a rounded rect with a left-to-right gradient through evenly spaced
+    /// <paramref name="stops"/> (2 or more colours). Used by the colour-coded sliders.</summary>
+    public static void FillRoundedGradient(Graphics g, RectangleF r, float radius, Color[] stops)
+    {
+        if (stops.Length == 0 || r.Width <= 0 || r.Height <= 0) return;
+        if (stops.Length == 1) { FillRounded(g, r, radius, stops[0]); return; }
+
+        // Inflate horizontally: LinearGradientBrush mirrors the edge pixel column, which
+        // would otherwise show the first/last stop twice at the ends of the track.
+        var brushRect = RectangleF.Inflate(r, 1f, 0f);
+        using var brush = new LinearGradientBrush(brushRect, stops[0], stops[^1], LinearGradientMode.Horizontal)
+        {
+            WrapMode = WrapMode.TileFlipX
+        };
+        var positions = new float[stops.Length];
+        for (int i = 0; i < stops.Length; i++) positions[i] = i / (float)(stops.Length - 1);
+        brush.InterpolationColors = new ColorBlend { Colors = stops, Positions = positions };
+        FillRounded(g, r, radius, brush);
+    }
+
     /// <param name="width">線寬（實際像素）。0 = 自動，取隨 DPI 縮放的 1 設計像素。</param>
     public static void DrawRounded(Graphics g, RectangleF r, float radius, Color color, float width = 0f)
     {

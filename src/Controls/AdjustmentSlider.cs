@@ -25,6 +25,12 @@ public sealed class AdjustmentSlider : Control
     public bool Bipolar { get; set; }
     public bool Reverse { get; set; }
 
+    /// <summary>Paints the track as a colour ramp instead of track + fill, so the meaning of
+    /// left vs. right is readable without touching the slider. The fill is dropped because two
+    /// layers of colour in a 6px track just muddies both; on a bipolar slider a faint tick
+    /// marks <see cref="DefaultValue"/> so the neutral point stays findable.</summary>
+    public SliderGradient Gradient { get; set; } = SliderGradient.None;
+
     public double Value
     {
         get => _value;
@@ -185,22 +191,42 @@ public sealed class AdjustmentSlider : Control
                 TextFormatFlags.Right | TextFormatFlags.VerticalCenter);
 
         var tr = TrackRect;
-        PaintHelpers.FillRounded(g, tr, Ui.S(3f), Theme.SliderTrack);
-
-        // fill
         float knobX = ValueToX(_value);
-        if (Bipolar)
+        var stops = Gradient == SliderGradient.None ? Array.Empty<Color>() : Theme.GradientStops(Gradient);
+
+        if (stops.Length > 0)
         {
-            float midX = ValueToX(0);
-            float x0 = Math.Min(midX, knobX), x1 = Math.Max(midX, knobX);
-            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
+            // The ramp runs Min→Max along the track, so flip it when the track is reversed.
+            if (Reverse) Array.Reverse(stops);
+            PaintHelpers.FillRoundedGradient(g, tr, Ui.S(3f), stops);
+
+            // Bipolar sliders lose their "how far from neutral" cue without a fill —
+            // put it back as a faint tick at the default value.
+            if (Bipolar)
+            {
+                float tick = ValueToX(DefaultValue);
+                using var pen = new Pen(Color.FromArgb(90, Theme.SliderKnob), Ui.SMin(1));
+                g.DrawLine(pen, tick, tr.Y, tick, tr.Bottom);
+            }
         }
         else
         {
-            float x0 = ValueToX(Min);
-            float x1 = knobX;
-            if (x1 < x0) (x0, x1) = (x1, x0);
-            PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
+            PaintHelpers.FillRounded(g, tr, Ui.S(3f), Theme.SliderTrack);
+
+            // fill
+            if (Bipolar)
+            {
+                float midX = ValueToX(0);
+                float x0 = Math.Min(midX, knobX), x1 = Math.Max(midX, knobX);
+                PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
+            }
+            else
+            {
+                float x0 = ValueToX(Min);
+                float x1 = knobX;
+                if (x1 < x0) (x0, x1) = (x1, x0);
+                PaintHelpers.FillRounded(g, new RectangleF(x0, tr.Y, Math.Max(1, x1 - x0), tr.Height), Ui.S(3f), Theme.SliderFill);
+            }
         }
 
         // knob

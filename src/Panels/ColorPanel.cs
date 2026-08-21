@@ -44,12 +44,17 @@ public sealed class ColorPanel : AdjustPanelBase
 
         ContentArea.Controls.AddRange(new Control[] { _wbLabel, _picker, _asShot });
 
+        // 這四條的左右各代表什麼，用軌道漸層直接畫出來（見 AdjustmentSlider.Gradient）。
         const int x = 12, w = 286, h = 34, gap = 35, y = 40;
         _temp = AddSliderAt(x, y + 0 * gap, w, h, "色溫", 2000, 12000, 5200, "0", false,
             a => TempToSlider(a.Temperature), (a, v) => a.Temperature = SliderToTemp(v), 50);
-        AddSliderAt(x, y + 1 * gap, w, h, "色調", -100, 100, 0, "0", true, a => a.Tint, (a, v) => a.Tint = v, 1);
-        AddSliderAt(x, y + 2 * gap, w, h, "鮮豔度", -100, 100, 0, "0", true, a => a.Vibrance, (a, v) => a.Vibrance = v, 1);
-        AddSliderAt(x, y + 3 * gap, w, h, "飽和度", -100, 100, 0, "0", true, a => a.Saturation, (a, v) => a.Saturation = v, 1);
+        _temp.Gradient = SliderGradient.Temperature;
+        AddSliderAt(x, y + 1 * gap, w, h, "色調", -100, 100, 0, "0", true, a => a.Tint, (a, v) => a.Tint = v, 1)
+            .Gradient = SliderGradient.Tint;
+        AddSliderAt(x, y + 2 * gap, w, h, "鮮豔度", -100, 100, 0, "0", true, a => a.Vibrance, (a, v) => a.Vibrance = v, 1)
+            .Gradient = SliderGradient.Saturation;
+        AddSliderAt(x, y + 3 * gap, w, h, "飽和度", -100, 100, 0, "0", true, a => a.Saturation, (a, v) => a.Saturation = v, 1)
+            .Gradient = SliderGradient.Saturation;
     }
 
     private double TempToSlider(double kelvin) => _tempIsRaw ? kelvin : (kelvin - 5200) / NonRawScale;

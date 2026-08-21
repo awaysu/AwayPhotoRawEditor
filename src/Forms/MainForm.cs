@@ -583,8 +583,12 @@ public sealed class MainForm : Form
                 sem.Wait(token);
                 try
                 {
-                    bool edited = ComputeEditedFlag(item);
+                    var (savedAdj, savedExif) = LoadEditedState(item);
+                    bool edited = savedAdj is not null;
                     var thumb = _loader.LoadThumbnail(item.SourcePath, 240, 160);
+                    // 已編輯過的照片，縮圖要直接呈現編輯後的樣子（虛擬副本各自套自己的調整）。
+                    if (thumb != null)
+                        thumb = RenderThumbnail(thumb, savedAdj, savedExif, AppPaths.IsRaw(item.SourcePath));
                     if (!token.IsCancellationRequested)
                         BeginInvoke(new Action(() =>
                         {
@@ -618,12 +622,102 @@ public sealed class MainForm : Form
         }, token);
     }
 
-    private static bool ComputeEditedFlag(PhotoItem item)
+    /// <summary>A photo's saved state in one file read: the adjustments, but only when they
+    /// actually change the image — null for「沒有 XML／預設佔位／全預設值」, which is also the
+    /// 已編輯 badge flag — plus the cached EXIF the thumbnail renderer needs for its WB baseline.</summary>
+    private static (ImageAdjustments? Adjustments, ExifData? Exif) LoadEditedState(PhotoItem item)
     {
-        if (!AdjustmentXmlStore.Exists(item.SourcePath, item.VirtualCopyIndex)) return false;
-        if (AdjustmentXmlStore.IsDefaultPlaceholder(item.SourcePath, item.VirtualCopyIndex)) return false;
-        var a = AdjustmentXmlStore.Load(item.SourcePath, item.VirtualCopyIndex);
-        return a is not null && !a.IsDefault;
+        var (adj, exif, placeholder) = AdjustmentXmlStore.LoadAll(item.SourcePath, item.VirtualCopyIndex);
+        if (placeholder || adj is null || adj.IsDefault) return (null, exif);
+        return (adj, exif);
+    }
+
+    // ---- 預覽列縮圖：套用調整 ---------------------------------------------
+    // 縮圖在「調整寫進磁碟」的時機重畫，不在編輯過程中跟著跑：目前這張要切走
+    // (SaveCurrentIfDirty) 才更新，多選批次/貼上設定/套用風格檔/重設 影響到的「其他」
+    // 照片則是當下就寫檔，所以立刻重畫。編輯當下的即時回饋由主預覽負責。
+
+    /// <summary>色溫的中性點（和 <see cref="ImageProcessor.WhiteBalanceMultipliers"/> 一致）。</summary>
+    private const double NeutralKelvin = 5200;
+
+    /// <summary>Render a strip thumbnail: <paramref name="src"/> with <paramref name="adj"/>
+    /// applied. Takes ownership of <paramref name="src"/> and always returns something to show —
+    /// the processed bitmap, or src itself when there is nothing to apply / processing failed.</summary>
+    private static Bitmap RenderThumbnail(Bitmap src, ImageAdjustments? adj, ExifData? exif, bool isRaw)
+    {
+        if (adj is null || adj.IsDefault) return src;
+        try
+        {
+            // 裁切/漸層/修護 的座標都是正規化的，所以縮圖尺寸算出來的結果和主預覽一致。
+            // 不帶 Watermark：240×160 上的浮水印只會是一團看不懂的雜訊。
+            var outBmp = ImageProcessor.Apply(src, RebaseWhiteBalance(adj, exif, isRaw), new ProcessContext());
+            src.Dispose();
+            return outBmp;
+        }
+        catch { return src; }   // 算圖失敗就顯示未套用調整的原縮圖，總比空白好
+    }
+
+    /// <summary>
+    /// RAW 縮圖的底圖是相機內嵌預覽，相機的白平衡已經烤在裡面了；主預覽的底圖 proxy 走
+    /// LibRaw 解碼、<b>沒有</b>套相機白平衡（`use_camera_wb` 未設定），色溫滑桿才是唯一的
+    /// 白平衡來源。所以縮圖若照 <c>adj.Temperature</c> 原值算，等於把白平衡套第二次——
+    /// 鎢絲燈場景（拍攝時 3200K）的縮圖會整個偏藍。這裡改成套「相對拍攝時設定的偏移量」：
+    /// 沒動過白平衡 → 中性、不變色；動過 → 位移多少就套多少。
+    /// </summary>
+    private static ImageAdjustments RebaseWhiteBalance(ImageAdjustments adj, ExifData? exif, bool isRaw)
+    {
+        if (!isRaw || exif is not { HasAsShotWhiteBalance: true }) return adj;
+        var rebased = adj.Clone();
+        rebased.Temperature = NeutralKelvin + (adj.Temperature - exif.ColorTemperature);
+        return rebased;
+    }
+
+    /// <summary>Re-render one photo's strip thumbnail with the given adjustments (background).</summary>
+    private void RefreshThumbnail(PhotoItem item, ImageAdjustments? adj, ExifData? exif)
+    {
+        var loader = _loader;
+        string key = item.Key, path = item.SourcePath;
+        var snapshot = adj?.Clone();   // 呼叫端可能繼續編輯同一個實例
+        bool isRaw = AppPaths.IsRaw(path);
+        Task.Run(() =>
+        {
+            var src = loader.LoadThumbnailCache(path);
+            if (src is null) return;   // 還沒有快取（開資料夾的產生流程會補上）
+            ShowThumbnail(key, RenderThumbnail(src, snapshot, exif, isRaw));
+        });
+    }
+
+    /// <summary>Re-render the given photos' thumbnails from what is saved on disk (background).</summary>
+    private void RefreshThumbnails(IEnumerable<PhotoItem> items)
+    {
+        var list = items.ToList();
+        if (list.Count == 0) return;
+        var loader = _loader;
+        Task.Run(() =>
+        {
+            foreach (var it in list)
+            {
+                var (adj, exif) = LoadEditedState(it);
+                var src = loader.LoadThumbnailCache(it.SourcePath);
+                if (src is null) continue;
+                ShowThumbnail(it.Key, RenderThumbnail(src, adj, exif, AppPaths.IsRaw(it.SourcePath)));
+            }
+        });
+    }
+
+    /// <summary>Hand a freshly rendered thumbnail to the strip (from any thread).</summary>
+    private void ShowThumbnail(string key, Bitmap bmp)
+    {
+        try
+        {
+            if (IsDisposed || _strip.IsDisposed) { bmp.Dispose(); return; }
+            BeginInvoke(new Action(() =>
+            {
+                if (_strip.IsDisposed) bmp.Dispose();
+                else _strip.SetImage(key, bmp);   // SetImage 接手擁有權（找不到 key 時會自行 Dispose）
+            }));
+        }
+        catch { bmp.Dispose(); }   // 視窗正在關閉，控制代碼已經沒了
     }
 
     // ---- photo load ------------------------------------------------------
@@ -778,6 +872,7 @@ public sealed class MainForm : Form
             }
             _syncTargets = null; _syncBaseline = null;
             _strip.RefreshBadges();
+            RefreshThumbnails(step.Others.Select(o => o.item));
         }
 
         _snapshot ??= _adj.Clone();
@@ -810,7 +905,8 @@ public sealed class MainForm : Form
         if (_adj is null) return;
         PushUndo();
         reset(_adj);
-        foreach (var it in SelectedOthers())
+        var others = SelectedOthers();
+        foreach (var it in others)
         {
             try
             {
@@ -826,6 +922,7 @@ public sealed class MainForm : Form
         _syncTargets = null; _syncBaseline = null;
         RebindAll();
         _strip.RefreshBadges();
+        RefreshThumbnails(others);
         OnAdjustmentChanged(immediate: true);
     }
 
@@ -838,6 +935,7 @@ public sealed class MainForm : Form
             AdjustmentXmlStore.Save(_current.SourcePath, _adj, _current.VirtualCopyIndex, _exif);
             _snapshot = _adj.Clone();
             _dirty = false;
+            RefreshThumbnail(_current, _adj, _exif);   // 編輯提交了 → 預覽列跟上
         }
         catch (Exception ex) { _status.Text = L.T("儲存調整失敗：") + ex.Message; }
     }
@@ -872,6 +970,7 @@ public sealed class MainForm : Form
             catch { }
         }
         _strip.RefreshBadges();
+        RefreshThumbnails(targets);
     }
 
     // ---- tools -----------------------------------------------------------
@@ -1094,6 +1193,7 @@ public sealed class MainForm : Form
             it.IsEdited = !a.IsDefault;
         }
         _strip.RefreshBadges();
+        RefreshThumbnails(_strip.SelectedItems.Where(it => !ReferenceEquals(it, _current)));
         OnAdjustmentChanged(immediate: true);
         _status.Text = L.T("已貼上相片設定");
     }
@@ -1106,14 +1206,14 @@ public sealed class MainForm : Form
         var baseAdj = AdjustmentXmlStore.Load(item.SourcePath, item.VirtualCopyIndex) ?? new ImageAdjustments();
         AdjustmentXmlStore.Save(copy.SourcePath, baseAdj.Clone(), copy.VirtualCopyIndex, AdjustmentXmlStore.LoadExif(item.SourcePath, item.VirtualCopyIndex));
 
+        copy.IsEdited = !baseAdj.IsDefault;
         int idx = _items.FindIndex(i => ReferenceEquals(i, item));
         _items.Insert(idx + 1, copy);
         SavePreviewList();
         RefreshStripKeepSelection();
 
-        // thumbnail for the copy = same source thumb
-        var thumb = _loader.LoadThumbnailCache(item.SourcePath);
-        if (thumb != null) _strip.SetImage(copy.Key, thumb);
+        // 副本沿用來源的縮圖檔，但套的是自己那份調整——之後各自改，縮圖就會分家。
+        RefreshThumbnail(copy, baseAdj, AdjustmentXmlStore.LoadExif(item.SourcePath, item.VirtualCopyIndex));
         _status.Text = L.T("已建立虛擬副本");
     }
 
@@ -1240,6 +1340,7 @@ public sealed class MainForm : Form
         }
         if (_adj != null) RebindAll();
         _strip.RefreshBadges();
+        RefreshThumbnails(_strip.SelectedItems.Where(it => !ReferenceEquals(it, _current)));
         OnAdjustmentChanged(immediate: true);
         _status.Text = L.F("已套用風格檔：{0}", PresetProfile.BuiltIn.ContainsKey(name) ? L.T(name) : name);
     }
@@ -1285,11 +1386,14 @@ public sealed class MainForm : Form
         var cur = _current;
         int idx = cur != null ? _items.FindIndex(i => ReferenceEquals(i, cur)) : 0;
         _strip.SetItems(_items, Math.Max(0, idx));
+        // SetItems 清掉了所有縮圖：先同步塞回快取縮圖（立即有畫面、不閃空格），
+        // 已編輯的再由背景重算成套用調整後的版本蓋上去。
         foreach (var it in _items)
         {
             var t = _loader.LoadThumbnailCache(it.SourcePath);
             if (t != null) _strip.SetImage(it.Key, t);
         }
+        RefreshThumbnails(_items.Where(it => it.IsEdited));
     }
 
     private void SavePreviewList()
