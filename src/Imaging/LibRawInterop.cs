@@ -3,6 +3,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
 using AwayPhotoRawEditor.App;
+using AwayPhotoRawEditor.Models;
 
 namespace AwayPhotoRawEditor.Imaging;
 
@@ -103,6 +104,17 @@ public static class LibRawInterop
     [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
     private static extern void libraw_set_gamma(IntPtr lr, int index, float value);
 
+    // 相機色彩資料：open_file 解完 metadata 就有了（adobe_coeff 在 identify 階段算出
+    // pre_mul / rgb_cam），不用 unpack，讀取很便宜。
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern float libraw_get_cam_mul(IntPtr lr, int index);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern float libraw_get_pre_mul(IntPtr lr, int index);
+
+    [DllImport(Dll, CallingConvention = CallingConvention.Cdecl)]
+    private static extern float libraw_get_rgb_cam(IntPtr lr, int index1, int index2);
+
     [DllImport("kernel32", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern bool SetDllDirectory(string lpPathName);
 
@@ -144,6 +156,45 @@ public static class LibRawInterop
     /// <summary>Full-resolution high-precision decode (16-bit → float). Null on failure.</summary>
     public static FloatImageBuffer? DecodeToFloat(string path, Size expectedVisible = default) =>
         RunLargeStack(() => DecodeProcessed(path, bps: 16, expectedVisible) as FloatImageBuffer);
+
+    /// <summary>The camera's colour data (pre_mul / cam_mul / rgb_cam) for the linear pipeline's
+    /// white-balance matrix. Metadata-only open, no unpack. Null when LibRaw can't open the file,
+    /// the numbers are degenerate, or the sensor has four colour channels (rgb_cam's 4th column
+    /// non-zero) — those fall back to the black-body approximation.</summary>
+    public static CameraColorInfo? ReadCameraColor(string path) => RunLargeStack(() => ReadCameraColorCore(path));
+
+    private static CameraColorInfo? ReadCameraColorCore(string path)
+    {
+        if (!Available) return null;
+        IntPtr lr = IntPtr.Zero;
+        try
+        {
+            lr = libraw_init(0);
+            if (lr == IntPtr.Zero) return null;
+            if (libraw_open_wfile(lr, path) != 0) return null;
+
+            var info = new CameraColorInfo();
+            for (int i = 0; i < 3; i++)
+            {
+                info.PreMul[i] = libraw_get_pre_mul(lr, i);
+                info.CamMul[i] = libraw_get_cam_mul(lr, i);
+                for (int j = 0; j < 3; j++) info.RgbCam[i * 3 + j] = libraw_get_rgb_cam(lr, i, j);
+                if (Math.Abs(libraw_get_rgb_cam(lr, i, 3)) > 1e-6) return null;   // 4-colour sensor
+            }
+            // 有些檔案 cam_mul 全 0（相機沒記錄）：退回 pre_mul 當拍攝時設定，總比整組丟掉好。
+            if (!(info.CamMul[0] > 0) || !(info.CamMul[1] > 0) || !(info.CamMul[2] > 0))
+                Array.Copy(info.PreMul, info.CamMul, 3);
+            if (!info.IsValid) return null;
+            info.PreMul = ColorScience.NormalizeGreen(info.PreMul);
+            info.CamMul = ColorScience.NormalizeGreen(info.CamMul);
+            return info.IsValid && ColorScience.Invert3(info.RgbCam) is not null ? info : null;
+        }
+        catch { return null; }
+        finally
+        {
+            if (lr != IntPtr.Zero) libraw_close(lr);
+        }
+    }
 
     /// <summary>
     /// LibRaw's full RAW demosaic uses large on-stack buffers and can overflow the

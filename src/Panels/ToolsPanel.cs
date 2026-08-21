@@ -144,7 +144,7 @@ public sealed class ToolsPanel : AdjustPanelBase
     private void BuildGradient()
     {
         // Sliders edit the currently-selected gradient (a.ActiveGradient); disabled when none.
-        AddGradSlider(0, "曝光", -2, 2, 0, "0.00", 0.05, g => g.Exposure, (g, v) => g.Exposure = v);
+        _gradExposure = AddGradSlider(0, "曝光", -5, 5, 0, "0.00", 0.05, g => g.Exposure, (g, v) => g.Exposure = v);
         AddGradSlider(36, "對比", -100, 100, 0, "0", 1, g => g.Contrast, (g, v) => g.Contrast = v);
         AddGradSlider(72, "亮部", -100, 100, 0, "0", 1, g => g.Highlights, (g, v) => g.Highlights = v);
         AddGradSlider(108, "暗部", -100, 100, 0, "0", 1, g => g.Shadows, (g, v) => g.Shadows = v);
@@ -167,7 +167,10 @@ public sealed class ToolsPanel : AdjustPanelBase
         _grad.Controls.Add(reset);
     }
 
-    private void AddGradSlider(int top, string label, double min, double max, double def, string fmt, double step,
+    /// <summary>漸層的曝光滑桿：範圍隨處理版本（同 BasicAdjustPanel 的曝光：舊版 ±2、新版 ±5 真 EV）。</summary>
+    private AdjustmentSlider? _gradExposure;
+
+    private AdjustmentSlider AddGradSlider(int top, string label, double min, double max, double def, string fmt, double step,
         Func<LinearGradient, double> get, Action<LinearGradient, double> set)
     {
         var s = CreateSlider(label, min, max, def, fmt, true,
@@ -177,10 +180,16 @@ public sealed class ToolsPanel : AdjustPanelBase
         Ui.Place(s, 0, top, 266, 36);
         _grad.Controls.Add(s);
         _gradSliders.Add(s);
+        return s;
     }
 
     public override void Bind(ImageAdjustments adj)
     {
+        if (_gradExposure is { } e)
+        {
+            double range = adj.IsLegacyPipeline ? 2 : 5;   // 要在 base.Bind 載入值之前改，否則值被舊範圍夾住
+            if (e.Max != range) { e.Min = -range; e.Max = range; e.Invalidate(); }
+        }
         base.Bind(adj);
         bool has = adj.ActiveGradient != null;
         foreach (var s in _gradSliders) s.Enabled = has;

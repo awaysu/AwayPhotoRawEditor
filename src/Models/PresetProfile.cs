@@ -51,7 +51,8 @@ public sealed class PresetProfile
 
             ["人像"] = new("人像", a =>
             {
-                a.Exposure = 0.1; a.Contrast = -6; a.Highlights = -12; a.Shadows = 18;
+                // 曝光值以新版（真 EV）管線為準：舊版乘在 gamma 值上、同樣數字約強 2.2 倍。
+                a.Exposure = 0.2; a.Contrast = -6; a.Highlights = -12; a.Shadows = 18;
                 a.Temperature = 5400; a.Tint = 4; a.Vibrance = 10; a.Saturation = -4;
                 a.Sharpening = 5; a.NoiseReduction = 12;
             }),
@@ -70,7 +71,7 @@ public sealed class PresetProfile
 
             ["柔和"] = new("柔和", a =>
             {
-                a.Exposure = 0.15; a.Contrast = -14; a.Highlights = -18; a.Shadows = 24; a.Blacks = 6;
+                a.Exposure = 0.3; a.Contrast = -14; a.Highlights = -18; a.Shadows = 24; a.Blacks = 6;
                 a.Temperature = 5650; a.Vibrance = 6; a.Saturation = -6;
                 a.Sharpening = -10; a.NoiseReduction = 15;
             }),

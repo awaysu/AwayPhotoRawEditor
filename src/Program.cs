@@ -102,12 +102,11 @@ internal static class Program
             return;
         }
 
-        // Dialog screenshot: --dlgshot <folder|export|settings> <outPng>
+        // Dialog screenshot: --dlgshot <export|settings|...> <outPng>（folder 已移除：開啟資料夾改用系統對話框）
         if (args.Length >= 3 && args[0] == "--dlgshot")
         {
             Form dlg = args[1] switch
             {
-                "folder" => new Forms.FolderPickerForm(Environment.GetFolderPath(Environment.SpecialFolder.Desktop)),
                 "export" => new Forms.ExportForm(new Export.ExportSettings(), 12),
                 "progress" => new Forms.ProgressForm("產生快取（縮圖＋預覽）",
                     async (prog, ct) => { prog.Report((7, 12, "DSCF1234.RAF")); await System.Threading.Tasks.Task.Delay(8000, ct); },

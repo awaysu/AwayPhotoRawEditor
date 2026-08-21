@@ -22,6 +22,10 @@ public sealed class ExifData
     /// <summary>As-shot tint if recorded.</summary>
     public double Tint { get; set; }
 
+    /// <summary>LibRaw colour data (pre_mul / cam_mul / rgb_cam) for the linear pipeline's
+    /// white-balance matrix. Null for non-RAW files or when LibRaw could not open the file.</summary>
+    public CameraColorInfo? Camera { get; set; }
+
     public string DateTaken { get; set; } = "";
     public int Width { get; set; }
     public int Height { get; set; }

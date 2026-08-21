@@ -32,6 +32,16 @@ public sealed class ProcessContext
     /// full (distorted/rotated) image.
     /// </summary>
     public bool SkipCropRect { get; set; }
+
+    /// <summary>Camera colour data for the linear pipeline's white-balance matrix. Null →
+    /// black-body multipliers (non-RAW, LibRaw unavailable, legacy XML without the data).</summary>
+    public CameraColorInfo? Camera { get; set; }
+
+    /// <summary>What the source pixels are already balanced to: LibRaw proxies/decodes →
+    /// <see cref="WhiteBalanceReference.Decode"/> (pre_mul); the camera's embedded preview
+    /// (strip thumbnails) → <see cref="WhiteBalanceReference.AsShot"/>.</summary>
+    public WhiteBalanceReference WhiteBalanceReference { get; set; } = WhiteBalanceReference.Decode;
+
     public CancellationToken Token { get; set; } = CancellationToken.None;
 }
 
@@ -68,12 +78,16 @@ public static class ImageProcessor
         var token = ctx.Token;
         var buf = src.Clone();
 
-        WhiteBalanceExposure(buf, adj, token);            // 1 + 2
+        // 1 + 2 — the only step that differs between pipeline versions. Legacy multiplies the
+        // gamma-encoded values directly (kept bit-for-bit so old photos never change); v1
+        // linearises first and uses the camera matrix when available.
+        if (adj.IsLegacyPipeline) WhiteBalanceExposure(buf, adj, token);
+        else WhiteBalanceExposureLinear(buf, adj, ctx, token);
         ApplyLut(buf, ToneCurve.BuildLut(adj), token);    // 3
         VibranceSaturation(buf, adj, token);              // 4
         if (adj.NoiseReduction > 0) NoiseReduction(buf, adj, token); // 5
         if (adj.Sharpening != 0) Sharpen(buf, adj, token);           // 6
-        if (GradientActive(adj)) Gradient(buf, adj, token);          // 7
+        if (GradientActive(adj)) Gradient(buf, adj, !adj.IsLegacyPipeline, token); // 7
         if (adj.HealSpots.Count > 0) Heal(buf, adj, token);          // 8
 
         // 10c: 暗角 — post-crop, so it always hugs the frame actually shown/exported.
@@ -130,7 +144,60 @@ public static class ImageProcessor
         });
     }
 
-    /// <summary>RGB multipliers for a temperature (K) and tint, neutral at 5200 K / 0 tint.</summary>
+    /// <summary>
+    /// v1: decode the transfer curve → white balance → exposure → re-encode, so both gains act on
+    /// light rather than on gamma-encoded values. White balance is a 3×3 matrix in camera space
+    /// when LibRaw gave us the camera's colour data; otherwise the black-body multipliers (now
+    /// applied in linear, which is the only correct place for them).
+    /// </summary>
+    private static void WhiteBalanceExposureLinear(FloatImageBuffer buf, ImageAdjustments adj, ProcessContext ctx, CancellationToken t)
+    {
+        float exp = (float)Math.Pow(2.0, adj.Exposure);
+        float[]? m = ctx.Camera is { IsValid: true } cam
+            ? ColorScience.WhiteBalanceMatrix(cam, adj.Temperature, adj.Tint, ctx.WhiteBalanceReference)
+            : null;
+
+        var data = buf.Data;
+        if (m is not null)
+        {
+            // fold exposure into the matrix
+            float m0 = m[0] * exp, m1 = m[1] * exp, m2 = m[2] * exp;
+            float m3 = m[3] * exp, m4 = m[4] * exp, m5 = m[5] * exp;
+            float m6 = m[6] * exp, m7 = m[7] * exp, m8 = m[8] * exp;
+            ForRows(buf, t, (y) =>
+            {
+                int i = y * buf.Width * 4;
+                for (int x = 0; x < buf.Width; x++, i += 4)
+                {
+                    float r = ColorScience.Linearize(data[i]);
+                    float g = ColorScience.Linearize(data[i + 1]);
+                    float b = ColorScience.Linearize(data[i + 2]);
+                    data[i] = ColorScience.Encode(m0 * r + m1 * g + m2 * b);
+                    data[i + 1] = ColorScience.Encode(m3 * r + m4 * g + m5 * b);
+                    data[i + 2] = ColorScience.Encode(m6 * r + m7 * g + m8 * b);
+                }
+            });
+        }
+        else
+        {
+            var (mr, mg, mb) = WhiteBalanceMultipliers(adj.Temperature, adj.Tint);
+            float fr = (float)mr * exp, fg = (float)mg * exp, fb = (float)mb * exp;
+            ForRows(buf, t, (y) =>
+            {
+                int i = y * buf.Width * 4;
+                for (int x = 0; x < buf.Width; x++, i += 4)
+                {
+                    data[i] = ColorScience.Encode(ColorScience.Linearize(data[i]) * fr);
+                    data[i + 1] = ColorScience.Encode(ColorScience.Linearize(data[i + 1]) * fg);
+                    data[i + 2] = ColorScience.Encode(ColorScience.Linearize(data[i + 2]) * fb);
+                }
+            });
+        }
+    }
+
+    /// <summary>RGB multipliers for a temperature (K) and tint, neutral at 5200 K / 0 tint.
+    /// Black-body approximation — the legacy pipeline's only white balance, and v1's fallback
+    /// when no camera colour data is available.</summary>
     public static (double r, double g, double b) WhiteBalanceMultipliers(double temperature, double tint)
     {
         var (r, g, b) = KelvinToRgb(temperature);
@@ -244,14 +311,17 @@ public static class ImageProcessor
         return false;
     }
 
-    private static void Gradient(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t)
+    private static void Gradient(FloatImageBuffer buf, ImageAdjustments adj, bool linearExposure, CancellationToken t)
     {
         // Stack every linear gradient, each over the running buffer.
         foreach (var gr in adj.Gradients)
-            if (gr.HasEffect) ApplyGradient(buf, gr, t);
+            if (gr.HasEffect) ApplyGradient(buf, gr, linearExposure, t);
     }
 
-    private static void ApplyGradient(FloatImageBuffer buf, LinearGradient gr, CancellationToken t)
+    /// <param name="linearExposure">v1: the gradient's exposure multiplies light (decode → × →
+    /// encode) like the global exposure does; its contrast/highlights/shadows/saturation stay in
+    /// the encoded domain, where they were designed.</param>
+    private static void ApplyGradient(FloatImageBuffer buf, LinearGradient gr, bool linearExposure, CancellationToken t)
     {
         double a = gr.Angle * Math.PI / 180.0;
         double sinA = Math.Sin(a), cosA = Math.Cos(a);
@@ -277,8 +347,19 @@ public static class ImageProcessor
                 m = m * m * (3 - 2 * m); // smoothstep
                 if (m <= 0) continue;
 
-                float expMul = (float)Math.Pow(2.0, gExp * m);
-                float r = data[i] * expMul, g = data[i + 1] * expMul, b = data[i + 2] * expMul;
+                float r, g, b;
+                if (gExp == 0) { r = data[i]; g = data[i + 1]; b = data[i + 2]; }
+                else
+                {
+                    float expMul = (float)Math.Pow(2.0, gExp * m);
+                    if (linearExposure)
+                    {
+                        r = ColorScience.Encode(ColorScience.Linearize(data[i]) * expMul);
+                        g = ColorScience.Encode(ColorScience.Linearize(data[i + 1]) * expMul);
+                        b = ColorScience.Encode(ColorScience.Linearize(data[i + 2]) * expMul);
+                    }
+                    else { r = data[i] * expMul; g = data[i + 1] * expMul; b = data[i + 2] * expMul; }
+                }
 
                 float luma = 0.299f * r + 0.587f * g + 0.114f * b;
                 if (gSat != 0) { float f = 1 + gSat * m; r = luma + (r - luma) * f; g = luma + (g - luma) * f; b = luma + (b - luma) * f; }

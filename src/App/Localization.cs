@@ -298,27 +298,11 @@ public static class L
         ["尺寸"] = new("Dimensions", "サイズ", "크기", "尺寸", "Abmessungen", "Dimensions", "Dimensiones"),
         ["檔案大小"] = new("File Size", "ファイルサイズ", "파일 크기", "文件大小", "Dateigröße", "Taille du fichier", "Tamaño de archivo"),
 
-        // Folder picker
+        // Folder picker（系統 FolderBrowserDialog 的標題；自繪 FolderPickerForm 已於 2026-08 移除）
         ["選擇相片資料夾"] = new("Select Photo Folder", "写真フォルダーを選択", "사진 폴더 선택", "选择照片文件夹", "Fotoordner auswählen", "Choisir le dossier de photos", "Seleccionar carpeta de fotos"),
-        ["選擇此資料夾"] = new("Select This Folder", "このフォルダーを選択", "이 폴더 선택", "选择此文件夹", "Ordner auswählen", "Choisir ce dossier", "Elegir esta carpeta"),
-        ["常用位置"] = new("Locations", "よく使う場所", "빠른 위치", "常用位置", "Orte", "Emplacements", "Ubicaciones"),
+        ["選擇儲存位置"] = new("Select Save Location", "保存先を選択", "저장 위치 선택", "选择保存位置", "Speicherort wählen", "Choisir l'emplacement", "Elegir ubicación"),
         ["桌面"] = new("Desktop", "デスクトップ", "바탕 화면", "桌面", "Desktop", "Bureau", "Escritorio"),
-        ["圖片"] = new("Pictures", "ピクチャ", "사진", "图片", "Bilder", "Images", "Imágenes"),
-        ["下載"] = new("Downloads", "ダウンロード", "다운로드", "下载", "Downloads", "Téléchargements", "Descargas"),
-        ["文件"] = new("Documents", "ドキュメント", "문서", "文档", "Dokumente", "Documents", "Documentos"),
-        ["本機"] = new("This PC", "PC", "내 PC", "此电脑", "Dieser PC", "Ce PC", "Este equipo"),
-        ["↑  上一層"] = new("↑  Up", "↑  上へ", "↑  상위 폴더", "↑  上一级", "↑  Nach oben", "↑  Dossier parent", "↑  Subir"),
-        ["已選擇："] = new("Selected: ", "選択済み：", "선택됨: ", "已选择：", "Ausgewählt: ", "Sélectionné : ", "Seleccionado: "),
-        ["請選擇資料夾"] = new("Select a folder", "フォルダーを選択してください", "폴더를 선택하세요", "请选择文件夹", "Bitte einen Ordner auswählen", "Sélectionnez un dossier", "Seleccione una carpeta"),
         ["無法開啟："] = new("Could not open: ", "開けません：", "열 수 없음: ", "无法打开：", "Kann nicht geöffnet werden: ", "Impossible d'ouvrir : ", "No se puede abrir: "),
-        ["（此資料夾沒有子資料夾）"] = new(
-            "(This folder has no subfolders)",
-            "（このフォルダーにサブフォルダーはありません）",
-            "(이 폴더에 하위 폴더가 없습니다)",
-            "（此文件夹没有子文件夹）",
-            "(Dieser Ordner hat keine Unterordner)",
-            "(Ce dossier n'a pas de sous-dossiers)",
-            "(Esta carpeta no tiene subcarpetas)"),
 
         // Export
         ["匯出設定"] = new("Export Settings", "書き出し設定", "내보내기 설정", "导出设置", "Exporteinstellungen", "Paramètres d'exportation", "Ajustes de exportación"),
@@ -523,6 +507,19 @@ public static class L
         ["貼上照片設定"] = new("Paste Photo Settings", "写真の設定を貼り付け", "사진 설정 붙여넣기", "粘贴照片设置", "Fotoeinstellungen einfügen", "Coller les réglages de la photo", "Pegar ajustes de la foto"),
         ["建立副本"] = new("Create Virtual Copy", "仮想コピーを作成", "가상 사본 만들기", "创建虚拟副本", "Virtuelle Kopie erstellen", "Créer une copie virtuelle", "Crear copia virtual"),
         ["隱藏且不輸出"] = new("Hide (No Export)", "非表示（書き出さない）", "숨기기(내보내지 않음)", "隐藏且不输出", "Ausblenden (kein Export)", "Masquer (pas d'export)", "Ocultar (sin exportar)"),
+        // 處理版本（v1.0.15 起）：舊照片維持舊算式，由使用者主動升級
+        ["升級處理版本"] = new("Upgrade Process Version", "処理バージョンを更新", "처리 버전 업그레이드", "升级处理版本", "Prozessversion aktualisieren", "Mettre à jour la version de traitement", "Actualizar versión de proceso"),
+        ["已升級 {0} 張照片的處理版本"] = new("Upgraded the process version of {0} photo(s)", "{0} 枚の処理バージョンを更新しました", "{0}장의 처리 버전을 업그레이드했습니다", "已升级 {0} 张照片的处理版本", "Prozessversion von {0} Foto(s) aktualisiert", "Version de traitement mise à jour pour {0} photo(s)", "Versión de proceso actualizada en {0} foto(s)"),
+        ["選取的照片已是最新處理版本"] = new("Selected photos already use the current process version", "選択した写真はすでに最新の処理バージョンです", "선택한 사진은 이미 최신 처리 버전입니다", "选取的照片已是最新处理版本", "Ausgewählte Fotos verwenden bereits die aktuelle Prozessversion", "Les photos sélectionnées utilisent déjà la version actuelle", "Las fotos seleccionadas ya usan la versión actual"),
+        ["舊版處理"] = new("Legacy process", "旧処理バージョン", "이전 처리 버전", "旧版处理", "Alte Prozessversion", "Ancienne version", "Versión antigua"),
+        ["升級後曝光與白平衡改以線性光計算，畫面可能略有變化。要升級選取的 {0} 張照片嗎？"] = new(
+            "After upgrading, exposure and white balance are computed in linear light and the image may change slightly. Upgrade the {0} selected photo(s)?",
+            "更新後は露出とホワイトバランスがリニア光で計算され、見た目が少し変わることがあります。選択した {0} 枚を更新しますか？",
+            "업그레이드 후 노출과 화이트 밸런스가 선형 광으로 계산되어 이미지가 약간 달라질 수 있습니다. 선택한 {0}장을 업그레이드할까요?",
+            "升级后曝光与白平衡改以线性光计算，画面可能略有变化。要升级选取的 {0} 张照片吗？",
+            "Nach der Aktualisierung werden Belichtung und Weißabgleich in linearem Licht berechnet; das Bild kann sich leicht ändern. {0} ausgewählte(s) Foto(s) aktualisieren?",
+            "Après la mise à jour, l'exposition et la balance des blancs sont calculées en lumière linéaire ; l'image peut changer légèrement. Mettre à jour les {0} photo(s) sélectionnée(s) ?",
+            "Tras actualizar, la exposición y el balance de blancos se calculan en luz lineal; la imagen puede cambiar ligeramente. ¿Actualizar las {0} foto(s) seleccionadas?"),
         ["取消隱藏"] = new("Unhide", "非表示を解除", "숨기기 해제", "取消隐藏", "Einblenden", "Ne plus masquer", "Mostrar de nuevo"),
         ["不顯示隱藏"] = new("Don't Show Hidden", "非表示を表示しない", "숨긴 항목 표시 안 함", "不显示隐藏", "Ausgeblendete verbergen", "Ne pas afficher les masquées", "No mostrar ocultas"),
         ["顯示全部"] = new("Show All", "すべて表示", "모두 표시", "显示全部", "Alle anzeigen", "Tout afficher", "Mostrar todo"),

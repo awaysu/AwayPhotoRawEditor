@@ -10,8 +10,23 @@ namespace AwayPhotoRawEditor.Models;
 /// </summary>
 public sealed class ImageAdjustments
 {
+    /// <summary>Newest rendering maths. 0 = legacy (WB/exposure multiplied on gamma-encoded
+    /// values, black-body Kelvin); 1 = linear light + camera-matrix white balance.</summary>
+    public const int CurrentPipelineVersion = 1;
+
+    /// <summary>
+    /// Which maths renders this photo. Lives on the XML document (RawPipeDocument), not here —
+    /// a plain [XmlIgnore] field so the reflection-based ValueEquals/CopyFrom/ApplyDelta ignore
+    /// it (a legacy photo with untouched sliders must not count as "edited"), while
+    /// MemberwiseClone still carries it. Old XMLs without the element load as 0 and keep
+    /// rendering exactly as before until the user upgrades them; fresh instances are current.
+    /// </summary>
+    [XmlIgnore] public int PipelineVersion = CurrentPipelineVersion;
+
+    [XmlIgnore] public bool IsLegacyPipeline => PipelineVersion < 1;
+
     // ---- Basic (基本調整) ------------------------------------------------
-    public double Exposure { get; set; }        // -5 .. +5 EV
+    public double Exposure { get; set; }        // v1: -5 .. +5 EV (true stops); legacy slider ±2 (≈ ±4.4 EV)
     public double Contrast { get; set; }        // -100 .. +100
     public double Highlights { get; set; }      // -100 .. +100
     public double Shadows { get; set; }         // -100 .. +100

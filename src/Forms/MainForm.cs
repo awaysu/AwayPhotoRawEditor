@@ -368,7 +368,8 @@ public sealed class MainForm : Form
             var ctx = new ProcessContext
             {
                 SkipGeometry = skipGeom, SkipCropRect = skipCropRect,
-                WatermarkScale = wmScale, Watermark = _exportSettings.BuildWatermark()
+                WatermarkScale = wmScale, Watermark = _exportSettings.BuildWatermark(),
+                Camera = _exif?.Camera, WhiteBalanceReference = WhiteBalanceReference.Decode
             };
             return token => { ctx.Token = token; return ImageProcessor.Apply(proxy, adj, ctx); };
         };
@@ -380,9 +381,8 @@ public sealed class MainForm : Form
 
     private void PickFolder()
     {
-        using var dlg = new FolderPickerForm(_folder);
-        if (dlg.ShowDialog(this) == DialogResult.OK && Directory.Exists(dlg.SelectedPath))
-            OpenFolder(dlg.SelectedPath);
+        var picked = SystemFolderDialog.Pick(this, _folder, "選擇相片資料夾");
+        if (picked != null) OpenFolder(picked);
     }
 
     private void OpenFolder(string folder)
@@ -559,7 +559,8 @@ public sealed class MainForm : Form
                 var name = Path.GetFileName(f);
                 bool isCache = name.EndsWith("_thumb.jpg", StringComparison.OrdinalIgnoreCase)
                             || name.EndsWith(".rawpipe.png", StringComparison.OrdinalIgnoreCase)
-                            || name.EndsWith(".rawpipe.png.f32", StringComparison.OrdinalIgnoreCase);
+                            || name.EndsWith(".rawpipe.png.f32", StringComparison.OrdinalIgnoreCase)
+                            || name.EndsWith(".rawpipe.png.f16", StringComparison.OrdinalIgnoreCase);
                 if (isCache) { try { File.Delete(f); n++; } catch { } }
             }
         }
@@ -650,7 +651,16 @@ public sealed class MainForm : Form
         {
             // 裁切/漸層/修護 的座標都是正規化的，所以縮圖尺寸算出來的結果和主預覽一致。
             // 不帶 Watermark：240×160 上的浮水印只會是一團看不懂的雜訊。
-            var outBmp = ImageProcessor.Apply(src, RebaseWhiteBalance(adj, exif, isRaw), new ProcessContext());
+            // RAW 縮圖的底圖是相機內嵌預覽、拍攝時白平衡已經烤在裡面：
+            //  - 新版管線 + 有相機色彩資料 → 告訴管線「來源已平衡到 as-shot」，矩陣自己算相對量
+            //  - 其他情況（舊版、非 RAW、沒有色彩資料）→ 用 Kelvin 偏移量近似（RebaseWhiteBalance）
+            bool matrixPath = !adj.IsLegacyPipeline && isRaw && exif?.Camera is { IsValid: true };
+            var ctx = new ProcessContext
+            {
+                Camera = matrixPath ? exif!.Camera : null,
+                WhiteBalanceReference = WhiteBalanceReference.AsShot
+            };
+            var outBmp = ImageProcessor.Apply(src, matrixPath ? adj : RebaseWhiteBalance(adj, exif, isRaw), ctx);
             src.Dispose();
             return outBmp;
         }
@@ -658,11 +668,10 @@ public sealed class MainForm : Form
     }
 
     /// <summary>
-    /// RAW 縮圖的底圖是相機內嵌預覽，相機的白平衡已經烤在裡面了；主預覽的底圖 proxy 走
-    /// LibRaw 解碼、<b>沒有</b>套相機白平衡（`use_camera_wb` 未設定），色溫滑桿才是唯一的
-    /// 白平衡來源。所以縮圖若照 <c>adj.Temperature</c> 原值算，等於把白平衡套第二次——
-    /// 鎢絲燈場景（拍攝時 3200K）的縮圖會整個偏藍。這裡改成套「相對拍攝時設定的偏移量」：
-    /// 沒動過白平衡 → 中性、不變色；動過 → 位移多少就套多少。
+    /// 黑體近似路徑的縮圖白平衡：主預覽的 proxy 走 LibRaw 解碼、<b>沒有</b>套相機白平衡，
+    /// 色溫滑桿才是唯一的白平衡來源；縮圖底圖卻已含相機白平衡。若照 <c>adj.Temperature</c>
+    /// 原值算等於套第二次——鎢絲燈場景（3200K）的縮圖會整個偏藍。改成套「相對拍攝時設定的
+    /// 偏移量」：沒動過 → 中性不變色；動過 → 位移多少就套多少。
     /// </summary>
     private static ImageAdjustments RebaseWhiteBalance(ImageAdjustments adj, ExifData? exif, bool isRaw)
     {
@@ -746,8 +755,16 @@ public sealed class MainForm : Form
             try
             {
                 exif = AdjustmentXmlStore.LoadExif(item.SourcePath, item.VirtualCopyIndex) ?? ExifReader.Read(item.SourcePath);
-                adj = AdjustmentXmlStore.Load(item.SourcePath, item.VirtualCopyIndex)
-                      ?? AdjustmentXmlStore.EnsureDefault(item.SourcePath, exif, item.VirtualCopyIndex);
+                // 相機色彩資料（白平衡矩陣用）：舊 XML 的 EXIF 快取沒有，這裡補；EnsureDefault 要靠它
+                // 種下 as-shot 的 K 值，所以必須在它之前。
+                bool enriched = loader.EnrichCameraColor(item.SourcePath, exif);
+                var loaded = AdjustmentXmlStore.Load(item.SourcePath, item.VirtualCopyIndex);
+                adj = loaded ?? AdjustmentXmlStore.EnsureDefault(item.SourcePath, exif, item.VirtualCopyIndex);
+                if (loaded is not null && enriched)
+                {
+                    // 既有 XML：把補上的色彩資料存回，下次載入就不用再開一次 RAW
+                    try { AdjustmentXmlStore.Save(item.SourcePath, adj, item.VirtualCopyIndex, exif); } catch { }
+                }
                 proxy = loader.LoadProxyFloat(item.SourcePath);
             }
             catch (Exception ex)
@@ -1073,7 +1090,16 @@ public sealed class MainForm : Form
     private void UseAsShotWb()
     {
         if (_adj is null) return;
-        if (_exif is { HasAsShotWhiteBalance: true })
+        // 新版管線 + 相機色彩資料：拍攝時設定來自 cam_mul（和滑桿同一把尺）；否則用 EXIF 的 K 值。
+        if (!_adj.IsLegacyPipeline && _exif?.Camera is { IsValid: true } cam && ColorScience.AsShot(cam) is { } shot)
+        {
+            PushUndo();
+            _adj.Temperature = ClampTempForCurrent(Math.Clamp(shot.kelvin, ColorScience.MinKelvin, ColorScience.MaxKelvin));
+            _adj.Tint = shot.tint;
+            _color.Bind(_adj);
+            OnAdjustmentChanged(immediate: true);
+        }
+        else if (_exif is { HasAsShotWhiteBalance: true })
         {
             PushUndo();
             _adj.Temperature = ClampTempForCurrent(_exif.ColorTemperature);
@@ -1091,10 +1117,25 @@ public sealed class MainForm : Form
         _current != null && !AppPaths.IsRaw(_current.SourcePath)
             ? ColorPanel.ClampToNonRawRange(kelvin) : kelvin;
 
-    /// <summary>Search a temperature/tint whose WB multipliers neutralise the sampled colour.</summary>
-    private static (double temp, double tint) EstimateWhiteBalance(float r, float g, float b)
+    /// <summary>Temperature/tint that neutralises the sampled (proxy, gamma-encoded) colour.
+    /// New pipeline + camera data → exact camera-space solve; otherwise a black-body search
+    /// (on linearised values for v1, on the encoded values for legacy — matching what each
+    /// pipeline actually multiplies).</summary>
+    private (double temp, double tint) EstimateWhiteBalance(float r, float g, float b)
     {
         if (r <= 1e-4f && g <= 1e-4f && b <= 1e-4f) return (5200, 0);
+        bool legacy = _adj?.IsLegacyPipeline ?? true;
+
+        if (!legacy && _exif?.Camera is { IsValid: true } cam)
+        {
+            var mul = ColorScience.NeutralizingCamMul(cam,
+                ColorScience.Linearize(r), ColorScience.Linearize(g), ColorScience.Linearize(b),
+                WhiteBalanceReference.Decode);
+            if (mul is not null && ColorScience.CamMulToKelvinTint(cam, mul) is { } kt)
+                return (Math.Clamp(kt.kelvin, ColorScience.MinKelvin, ColorScience.MaxKelvin), kt.tint);
+        }
+
+        if (!legacy) { r = ColorScience.Linearize(r); g = ColorScience.Linearize(g); b = ColorScience.Linearize(b); }
         double bestT = 5200, bestErr = double.MaxValue;
         for (double t = 2000; t <= 12000; t += 100)
         {
@@ -1107,6 +1148,79 @@ public sealed class MainForm : Form
         double gg = g * mg2, avg = (r * mr2 + b * mb2) / 2;
         double tint = Math.Clamp((gg - avg) * 300, -100, 100); // + green -> negative tint to compensate
         return (bestT, -tint);
+    }
+
+    // ---- pipeline version upgrade ------------------------------------------
+
+    /// <summary>縮圖右鍵「升級處理版本」：把選取中仍用舊算式的照片切到線性光管線。
+    /// 舊值會換算成「看起來最接近」的新值：曝光 ×2.22（舊版乘在 gamma 值上，+1 其實是 +2.2 EV），
+    /// 色溫保留「相對拍攝時設定的偏移」再套到新的 as-shot 基準上（兩把尺的 as-shot 不同），
+    /// Tint 疊在新 as-shot 的 tint 上。漸層的曝光同樣 ×2.22。</summary>
+    private void UpgradeSelectedPipeline()
+    {
+        var targets = _strip.SelectedItems.ToList();
+        if (targets.Count == 0 && _current != null) targets.Add(_current);
+        if (targets.Count == 0) return;
+
+        if (MessageBox.Show(this, L.F("升級後曝光與白平衡改以線性光計算，畫面可能略有變化。要升級選取的 {0} 張照片嗎？", targets.Count),
+                L.T("升級處理版本"), MessageBoxButtons.OKCancel, MessageBoxIcon.Question) != DialogResult.OK)
+            return;
+
+        int n = 0;
+        var refreshed = new List<PhotoItem>();
+        foreach (var it in targets)
+        {
+            try
+            {
+                bool isCurrent = ReferenceEquals(it, _current) && _adj != null;
+                ImageAdjustments? a; ExifData? exif;
+                if (isCurrent) { a = _adj; exif = _exif; }
+                else { (a, exif, _) = AdjustmentXmlStore.LoadAll(it.SourcePath, it.VirtualCopyIndex); }
+                if (a is null || !a.IsLegacyPipeline) continue;
+
+                if (isCurrent) PushUndo();
+                if (_loader.EnrichCameraColor(it.SourcePath, exif) && isCurrent) { /* _exif 已是同一實例 */ }
+                ConvertLegacyToLinear(a, exif);
+                a.PipelineVersion = ImageAdjustments.CurrentPipelineVersion;
+                n++;
+
+                if (isCurrent) { _dirty = true; RebindAll(); }
+                else
+                {
+                    AdjustmentXmlStore.Save(it.SourcePath, a, it.VirtualCopyIndex, exif);
+                    it.IsEdited = !a.IsDefault;
+                    refreshed.Add(it);
+                }
+            }
+            catch { }
+        }
+
+        if (n == 0) { _status.Text = L.T("選取的照片已是最新處理版本"); return; }
+        _strip.RefreshBadges();
+        RefreshThumbnails(refreshed);
+        if (_adj != null && !_adj.IsLegacyPipeline) OnAdjustmentChanged(immediate: true);
+        _status.Text = L.F("已升級 {0} 張照片的處理版本", n);
+    }
+
+    /// <summary>Rewrite legacy slider values so the photo looks as close as possible under v1.</summary>
+    private static void ConvertLegacyToLinear(ImageAdjustments a, ExifData? exif)
+    {
+        // 舊版 exposure 乘在 709 gamma 編碼值上：×2 ≈ 2^2.22 的光量。趾部（暗部）斜率不同，
+        // 所以這只是近似，但對「看起來差不多」已經夠。
+        const double GammaPower = 1.0 / 0.45;
+        a.Exposure = Math.Clamp(a.Exposure * GammaPower, -5, 5);
+        foreach (var gr in a.Gradients) gr.Exposure = Math.Clamp(gr.Exposure * GammaPower, -5, 5);
+
+        // 色溫：舊版的 as-shot 基準是 EXIF 的 K 值（沒有就是 5200 中性）；新版是從 cam_mul 算出來的。
+        // 保留使用者調的偏移量，換到新基準上。
+        double legacyAsShot = exif is { HasAsShotWhiteBalance: true } ? exif.ColorTemperature : NeutralKelvin;
+        double delta = a.Temperature - legacyAsShot;
+        if (exif?.Camera is { IsValid: true } cam && ColorScience.AsShot(cam) is { } shot)
+        {
+            a.Temperature = Math.Clamp(shot.kelvin + delta, ColorScience.MinKelvin, ColorScience.MaxKelvin);
+            a.Tint = Math.Clamp(shot.tint + a.Tint, -100, 100);
+        }
+        // 沒有相機色彩資料（非 RAW / LibRaw 讀不到）：黑體近似的尺沒變，K 值原樣保留。
     }
 
     // ---- presets ---------------------------------------------------------
@@ -1152,6 +1266,7 @@ public sealed class MainForm : Form
         // Copy settings only makes sense for a single photo — disable it on a multi-selection.
         Add(L.T("複製照片設定"), () => CopySettings(item), _strip.SelectedItems.Count <= 1);
         Add(L.T("貼上照片設定"), PasteSettings);
+        Add(L.T("升級處理版本"), UpgradeSelectedPipeline);
         menu.Items.Add(new ToolStripSeparator());
         Add(L.T("建立副本"), () => CreateVirtualCopy(item));
         Add(L.T("隱藏且不輸出"), HideSelected, _strip.SelectedItems.Any(i => !i.IsHidden));
@@ -1568,9 +1683,12 @@ public sealed class MainForm : Form
 
     private void UpdateStatus()
     {
-        _status.Text = !_loader.LibRawAvailable ? L.T("未使用LibRaw讀取")
+        string s = !_loader.LibRawAvailable ? L.T("未使用LibRaw讀取")
             : _loader.LastFullDecodeUsedLibRaw ? L.T("LibRaw 讀取中")
             : AppSettings.Current.UseLibRaw ? L.T("LibRaw 已啟用") : L.T("未使用LibRaw讀取");
+        // 舊版處理：在 v1.0.15 之前編輯過、還沒升級的照片（縮圖右鍵「升級處理版本」）
+        if (_adj is { IsLegacyPipeline: true }) s += " · " + L.T("舊版處理");
+        _status.Text = s;
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

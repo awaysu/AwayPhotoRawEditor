@@ -11,6 +11,9 @@ public sealed class RawPipeDocument
 {
     /// <summary>True when written by EnsureDefault and never edited (a placeholder).</summary>
     public bool IsPlaceholder { get; set; }
+    /// <summary>Rendering maths for this photo (see <see cref="ImageAdjustments.PipelineVersion"/>).
+    /// Absent in XMLs written before v1.0.15 → deserialises as 0 = legacy.</summary>
+    public int PipelineVersion { get; set; }
     public ImageAdjustments Adjustments { get; set; } = new();
     public ExifData? Exif { get; set; }
 }
@@ -31,7 +34,11 @@ public static class AdjustmentXmlStore
         // Preserve previously stored EXIF if none supplied.
         exif ??= LoadDocument(path)?.Exif;
 
-        var doc = new RawPipeDocument { IsPlaceholder = false, Adjustments = adjustments, Exif = exif };
+        var doc = new RawPipeDocument
+        {
+            IsPlaceholder = false, PipelineVersion = adjustments.PipelineVersion,
+            Adjustments = adjustments, Exif = exif
+        };
         using var fs = File.Create(path);
         Serializer.Serialize(fs, doc);
     }
@@ -62,12 +69,18 @@ public static class AdjustmentXmlStore
         if (existing is not null) return existing.Adjustments;
 
         var adj = new ImageAdjustments();
-        // Seed as-shot white balance if available.
-        if (exif is { HasAsShotWhiteBalance: true })
+        // Seed as-shot white balance: from the camera multipliers when LibRaw gave us the colour
+        // data (the linear pipeline's own Kelvin scale), else the EXIF-reported Kelvin.
+        if (exif?.Camera is { IsValid: true } cam && Imaging.ColorScience.AsShot(cam) is { } shot)
+        {
+            adj.Temperature = Math.Clamp(shot.kelvin, Imaging.ColorScience.MinKelvin, Imaging.ColorScience.MaxKelvin);
+            adj.Tint = shot.tint;
+        }
+        else if (exif is { HasAsShotWhiteBalance: true })
             adj.Temperature = exif.ColorTemperature;
 
         Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        var doc = new RawPipeDocument { IsPlaceholder = true, Adjustments = adj, Exif = exif };
+        var doc = new RawPipeDocument { IsPlaceholder = true, PipelineVersion = adj.PipelineVersion, Adjustments = adj, Exif = exif };
         try
         {
             using var fs = File.Create(path);
@@ -97,7 +110,11 @@ public static class AdjustmentXmlStore
         try
         {
             using var fs = File.OpenRead(path);
-            return Serializer.Deserialize(fs) as RawPipeDocument;
+            var doc = Serializer.Deserialize(fs) as RawPipeDocument;
+            // The version rides on the document; hand it to the adjustments so the pipeline
+            // (which only ever sees ImageAdjustments) knows which maths to use.
+            if (doc is not null) doc.Adjustments.PipelineVersion = doc.PipelineVersion;
+            return doc;
         }
         catch { return null; }
     }

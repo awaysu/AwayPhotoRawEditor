@@ -35,7 +35,120 @@ public static class CacheManager
         return WicDecoder.LoadFile(path);
     }
 
-    // ---- Lossless float32 proxy -----------------------------------------
+    // ---- 16-bit proxy (.f16) ---------------------------------------------
+    // LibRaw 的高精度輸出本來就是 16-bit 整數，存 ushort 不損失任何精度、檔案是 float32 的一半
+    //（2560×1707 ≈ 35MB）。舊的 .f32 其實裝的是 8-bit 量化過的值（見 CLAUDE.md「高精度管線」），
+    // 換副檔名讓它自然失效，不用寫版本判斷。
+
+    private const uint HalfMagic = 0x36315041; // "AP16"
+
+    public static void SaveHalf(FloatImageBuffer buf, string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        using var fs = File.Create(path);
+        using var bw = new BinaryWriter(fs);
+        bw.Write(HalfMagic);
+        bw.Write(buf.Width);
+        bw.Write(buf.Height);
+        var data = buf.Data;
+        var bytes = new byte[data.Length * sizeof(ushort)];
+        for (int i = 0; i < data.Length; i++)
+        {
+            float v = data[i];
+            int q = v <= 0f ? 0 : v >= 1f ? 65535 : (int)(v * 65535f + 0.5f);
+            bytes[i * 2] = (byte)q;
+            bytes[i * 2 + 1] = (byte)(q >> 8);
+        }
+        bw.Write(bytes);
+    }
+
+    public static FloatImageBuffer? LoadHalf(string path)
+    {
+        if (!File.Exists(path)) return null;
+        try
+        {
+            using var fs = File.OpenRead(path);
+            using var br = new BinaryReader(fs);
+            if (br.ReadUInt32() != HalfMagic) return null;
+            int w = br.ReadInt32(), h = br.ReadInt32();
+            if (w <= 0 || h <= 0 || (long)w * h > 64L * 1024 * 1024) return null;
+            var buf = new FloatImageBuffer(w, h);
+            var bytes = br.ReadBytes(buf.Data.Length * sizeof(ushort));
+            if (bytes.Length != buf.Data.Length * sizeof(ushort)) return null;
+            const float inv = 1f / 65535f;
+            var data = buf.Data;
+            for (int i = 0; i < data.Length; i++)
+                data[i] = (bytes[i * 2] | (bytes[i * 2 + 1] << 8)) * inv;
+            return buf;
+        }
+        catch { return null; }
+    }
+
+    // ---- float resize ----------------------------------------------------
+
+    /// <summary>Downscale a float buffer so its long edge is ≤ <paramref name="maxDim"/>, by
+    /// separable area averaging — stays in float the whole way (the old Bitmap round-trip
+    /// quantised the "high-precision" proxy to 8 bits). Returns the input itself when no
+    /// scaling is needed. Only downscales.</summary>
+    public static FloatImageBuffer ResizeFloatToMaxDim(FloatImageBuffer src, int maxDim)
+    {
+        int longSide = Math.Max(src.Width, src.Height);
+        if (longSide <= maxDim) return src;
+        double scale = (double)maxDim / longSide;
+        int dw = Math.Max(1, (int)Math.Round(src.Width * scale));
+        int dh = Math.Max(1, (int)Math.Round(src.Height * scale));
+
+        // horizontal pass: src (W×H) → tmp (dw×H)
+        var tmp = new float[dw * src.Height * 4];
+        var sd = src.Data;
+        int sw = src.Width;
+        System.Threading.Tasks.Parallel.For(0, src.Height, y =>
+        {
+            int srow = y * sw * 4, trow = y * dw * 4;
+            for (int x = 0; x < dw; x++)
+            {
+                double x0 = x * (double)sw / dw, x1 = (x + 1) * (double)sw / dw;
+                float r = 0, g = 0, b = 0, wsum = 0;
+                for (int sx = (int)x0; sx < Math.Min(sw, (int)Math.Ceiling(x1)); sx++)
+                {
+                    float cover = (float)(Math.Min(x1, sx + 1) - Math.Max(x0, sx));
+                    if (cover <= 0) continue;
+                    int si = srow + sx * 4;
+                    r += sd[si] * cover; g += sd[si + 1] * cover; b += sd[si + 2] * cover; wsum += cover;
+                }
+                int ti = trow + x * 4;
+                if (wsum > 0) { tmp[ti] = r / wsum; tmp[ti + 1] = g / wsum; tmp[ti + 2] = b / wsum; }
+                tmp[ti + 3] = 1f;
+            }
+        });
+
+        // vertical pass: tmp (dw×H) → dst (dw×dh)
+        var dst = new FloatImageBuffer(dw, dh);
+        var dd = dst.Data;
+        int sh = src.Height;
+        System.Threading.Tasks.Parallel.For(0, dh, y =>
+        {
+            double y0 = y * (double)sh / dh, y1 = (y + 1) * (double)sh / dh;
+            int drow = y * dw * 4;
+            for (int x = 0; x < dw; x++)
+            {
+                float r = 0, g = 0, b = 0, wsum = 0;
+                for (int sy = (int)y0; sy < Math.Min(sh, (int)Math.Ceiling(y1)); sy++)
+                {
+                    float cover = (float)(Math.Min(y1, sy + 1) - Math.Max(y0, sy));
+                    if (cover <= 0) continue;
+                    int ti = (sy * dw + x) * 4;
+                    r += tmp[ti] * cover; g += tmp[ti + 1] * cover; b += tmp[ti + 2] * cover; wsum += cover;
+                }
+                int di = drow + x * 4;
+                if (wsum > 0) { dd[di] = r / wsum; dd[di + 1] = g / wsum; dd[di + 2] = b / wsum; }
+                dd[di + 3] = 1f;
+            }
+        });
+        return dst;
+    }
+
+    // ---- Lossless float32 proxy (legacy .f32; kept so old caches still parse) ------------
 
     public static void SaveFloat(FloatImageBuffer buf, string path)
     {

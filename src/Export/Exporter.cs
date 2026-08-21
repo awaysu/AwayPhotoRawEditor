@@ -95,15 +95,25 @@ public static class Exporter
 
     private static void ExportOne(PhotoItem item, ExportSettings s, RawLoader loader, List<string> written, string baseName)
     {
-        // 1) full-resolution decode
-        using Bitmap full = DecodeFull(item, loader);
+        // 1) full-resolution decode — stays float: in high-precision mode the 16-bit decode
+        //    used to be collapsed to a Bitmap right here, before the pipeline ever saw it.
+        using FloatImageBuffer full = DecodeFull(item, loader);
 
-        // 2) adjustments
-        var adj = AdjustmentXmlStore.Load(item.SourcePath, item.VirtualCopyIndex) ?? new ImageAdjustments();
+        // 2) adjustments + the cached EXIF (carries the camera colour data for the WB matrix)
+        var (adj, exif, _) = AdjustmentXmlStore.LoadAll(item.SourcePath, item.VirtualCopyIndex);
+        adj ??= new ImageAdjustments();
+        if (exif is not null && loader.EnrichCameraColor(item.SourcePath, exif))
+        {
+            // 舊 XML 沒有相機色彩資料：補上並存回，下次就不用再開一次檔
+            try { AdjustmentXmlStore.Save(item.SourcePath, adj, item.VirtualCopyIndex, exif); } catch { }
+        }
 
         // 3) apply the complete pipeline at full resolution (watermark authored at full res)
-        using Bitmap processed = ImageProcessor.Apply(full, adj,
-            new ProcessContext { ForExport = true, WatermarkScale = 1.0, Watermark = s.BuildWatermark() });
+        using Bitmap processed = ImageProcessor.Apply(full, adj, new ProcessContext
+        {
+            ForExport = true, WatermarkScale = 1.0, Watermark = s.BuildWatermark(),
+            Camera = exif?.Camera, WhiteBalanceReference = WhiteBalanceReference.Decode
+        });
 
         // 4) resize so the longest edge (寬長最大) equals the target, preserving aspect
         using Bitmap final = ResizeToLongEdge(processed, s.MaxLongEdge);
@@ -127,15 +137,16 @@ public static class Exporter
         written.Add(outPath);
     }
 
-    private static Bitmap DecodeFull(PhotoItem item, RawLoader loader)
+    private static FloatImageBuffer DecodeFull(PhotoItem item, RawLoader loader)
     {
         if (loader.UseHighPrecisionRawPipeline)
         {
             var f = loader.DecodeFullFloat(item.SourcePath);
-            if (f is not null) { using (f) return f.ToBitmap(); }
+            if (f is not null) return f;
         }
-        return loader.DecodeFullBitmap(item.SourcePath)
-               ?? throw new IOException(L.T("無法解碼影像"));
+        using var bmp = loader.DecodeFullBitmap(item.SourcePath)
+                        ?? throw new IOException(L.T("無法解碼影像"));
+        return FloatImageBuffer.FromBitmap(bmp);
     }
 
     /// <summary>Scale the image so its longest edge equals <paramref name="maxLongEdge"/>,

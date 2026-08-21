@@ -63,8 +63,8 @@ public sealed class ExportForm : Form
         var browse = new FlatButton { Text = "瀏覽" }; Ui.Place(browse, 400, 119, 84, 26);
         browse.Click += (_, _) =>
         {
-            using var d = new FolderPickerForm(_customPath.Text);
-            if (d.ShowDialog(this) == DialogResult.OK) { _customPath.Text = d.SelectedPath; _rCustom.Checked = true; }
+            var picked = SystemFolderDialog.Pick(this, _customPath.Text, "選擇儲存位置");
+            if (picked != null) { _customPath.Text = picked; _rCustom.Checked = true; }
         };
         card1.Controls.Add(_customPath); card1.Controls.Add(browse);
         Controls.Add(card1);

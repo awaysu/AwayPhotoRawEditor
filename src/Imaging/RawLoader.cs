@@ -2,6 +2,7 @@ using System.Drawing;
 using System.IO;
 using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Exif;
+using AwayPhotoRawEditor.Models;
 
 namespace AwayPhotoRawEditor.Imaging;
 
@@ -29,6 +30,20 @@ public sealed class RawLoader
     {
         UseLibRaw = AppSettings.Current.UseLibRaw;
         UseHighPrecisionRawPipeline = AppSettings.Current.UseHighPrecisionRawPipeline;
+    }
+
+    /// <summary>Attach LibRaw's colour data to <paramref name="exif"/> for a RAW file (metadata-only
+    /// open, cheap). No-op for non-RAW, when LibRaw is off/unavailable, or when already present —
+    /// XMLs written before v1.0.15 cache EXIF without it, so this back-fills them on next load.
+    /// Returns true when the data was added (caller should persist).</summary>
+    public bool EnrichCameraColor(string path, ExifData? exif)
+    {
+        if (exif is null || exif.Camera is { IsValid: true }) return false;
+        if (!AppPaths.IsRaw(path) || !UseLibRaw || !LibRawInterop.Available) return false;
+        var cam = LibRawInterop.ReadCameraColor(path);
+        if (cam is null) return false;
+        exif.Camera = cam;
+        return true;
     }
 
     // ---- Full-resolution decode (no adjustments) ------------------------
@@ -146,7 +161,8 @@ public sealed class RawLoader
 
     // ---- Proxy -----------------------------------------------------------
 
-    private static string ProxyFloatPath(string path) => AppPaths.ProxyPath(path) + ".f32";
+    // .f16（16-bit 整數）取代舊的 .f32：舊檔裝的是 8-bit 量化過的值，換副檔名讓它自然失效。
+    private static string ProxyFloatPath(string path) => AppPaths.ProxyPath(path) + ".f16";
 
     public bool EnsureProxyCache(string path, int maxDim = DefaultProxyMaxDim)
     {
@@ -164,7 +180,7 @@ public sealed class RawLoader
             {
                 using var bmp = scaled.ToBitmap();
                 CacheManager.SavePng(bmp, proxyPath);
-                CacheManager.SaveFloat(scaled, ProxyFloatPath(path));
+                CacheManager.SaveHalf(scaled, ProxyFloatPath(path));
             }
             catch { return false; }
             return true;
@@ -196,20 +212,15 @@ public sealed class RawLoader
         EnsureProxyCache(path, maxDim);
         if (UseHighPrecisionRawPipeline)
         {
-            var f = CacheManager.LoadFloat(ProxyFloatPath(path));
+            var f = CacheManager.LoadHalf(ProxyFloatPath(path));
             if (f is not null) return f;
         }
         var bmp = LoadProxyBitmap(path, maxDim);
         return bmp is null ? null : FloatImageBuffer.FromBitmap(bmp);
     }
 
-    private static FloatImageBuffer ScaleFloat(FloatImageBuffer src, int maxDim)
-    {
-        int longSide = Math.Max(src.Width, src.Height);
-        if (longSide <= maxDim) return src;
-        // Downscale via a bitmap round-trip (adequate for proxy generation).
-        using var bmp = src.ToBitmap();
-        using var scaled = CacheManager.ResizeToMaxDim(bmp, maxDim);
-        return FloatImageBuffer.FromBitmap(scaled);
-    }
+    // 以前這裡走 ToBitmap → 縮放 → FromBitmap，等於把 16-bit 解碼壓回 8-bit 再存成 .f32——
+    // 「高精度」開關因此形同虛設。現在全程留在 float。
+    private static FloatImageBuffer ScaleFloat(FloatImageBuffer src, int maxDim) =>
+        CacheManager.ResizeFloatToMaxDim(src, maxDim);
 }
