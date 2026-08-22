@@ -26,10 +26,14 @@ public static class ColorScience
     // WIC 解出來的 JPEG 是 sRGB，跟 709 差在趾部幾個百分點；對「在已烘焙的 JPEG 上
     // 調白平衡」這種本來就是近似的事，統一用一條曲線比較重要。
 
-    private const int DecodeLutSize = 4096;
-    private const int EncodeLutSize = 8192;
+    public const int DecodeLutSize = 4096;
+    public const int EncodeLutSize = 8192;
     private static readonly float[] DecodeLut = BuildDecodeLut();
     private static readonly float[] EncodeLut = BuildEncodeLut();
+
+    /// <summary>GPU 用：同一張查表上傳到顯示卡（n 格 + 1 個端點）。</summary>
+    public static float[] DecodeTable => DecodeLut;
+    public static float[] EncodeTable => EncodeLut;
 
     private static float[] BuildDecodeLut()
     {

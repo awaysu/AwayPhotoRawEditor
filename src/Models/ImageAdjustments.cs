@@ -114,7 +114,7 @@ public sealed class ImageAdjustments
         var d = new ImageAdjustments();
         Exposure = d.Exposure; Contrast = d.Contrast; Highlights = d.Highlights;
         Shadows = d.Shadows; Whites = d.Whites; Blacks = d.Blacks;
-        Temperature = d.Temperature; Tint = d.Tint; Vibrance = d.Vibrance; Saturation = d.Saturation;
+        Vibrance = d.Vibrance; Saturation = d.Saturation;   // Temperature/Tint 刻意不碰：風格檔不管白平衡（2026-08-23）
         Sharpening = d.Sharpening; NoiseReduction = d.NoiseReduction; Vignette = d.Vignette; Distortion = d.Distortion;
     }
 

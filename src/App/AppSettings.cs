@@ -108,6 +108,9 @@ public sealed class AppSettings
     /// <summary>Use the float RGBA high-precision RAW pipeline (16-bit proxy cache).</summary>
     public bool UseHighPrecisionRawPipeline { get; set; } = false;
 
+    /// <summary>用 GPU（Direct3D 12 / ComputeSharp）算圖；偵測不到硬體裝置或失敗時自動退回 CPU。</summary>
+    public bool UseGpu { get; set; } = true;
+
     /// <summary>Show the #1.. index number on each thumbnail (top-left).</summary>
     public bool ShowThumbnailNumber { get; set; } = true;
 

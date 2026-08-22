@@ -16,7 +16,7 @@
     <!-- SystemAware：process 的 DPI 固定，Ui.Scale 取一次即可，不必在執行期重算整份版面。
          代價是拖到不同縮放的第二螢幕時由 Windows 拉伸（尺寸正確、略糊）。 -->
     <ApplicationHighDpiMode>SystemAware</ApplicationHighDpiMode>
-    <Version>1.0.15</Version>
+    <Version>1.0.16</Version>
     <!-- Win32 版本資源：空白的 CompanyName / FileDescription / LegalCopyright 是防毒
          啟發式的扣分項（也會讓檔案內容頁一片空白），四項都填滿。
          Product→ProductName、Company→CompanyName、Description→FileDescription、
@@ -43,6 +43,10 @@
       <_Parameter1>BuildTime</_Parameter1>
       <_Parameter2>$([System.DateTime]::Now.ToString('yyyy/MM/dd HH:mm:ss'))</_Parameter2>
     </AssemblyAttribute>
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ComputeSharp" Version="3.2.0" />
   </ItemGroup>
 
 </Project>

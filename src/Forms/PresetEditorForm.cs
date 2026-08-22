@@ -74,6 +74,7 @@ public sealed class PresetEditorForm : Form
         _detail.Location = Ui.Pt(272, 525);
         _color.SetTemperatureMode(true);   // 風格檔一律以 Kelvin 儲存
         _color.HideWhiteBalanceRow();      // 沒有目標照片，滴管/拍攝時設定不適用
+        _color.ShowPresetWhiteBalanceNote(); // 滑桿照常顯示；套用時維持照片目前的色溫色調（2026-08-23 使用者決定）
 
         var backupBtn = new FlatButton { Text = "備份全部" };
         Ui.Place(backupBtn, 16, 646, 116, 32);

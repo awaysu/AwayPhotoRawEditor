@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AwayPhotoRawEditor.Imaging.Gpu;
 using AwayPhotoRawEditor.Models;
+using ComputeSharp;
 
 namespace AwayPhotoRawEditor.Imaging;
 
@@ -42,6 +45,15 @@ public sealed class ProcessContext
     /// (strip thumbnails) → <see cref="WhiteBalanceReference.AsShot"/>.</summary>
     public WhiteBalanceReference WhiteBalanceReference { get; set; } = WhiteBalanceReference.Decode;
 
+    /// <summary>Set by the pipeline: at least one stage of this render ran on the GPU.</summary>
+    public bool UsedGpu { get; set; }
+
+    /// <summary>Set by the pipeline: the whole render ran on the GPU-resident fast path.</summary>
+    public bool GpuResident { get; set; }
+
+    /// <summary>Diagnostics only: force the CPU path for this render regardless of <see cref="GpuPipeline.Enabled"/>.</summary>
+    public bool ForceCpu { get; set; }
+
     public CancellationToken Token { get; set; } = CancellationToken.None;
 }
 
@@ -50,6 +62,13 @@ public sealed class ProcessContext
 /// 1 white balance, 2 exposure, 3 tone LUT, 4 vibrance/saturation, 5 noise
 /// reduction, 6 sharpen/soften, 7 gradient, 8 heal, 9 distortion,
 /// 10 rotation/crop/straighten, 11 watermark. Pixel work is parallelized per row.
+/// <para>
+/// GPU（2026-08 起）：<see cref="RunPipeline"/> 把步驟順序寫一次，跑在三種 <see cref="IStageTarget"/> 上——
+/// <see cref="ResidentTarget"/>（整張常駐 GPU，最快）、<see cref="BandedTarget"/>（影像留在 CPU 記憶體、
+/// 逐段送 GPU，每一段 GPU 做不了就用 CPU 補）。下面的 CPU 函式是「參考實作」，GPU shader 逐行對照它寫；
+/// 兩邊算式要一起改（--gputest 會量差異）。逐像素階段的 CPU 函式都帶列範圍 (y0, y1)，
+/// 讓 GPU 中途失敗時只補算剩下的列。
+/// </para>
 /// </summary>
 public static class ImageProcessor
 {
@@ -75,36 +94,75 @@ public static class ImageProcessor
     /// <summary>Run steps 1-10 producing a new float buffer (geometry may change).</summary>
     public static FloatImageBuffer ApplyToFloat(FloatImageBuffer src, ImageAdjustments adj, ProcessContext ctx)
     {
-        var token = ctx.Token;
-        var buf = src.Clone();
-
-        // 1 + 2 — the only step that differs between pipeline versions. Legacy multiplies the
-        // gamma-encoded values directly (kept bit-for-bit so old photos never change); v1
-        // linearises first and uses the camera matrix when available.
-        if (adj.IsLegacyPipeline) WhiteBalanceExposure(buf, adj, token);
-        else WhiteBalanceExposureLinear(buf, adj, ctx, token);
-        ApplyLut(buf, ToneCurve.BuildLut(adj), token);    // 3
-        VibranceSaturation(buf, adj, token);              // 4
-        if (adj.NoiseReduction > 0) NoiseReduction(buf, adj, token); // 5
-        if (adj.Sharpening != 0) Sharpen(buf, adj, token);           // 6
-        if (GradientActive(adj)) Gradient(buf, adj, !adj.IsLegacyPipeline, token); // 7
-        if (adj.HealSpots.Count > 0) Heal(buf, adj, token);          // 8
-
-        // 10c: 暗角 — post-crop, so it always hugs the frame actually shown/exported.
-        FloatImageBuffer Finish(FloatImageBuffer b)
+        // Fast path: whole image resident on the GPU. Any failure leaves 'src' untouched (we only
+        // ever read it), so we simply fall through to the banded/CPU path.
+        if (!ctx.ForceCpu && GpuPipeline.CanHostWhole(src.Width, src.Height))
         {
-            if (adj.Vignette != 0) Vignette(b, adj, token);
-            return b;
+            ResidentImage? img = null;
+            try
+            {
+                img = GpuPipeline.CreateResident(src);
+                if (img is not null)
+                {
+                    var result = RunPipeline(new ResidentTarget(img, adj, ctx), adj, ctx);
+                    ctx.UsedGpu = true;
+                    ctx.GpuResident = true;
+                    return result;
+                }
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex) { GpuPipeline.ReportResidentFailure(ex, (long)src.Width * src.Height * 16); }
+            finally { img?.Dispose(); }
         }
 
-        if (ctx.SkipGeometry) return Finish(buf);         // gradient/heal overlay: original frame
+        return RunPipeline(new BandedTarget(src.Clone(), adj, ctx, gpu: !ctx.ForceCpu), adj, ctx);
+    }
 
-        var geom = buf;
-        if (adj.Distortion != 0) { var d = Distort(geom, adj, token); geom.Dispose(); geom = d; } // 9
+    // ---- the pipeline, written once -------------------------------------------
 
-        // 10a: discrete 90° rotation — applied even under the crop overlay.
-        var rotated = RotateDiscrete(geom, adj.Rotation);
-        if (!ReferenceEquals(rotated, geom)) geom.Dispose();
+    /// <summary>Where the pixels live while the pipeline runs. Each call mutates the target in place
+    /// (geometry calls may change its size).</summary>
+    private interface IStageTarget
+    {
+        int Width { get; }
+        int Height { get; }
+        void Pixel(PixelStageParams p);
+        void Blur(BlurOp? nr, BlurOp? sh);
+        void Heal();
+        void Resample(ResampleParams p, int outW, int outH);
+        void Rotate(Rotation rot);
+        FloatImageBuffer Result();
+    }
+
+    private static FloatImageBuffer RunPipeline(IStageTarget t, ImageAdjustments adj, ProcessContext ctx)
+    {
+        bool blurStages = adj.NoiseReduction > 0 || adj.Sharpening != 0;
+        bool gradActive = GradientActive(adj);
+
+        // 1-4（沒有模糊類階段夾在中間時，7 漸層也併進同一個 pass）
+        t.Pixel(BuildColorParams(adj, ctx, withGradients: gradActive && !blurStages));
+
+        if (blurStages)
+        {
+            t.Blur(adj.NoiseReduction > 0 ? NoiseReductionOp(adj) : null,    // 5
+                   adj.Sharpening != 0 ? SharpenOp(adj) : null);              // 6
+            if (gradActive) t.Pixel(BuildGradientParams(adj));                // 7
+        }
+
+        if (adj.HealSpots.Count > 0) t.Heal();                                // 8
+
+        // 10c: 暗角 — post-crop, so it always hugs the frame actually shown/exported.
+        void Finish()
+        {
+            if (adj.Vignette != 0) t.Pixel(BuildVignetteParams(adj, t.Width, t.Height));
+        }
+
+        if (ctx.SkipGeometry) { Finish(); return t.Result(); }   // gradient/heal overlay: original frame
+
+        if (adj.Distortion != 0)                                                // 9
+            t.Resample(new ResampleParams(0, adj.Distortion / 100.0 * 0.35, 0, 0, 0, 0, 0, 0), t.Width, t.Height);
+
+        t.Rotate(adj.Rotation);                                                 // 10a: discrete 90°, even under the crop overlay
 
         // Crop overlay: show the full distorted/rotated frame; the crop box is applied only
         // in the final (no-tool) view, so the white frame stays aligned while dragging.
@@ -114,27 +172,218 @@ public static class ImageProcessor
             // 白框內看到的內容就是最終裁切結果；框本身維持不旋轉。
             if (adj.CropAngle != 0)
             {
-                var s = StraightenPreview(rotated, adj, token);
-                rotated.Dispose();
-                rotated = s;
+                int W = t.Width, H = t.Height;
+                double cx = (adj.CropX + adj.CropWidth / 2) * W;
+                double cy = (adj.CropY + adj.CropHeight / 2) * H;
+                double a = adj.CropAngle * Math.PI / 180.0;
+                t.Resample(new ResampleParams(1, 0, cx, cy, Math.Sin(a), Math.Cos(a), cx, cy), W, H);
             }
-            return Finish(rotated);
+            Finish();
+            return t.Result();
         }
 
-        var cropped = CropRect(rotated, adj, token);      // 10b
-        if (!ReferenceEquals(cropped, rotated)) rotated.Dispose();
-        return Finish(cropped);
+        // 10b: crop rectangle (with straighten angle); a full-frame crop is a no-op.
+        bool fullCrop = adj.CropX <= 0 && adj.CropY <= 0 &&
+                        adj.CropWidth >= 1 && adj.CropHeight >= 1 && adj.CropAngle == 0;
+        if (!fullCrop)
+        {
+            int W = t.Width, H = t.Height;
+            int outW = Math.Max(1, (int)Math.Round(Math.Clamp(adj.CropWidth, 0.02, 1.0) * W));
+            int outH = Math.Max(1, (int)Math.Round(Math.Clamp(adj.CropHeight, 0.02, 1.0) * H));
+            double cx = (adj.CropX + adj.CropWidth / 2) * W;
+            double cy = (adj.CropY + adj.CropHeight / 2) * H;
+            double a = adj.CropAngle * Math.PI / 180.0;
+            t.Resample(new ResampleParams(1, 0, cx, cy, Math.Sin(a), Math.Cos(a), outW / 2.0, outH / 2.0), outW, outH);
+        }
+        Finish();
+        return t.Result();
+    }
+
+    /// <summary>Whole image on the GPU. Every call goes straight to the device and throws on failure.</summary>
+    private sealed class ResidentTarget : IStageTarget
+    {
+        private readonly ResidentImage _img;
+        private readonly ImageAdjustments _adj;
+        private readonly ProcessContext _ctx;
+        public ResidentTarget(ResidentImage img, ImageAdjustments adj, ProcessContext ctx) { _img = img; _adj = adj; _ctx = ctx; }
+        public int Width => _img.Width;
+        public int Height => _img.Height;
+        public void Pixel(PixelStageParams p) { _ctx.Token.ThrowIfCancellationRequested(); GpuPipeline.PixelResident(_img, p); }
+        public void Blur(BlurOp? nr, BlurOp? sh) { _ctx.Token.ThrowIfCancellationRequested(); GpuPipeline.BlurResident(_img, nr, sh); }
+        public void Heal()
+        {
+            // 修護只碰幾個小圓：下載 → CPU → 上傳，比寫一個 GPU 版划算
+            using var cpu = GpuPipeline.DownloadResident(_img);
+            ImageProcessor.Heal(cpu, _adj, _ctx.Token);
+            GpuPipeline.UploadResident(_img, cpu);
+        }
+        public void Resample(ResampleParams p, int outW, int outH) { _ctx.Token.ThrowIfCancellationRequested(); GpuPipeline.ResampleResident(_img, p, outW, outH); }
+        public void Rotate(Rotation rot) { _ctx.Token.ThrowIfCancellationRequested(); GpuPipeline.RotateResident(_img, rot); }
+        public FloatImageBuffer Result() { _ctx.Token.ThrowIfCancellationRequested(); return GpuPipeline.DownloadResident(_img); }
+    }
+
+    /// <summary>Image in CPU memory; each stage first tries the banded GPU path, then the CPU reference
+    /// implementation for whatever the GPU did not finish.</summary>
+    private sealed class BandedTarget : IStageTarget
+    {
+        private FloatImageBuffer _buf;
+        private readonly ImageAdjustments _adj;
+        private readonly ProcessContext _ctx;
+        private readonly bool _gpu;
+        public BandedTarget(FloatImageBuffer buf, ImageAdjustments adj, ProcessContext ctx, bool gpu) { _buf = buf; _adj = adj; _ctx = ctx; _gpu = gpu; }
+        public int Width => _buf.Width;
+        public int Height => _buf.Height;
+
+        public void Pixel(PixelStageParams p)
+        {
+            var tok = _ctx.Token;
+            int H = _buf.Height;
+            int done = _gpu ? GpuPipeline.TryPixelStage(_buf, p, tok) : 0;
+            if (done > 0) _ctx.UsedGpu = true;
+            if (done >= H) return;
+            int f = p.Flags;
+            if ((f & PixelFlags.LegacyWb) != 0) WhiteBalanceExposure(_buf, _adj, tok, done, H);
+            else if ((f & (PixelFlags.LinearMul | PixelFlags.LinearMatrix)) != 0) WhiteBalanceExposureLinear(_buf, _adj, _ctx, tok, done, H);
+            if ((f & PixelFlags.ToneLut) != 0) ApplyLut(_buf, p.ToneLut!, tok, done, H);
+            if ((f & PixelFlags.VibSat) != 0) VibranceSaturation(_buf, _adj, tok, done, H);
+            if ((f & PixelFlags.Gradients) != 0) Gradient(_buf, _adj, !_adj.IsLegacyPipeline, tok, done, H);
+            if ((f & PixelFlags.Vignette) != 0) Vignette(_buf, _adj, tok, done, H);
+        }
+
+        public void Blur(BlurOp? nr, BlurOp? sh)
+        {
+            var g = _gpu ? GpuPipeline.TryBlurStage(_buf, nr, sh, _ctx.Token) : null;
+            if (g is not null) { _buf.Dispose(); _buf = g; _ctx.UsedGpu = true; return; }
+            if (nr is not null) NoiseReduction(_buf, _adj, _ctx.Token);
+            if (sh is not null) Sharpen(_buf, _adj, _ctx.Token);
+        }
+
+        public void Heal() => ImageProcessor.Heal(_buf, _adj, _ctx.Token);
+
+        public void Resample(ResampleParams p, int outW, int outH)
+        {
+            var g = _gpu ? GpuPipeline.TryResample(_buf, p, outW, outH, _ctx.Token) : null;
+            if (g is not null) _ctx.UsedGpu = true;
+            g ??= CpuResample(_buf, p, outW, outH, _ctx.Token);
+            _buf.Dispose();
+            _buf = g;
+        }
+
+        public void Rotate(Rotation rot)
+        {
+            var r = RotateDiscrete(_buf, rot);
+            if (!ReferenceEquals(r, _buf)) { _buf.Dispose(); _buf = r; }
+        }
+
+        public FloatImageBuffer Result() => _buf;
+    }
+
+    // ---- GPU parameter builders（與下面各 CPU 函式的係數一一對應）-------------
+
+    private static PixelStageParams BuildColorParams(ImageAdjustments adj, ProcessContext ctx, bool withGradients)
+    {
+        var p = new PixelStageParams { Flags = PixelFlags.ToneLut, ToneLut = ToneCurve.BuildLut(adj) };
+        float exp = (float)Math.Pow(2.0, adj.Exposure);
+        if (adj.IsLegacyPipeline)
+        {
+            var (mr, mg, mb) = WhiteBalanceMultipliers(adj.Temperature, adj.Tint);
+            p.Flags |= PixelFlags.LegacyWb;
+            p.WbMul = new float3((float)mr * exp, (float)mg * exp, (float)mb * exp);
+        }
+        else
+        {
+            float[]? m = ctx.Camera is { IsValid: true } cam
+                ? ColorScience.WhiteBalanceMatrix(cam, adj.Temperature, adj.Tint, ctx.WhiteBalanceReference)
+                : null;
+            if (m is not null)
+            {
+                p.Flags |= PixelFlags.LinearMatrix;
+                p.M0 = new float3(m[0] * exp, m[1] * exp, m[2] * exp);
+                p.M1 = new float3(m[3] * exp, m[4] * exp, m[5] * exp);
+                p.M2 = new float3(m[6] * exp, m[7] * exp, m[8] * exp);
+            }
+            else
+            {
+                var (mr, mg, mb) = WhiteBalanceMultipliers(adj.Temperature, adj.Tint);
+                p.Flags |= PixelFlags.LinearMul;
+                p.WbMul = new float3((float)mr * exp, (float)mg * exp, (float)mb * exp);
+            }
+        }
+        float sat = (float)(adj.Saturation / 100.0);
+        float vib = (float)(adj.Vibrance / 100.0);
+        if (sat != 0 || vib != 0) { p.Flags |= PixelFlags.VibSat; p.Sat = sat; p.Vib = vib; }
+        if (withGradients) AddGradients(p, adj);
+        return p;
+    }
+
+    private static PixelStageParams BuildGradientParams(ImageAdjustments adj)
+    {
+        var p = new PixelStageParams();
+        AddGradients(p, adj);
+        return p;
+    }
+
+    private static void AddGradients(PixelStageParams p, ImageAdjustments adj)
+    {
+        var list = new List<GradientGpu>();
+        foreach (var gr in adj.Gradients)
+        {
+            if (!gr.HasEffect) continue;
+            double a = gr.Angle * Math.PI / 180.0;
+            list.Add(new GradientGpu
+            {
+                SinA = (float)Math.Sin(a), CosA = (float)Math.Cos(a),
+                CenterX = (float)gr.CenterX, CenterY = (float)gr.CenterY,
+                Inv2Range = (float)(1.0 / (2 * Math.Max(1e-3, gr.Range))),
+                Exposure = (float)gr.Exposure,
+                Contrast = (float)(gr.Contrast / 100.0),
+                Highlights = (float)(gr.Highlights / 100.0),
+                Shadows = (float)(gr.Shadows / 100.0),
+                Saturation = (float)(gr.Saturation / 100.0),
+            });
+        }
+        if (list.Count == 0) return;
+        p.Flags |= PixelFlags.Gradients;
+        if (!adj.IsLegacyPipeline) p.Flags |= PixelFlags.GradientLinear;
+        p.Gradients = list.ToArray();
+    }
+
+    private static PixelStageParams BuildVignetteParams(ImageAdjustments adj, int width, int height)
+    {
+        float cx = (width - 1) * 0.5f, cy = (height - 1) * 0.5f;
+        return new PixelStageParams
+        {
+            Flags = PixelFlags.Vignette,
+            VigAmount = (float)(-adj.Vignette / 100.0),
+            VigCx = cx, VigCy = cy,
+            VigInvMax = 1f / MathF.Sqrt(cx * cx + cy * cy),
+        };
+    }
+
+    private static BlurOp NoiseReductionOp(ImageAdjustments adj)
+    {
+        float strength = (float)(adj.NoiseReduction / 100.0);
+        int radius = 1 + (int)Math.Round(strength * 2);
+        return new BlurOp(radius, 0, Math.Clamp(strength * 0.8f, 0, 1));
+    }
+
+    private static BlurOp SharpenOp(ImageAdjustments adj)
+    {
+        float amt = (float)(adj.Sharpening / 100.0);
+        if (amt > 0) return new BlurOp(1, 1, amt * 1.5f);
+        int radius = 1 + (int)Math.Round(-amt * 2);
+        return new BlurOp(radius, 0, Math.Clamp(-amt, 0, 1));
     }
 
     // ---- 1 + 2: white balance & exposure --------------------------------
 
-    private static void WhiteBalanceExposure(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t)
+    private static void WhiteBalanceExposure(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t, int y0, int y1)
     {
         var (mr, mg, mb) = WhiteBalanceMultipliers(adj.Temperature, adj.Tint);
         float exp = (float)Math.Pow(2.0, adj.Exposure);
         float fr = (float)mr * exp, fg = (float)mg * exp, fb = (float)mb * exp;
         var data = buf.Data;
-        ForRows(buf, t, (y) =>
+        ForRows(buf, t, y0, y1, (y) =>
         {
             int i = y * buf.Width * 4;
             for (int x = 0; x < buf.Width; x++, i += 4)
@@ -150,7 +399,7 @@ public static class ImageProcessor
     /// when LibRaw gave us the camera's colour data; otherwise the black-body multipliers (now
     /// applied in linear, which is the only correct place for them).
     /// </summary>
-    private static void WhiteBalanceExposureLinear(FloatImageBuffer buf, ImageAdjustments adj, ProcessContext ctx, CancellationToken t)
+    private static void WhiteBalanceExposureLinear(FloatImageBuffer buf, ImageAdjustments adj, ProcessContext ctx, CancellationToken t, int y0, int y1)
     {
         float exp = (float)Math.Pow(2.0, adj.Exposure);
         float[]? m = ctx.Camera is { IsValid: true } cam
@@ -164,7 +413,7 @@ public static class ImageProcessor
             float m0 = m[0] * exp, m1 = m[1] * exp, m2 = m[2] * exp;
             float m3 = m[3] * exp, m4 = m[4] * exp, m5 = m[5] * exp;
             float m6 = m[6] * exp, m7 = m[7] * exp, m8 = m[8] * exp;
-            ForRows(buf, t, (y) =>
+            ForRows(buf, t, y0, y1, (y) =>
             {
                 int i = y * buf.Width * 4;
                 for (int x = 0; x < buf.Width; x++, i += 4)
@@ -182,7 +431,7 @@ public static class ImageProcessor
         {
             var (mr, mg, mb) = WhiteBalanceMultipliers(adj.Temperature, adj.Tint);
             float fr = (float)mr * exp, fg = (float)mg * exp, fb = (float)mb * exp;
-            ForRows(buf, t, (y) =>
+            ForRows(buf, t, y0, y1, (y) =>
             {
                 int i = y * buf.Width * 4;
                 for (int x = 0; x < buf.Width; x++, i += 4)
@@ -223,10 +472,10 @@ public static class ImageProcessor
 
     // ---- 3: tone LUT -----------------------------------------------------
 
-    private static void ApplyLut(FloatImageBuffer buf, float[] lut, CancellationToken t)
+    private static void ApplyLut(FloatImageBuffer buf, float[] lut, CancellationToken t, int y0, int y1)
     {
         var data = buf.Data;
-        ForRows(buf, t, (y) =>
+        ForRows(buf, t, y0, y1, (y) =>
         {
             int i = y * buf.Width * 4;
             for (int x = 0; x < buf.Width; x++, i += 4)
@@ -240,13 +489,13 @@ public static class ImageProcessor
 
     // ---- 4: vibrance / saturation ---------------------------------------
 
-    private static void VibranceSaturation(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t)
+    private static void VibranceSaturation(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t, int y0, int y1)
     {
         float sat = (float)(adj.Saturation / 100.0);
         float vib = (float)(adj.Vibrance / 100.0);
         if (sat == 0 && vib == 0) return;
         var data = buf.Data;
-        ForRows(buf, t, (y) =>
+        ForRows(buf, t, y0, y1, (y) =>
         {
             int i = y * buf.Width * 4;
             for (int x = 0; x < buf.Width; x++, i += 4)
@@ -311,17 +560,17 @@ public static class ImageProcessor
         return false;
     }
 
-    private static void Gradient(FloatImageBuffer buf, ImageAdjustments adj, bool linearExposure, CancellationToken t)
+    private static void Gradient(FloatImageBuffer buf, ImageAdjustments adj, bool linearExposure, CancellationToken t, int y0, int y1)
     {
         // Stack every linear gradient, each over the running buffer.
         foreach (var gr in adj.Gradients)
-            if (gr.HasEffect) ApplyGradient(buf, gr, linearExposure, t);
+            if (gr.HasEffect) ApplyGradient(buf, gr, linearExposure, t, y0, y1);
     }
 
     /// <param name="linearExposure">v1: the gradient's exposure multiplies light (decode → × →
     /// encode) like the global exposure does; its contrast/highlights/shadows/saturation stay in
     /// the encoded domain, where they were designed.</param>
-    private static void ApplyGradient(FloatImageBuffer buf, LinearGradient gr, bool linearExposure, CancellationToken t)
+    private static void ApplyGradient(FloatImageBuffer buf, LinearGradient gr, bool linearExposure, CancellationToken t, int y0, int y1)
     {
         double a = gr.Angle * Math.PI / 180.0;
         double sinA = Math.Sin(a), cosA = Math.Cos(a);
@@ -335,7 +584,7 @@ public static class ImageProcessor
         int W = buf.Width, H = buf.Height;
         var data = buf.Data;
 
-        ForRows(buf, t, (y) =>
+        ForRows(buf, t, y0, y1, (y) =>
         {
             double ny = (double)y / H;
             int i = y * W * 4;
@@ -376,7 +625,7 @@ public static class ImageProcessor
 
     /// <summary>Radial corner shading applied post-crop: positive darkens the corners,
     /// negative brightens them. Ramps smoothly from ~1/3 radius outward.</summary>
-    private static void Vignette(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t)
+    private static void Vignette(FloatImageBuffer buf, ImageAdjustments adj, CancellationToken t, int y0, int y1)
     {
         float amount = (float)(-adj.Vignette / 100.0);   // slider + → darken (gain < 1)
         int W = buf.Width, H = buf.Height;
@@ -384,7 +633,7 @@ public static class ImageProcessor
         float invMax = 1f / MathF.Sqrt(cx * cx + cy * cy);   // corner distance -> 1
         var data = buf.Data;
 
-        ForRows(buf, t, (y) =>
+        ForRows(buf, t, y0, y1, (y) =>
         {
             float dy = (y - cy) * invMax;
             int i = y * W * 4;
@@ -470,92 +719,52 @@ public static class ImageProcessor
             }
     }
 
-    // ---- 9: distortion ---------------------------------------------------
+    // ---- 9 / 10: geometry resampling (CPU reference) ----------------------
 
-    private static FloatImageBuffer Distort(FloatImageBuffer src, ImageAdjustments adj, CancellationToken t)
+    /// <summary>Inverse-map + bilinear resample — the CPU twin of <c>ResampleShader</c>.
+    /// Mode 0: radial distortion (step 9). Mode 1: rotate about (Cx,Cy) with the output origin at
+    /// (Ox,Oy) — both the crop extraction (origin = output centre) and the full-frame straighten
+    /// preview (origin = crop centre) are this one formula.</summary>
+    private static FloatImageBuffer CpuResample(FloatImageBuffer src, ResampleParams p, int outW, int outH, CancellationToken t)
     {
         int W = src.Width, H = src.Height;
-        double k = adj.Distortion / 100.0 * 0.35;
-        var dst = new FloatImageBuffer(W, H);
-        ForRows(dst, t, (y) =>
-        {
-            double ny = (y / (double)H - 0.5) * 2;
-            int i = y * W * 4;
-            for (int x = 0; x < W; x++, i += 4)
-            {
-                double nx = (x / (double)W - 0.5) * 2;
-                double r2 = nx * nx + ny * ny;
-                double f = 1 + k * r2;
-                double sxN = nx * f, syN = ny * f;
-                double sx = (sxN / 2 + 0.5) * W, sy = (syN / 2 + 0.5) * H;
-                Sample(src, sx, sy, out float rr, out float gg, out float bb, out float aa);
-                dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
-            }
-        });
-        return dst;
-    }
-
-    // ---- 10: rotation / crop / straighten -------------------------------
-
-    /// <summary>Extract the crop rectangle (with straighten angle) from an already-rotated buffer.
-    /// Returns <paramref name="rotated"/> itself when the crop is a full-frame no-op — the caller
-    /// checks ReferenceEquals to manage ownership.</summary>
-    private static FloatImageBuffer CropRect(FloatImageBuffer rotated, ImageAdjustments adj, CancellationToken t)
-    {
-        bool fullCrop = adj.CropX <= 0 && adj.CropY <= 0 &&
-                        adj.CropWidth >= 1 && adj.CropHeight >= 1 && adj.CropAngle == 0;
-        if (fullCrop) return rotated;
-
-        int W = rotated.Width, H = rotated.Height;
-        int outW = Math.Max(1, (int)Math.Round(Math.Clamp(adj.CropWidth, 0.02, 1.0) * W));
-        int outH = Math.Max(1, (int)Math.Round(Math.Clamp(adj.CropHeight, 0.02, 1.0) * H));
-        double cx = (adj.CropX + adj.CropWidth / 2) * W;
-        double cy = (adj.CropY + adj.CropHeight / 2) * H;
-        double a = adj.CropAngle * Math.PI / 180.0;
-        double sinA = Math.Sin(a), cosA = Math.Cos(a);
-
         var dst = new FloatImageBuffer(outW, outH);
-        ForRows(dst, t, (y) =>
+        if (p.Mode == 0)
         {
-            double ry = y - outH / 2.0;
-            int i = y * outW * 4;
-            for (int x = 0; x < outW; x++, i += 4)
+            double k = p.K;
+            ForRows(dst, t, (y) =>
             {
-                double rx = x - outW / 2.0;
-                double sx = cx + (rx * cosA - ry * sinA);
-                double sy = cy + (rx * sinA + ry * cosA);
-                Sample(rotated, sx, sy, out float rr, out float gg, out float bb, out float aa);
-                dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
-            }
-        });
-        return dst;
-    }
-
-    /// <summary>Full-frame straighten preview for the crop overlay: rotate the content around
-    /// the crop-rect center with the same sampling as <see cref="CropRect"/>, keeping the
-    /// buffer size — so the area inside the axis-aligned crop box matches the final crop.</summary>
-    private static FloatImageBuffer StraightenPreview(FloatImageBuffer src, ImageAdjustments adj, CancellationToken t)
-    {
-        int W = src.Width, H = src.Height;
-        double cx = (adj.CropX + adj.CropWidth / 2) * W;
-        double cy = (adj.CropY + adj.CropHeight / 2) * H;
-        double a = adj.CropAngle * Math.PI / 180.0;
-        double sinA = Math.Sin(a), cosA = Math.Cos(a);
-
-        var dst = new FloatImageBuffer(W, H);
-        ForRows(dst, t, (y) =>
+                double ny = (y / (double)H - 0.5) * 2;
+                int i = y * outW * 4;
+                for (int x = 0; x < outW; x++, i += 4)
+                {
+                    double nx = (x / (double)W - 0.5) * 2;
+                    double r2 = nx * nx + ny * ny;
+                    double f = 1 + k * r2;
+                    double sxN = nx * f, syN = ny * f;
+                    double sx = (sxN / 2 + 0.5) * W, sy = (syN / 2 + 0.5) * H;
+                    Sample(src, sx, sy, out float rr, out float gg, out float bb, out float aa);
+                    dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
+                }
+            });
+        }
+        else
         {
-            double ry = y - cy;
-            int i = y * W * 4;
-            for (int x = 0; x < W; x++, i += 4)
+            double cx = p.Cx, cy = p.Cy, sinA = p.SinA, cosA = p.CosA, ox = p.Ox, oy = p.Oy;
+            ForRows(dst, t, (y) =>
             {
-                double rx = x - cx;
-                double sx = cx + (rx * cosA - ry * sinA);
-                double sy = cy + (rx * sinA + ry * cosA);
-                Sample(src, sx, sy, out float rr, out float gg, out float bb, out float aa);
-                dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
-            }
-        });
+                double ry = y - oy;
+                int i = y * outW * 4;
+                for (int x = 0; x < outW; x++, i += 4)
+                {
+                    double rx = x - ox;
+                    double sx = cx + (rx * cosA - ry * sinA);
+                    double sy = cy + (rx * sinA + ry * cosA);
+                    Sample(src, sx, sy, out float rr, out float gg, out float bb, out float aa);
+                    dst.Data[i] = rr; dst.Data[i + 1] = gg; dst.Data[i + 2] = bb; dst.Data[i + 3] = aa;
+                }
+            });
+        }
         return dst;
     }
 
@@ -565,8 +774,11 @@ public static class ImageProcessor
         int W = src.Width, H = src.Height;
         bool swap = rot is Rotation.R90 or Rotation.R270;
         var dst = new FloatImageBuffer(swap ? H : W, swap ? W : H);
-        int DW = dst.Width, DH = dst.Height;
-        for (int y = 0; y < H; y++)
+        int DW = dst.Width;
+        var s = src.Data; var d = dst.Data;
+        // 純粹的像素搬移，逐列平行（以前是單執行緒，6000 萬像素要 0.3 秒以上）
+        Parallel.For(0, H, y =>
+        {
             for (int x = 0; x < W; x++)
             {
                 int nx, ny;
@@ -577,9 +789,10 @@ public static class ImageProcessor
                     default: nx = y; ny = W - 1 - x; break; // R270
                 }
                 int si = (y * W + x) * 4, di = (ny * DW + nx) * 4;
-                dst.Data[di] = src.Data[si]; dst.Data[di + 1] = src.Data[si + 1];
-                dst.Data[di + 2] = src.Data[si + 2]; dst.Data[di + 3] = src.Data[si + 3];
+                d[di] = s[si]; d[di + 1] = s[si + 1];
+                d[di + 2] = s[si + 2]; d[di + 3] = s[si + 3];
             }
+        });
         return dst;
     }
 
@@ -713,9 +926,15 @@ public static class ImageProcessor
     }
 
     private static void ForRows(FloatImageBuffer buf, CancellationToken t, Action<int> rowAction)
+        => ForRows(buf, t, 0, buf.Height, rowAction);
+
+    /// <summary>Rows [y0, y1) in parallel — the range lets a partially completed GPU stage hand
+    /// the remaining rows to the CPU implementation.</summary>
+    private static void ForRows(FloatImageBuffer buf, CancellationToken t, int y0, int y1, Action<int> rowAction)
     {
+        if (y1 <= y0) return;
         var opts = new ParallelOptions { CancellationToken = t };
-        Parallel.For(0, buf.Height, opts, rowAction);
+        Parallel.For(y0, y1, opts, rowAction);
     }
 
     private static bool In(int x, int y, int w, int h) => x >= 0 && y >= 0 && x < w && y < h;

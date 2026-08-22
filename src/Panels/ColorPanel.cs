@@ -1,6 +1,7 @@
 using System;
 using System.Drawing;
 using System.Windows.Forms;
+using AwayPhotoRawEditor.App;
 using AwayPhotoRawEditor.Controls;
 
 namespace AwayPhotoRawEditor.Panels;
@@ -10,6 +11,7 @@ public sealed class ColorPanel : AdjustPanelBase
 {
     private readonly IconButton _picker;
     private readonly AdjustmentSlider _temp;
+    private AdjustmentSlider _tint = null!, _vib = null!, _sat = null!;
     private readonly Label _wbLabel;
     private readonly FlatButton _asShot;
 
@@ -49,12 +51,12 @@ public sealed class ColorPanel : AdjustPanelBase
         _temp = AddSliderAt(x, y + 0 * gap, w, h, "色溫", 2000, 12000, 5200, "0", false,
             a => TempToSlider(a.Temperature), (a, v) => a.Temperature = SliderToTemp(v), 50);
         _temp.Gradient = SliderGradient.Temperature;
-        AddSliderAt(x, y + 1 * gap, w, h, "色調", -100, 100, 0, "0", true, a => a.Tint, (a, v) => a.Tint = v, 1)
-            .Gradient = SliderGradient.Tint;
-        AddSliderAt(x, y + 2 * gap, w, h, "鮮豔度", -100, 100, 0, "0", true, a => a.Vibrance, (a, v) => a.Vibrance = v, 1)
-            .Gradient = SliderGradient.Saturation;
-        AddSliderAt(x, y + 3 * gap, w, h, "飽和度", -100, 100, 0, "0", true, a => a.Saturation, (a, v) => a.Saturation = v, 1)
-            .Gradient = SliderGradient.Saturation;
+        _tint = AddSliderAt(x, y + 1 * gap, w, h, "色調", -100, 100, 0, "0", true, a => a.Tint, (a, v) => a.Tint = v, 1);
+        _tint.Gradient = SliderGradient.Tint;
+        _vib = AddSliderAt(x, y + 2 * gap, w, h, "鮮豔度", -100, 100, 0, "0", true, a => a.Vibrance, (a, v) => a.Vibrance = v, 1);
+        _vib.Gradient = SliderGradient.Saturation;
+        _sat = AddSliderAt(x, y + 3 * gap, w, h, "飽和度", -100, 100, 0, "0", true, a => a.Saturation, (a, v) => a.Saturation = v, 1);
+        _sat.Gradient = SliderGradient.Saturation;
     }
 
     private double TempToSlider(double kelvin) => _tempIsRaw ? kelvin : (kelvin - 5200) / NonRawScale;
@@ -101,4 +103,18 @@ public sealed class ColorPanel : AdjustPanelBase
 
     /// <summary>編輯風格檔視窗用：風格檔沒有目標照片，隱藏 白平衡選擇器/拍攝時設定 列。</summary>
     public void HideWhiteBalanceRow() => _wbLabel.Visible = _picker.Visible = _asShot.Visible = false;
+
+    /// <summary>編輯風格檔視窗用：滑桿照常顯示（風格檔仍可存色溫/色調），但套用時不會用到——
+    /// 在藏起來的白平衡列位置放一行說明，免得使用者以為是 bug（2026-08-23 使用者指定這個做法）。</summary>
+    public void ShowPresetWhiteBalanceNote()
+    {
+        var note = new Label
+        {
+            Text = L.T("套用風格檔時維持照片目前的色溫／色調"),
+            ForeColor = Theme.TextFaint, Font = Theme.Small, BackColor = Theme.PanelBg,
+            TextAlign = ContentAlignment.MiddleLeft
+        };
+        Ui.Place(note, 12, 2, 286, 34);   // 兩行高，長翻譯（德/法/西）可自動換行
+        ContentArea.Controls.Add(note);
+    }
 }

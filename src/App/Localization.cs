@@ -116,6 +116,14 @@ public static class L
         root.Invalidate();
     }
 
+    /// <summary>設定 →「RAW 處理精度」旁「說明」的完整內文。繁中原文就是 key（表裡的 key 一律是繁中 source text；
+    /// 之前誤把標題「RAW 處理精度說明」當 key，繁中介面點「說明」只會看到標題）。</summary>
+    public const string RawPrecisionHelp =
+        "8-bit：RAW 解碼成每色 256 階再處理，預覽快取每張約 3–5 MB。一般調整足夠。\n\n" +
+        "16-bit：RAW 解碼成每色 65536 階（以浮點處理），預覽快取每張約 35 MB、第一次開資料夾較慢。大幅拉曝光或暗部時不會出現色階斷層（banding）。\n\n" +
+        "兩者的運算與輸出都一樣（float 運算、8-bit 輸出），差別只在 RAW 解碼保留多少資訊；對 JPG 等非 RAW 沒有影響。\n\n" +
+        "變更後請用「關閉資料夾並刪除快取縮圖」重新產生預覽快取，舊快取不會自動更新。";
+
     private static readonly Dictionary<string, Tr> _text = new(StringComparer.Ordinal)
     {
         // Common / settings
@@ -191,6 +199,51 @@ public static class L
             "Gris chaud lumineux\nAccents terracotta",
             "Gris cálido claro\nAcentos terracota"),
         ["使用 LibRaw"] = new("Use LibRaw", "LibRawを使用", "LibRaw 사용", "使用 LibRaw", "LibRaw verwenden", "Utiliser LibRaw", "Usar LibRaw"),
+        // RAW 處理精度（2026-08-22 由勾選框改成下拉 + 「說明」連結）
+        ["RAW 處理精度"] = new("RAW precision", "RAW処理精度", "RAW 처리 정밀도", "RAW 处理精度", "RAW-Genauigkeit", "Précision RAW", "Precisión RAW"),
+        ["8-bit（省空間）"] = new("8-bit (saves space)", "8-bit（省スペース）", "8-bit (공간 절약)", "8-bit（省空间）", "8 Bit (platzsparend)", "8 bits (économise l'espace)", "8 bits (ahorra espacio)"),
+        ["16-bit（高精度）"] = new("16-bit (high precision)", "16-bit（高精度）", "16-bit (고정밀)", "16-bit（高精度）", "16 Bit (hohe Genauigkeit)", "16 bits (haute précision)", "16 bits (alta precisión)"),
+        ["說明"] = new("What's this?", "説明", "설명", "说明", "Erklärung", "Explication", "Explicación"),
+        // 字體大小按鈕與其右側摘要（2026-08-22 補：德文截圖發現一直沒翻譯）
+        ["字體大小…"] = new("Font sizes…", "フォントサイズ…", "글꼴 크기…", "字体大小…", "Schriftgrößen…", "Tailles de police…", "Tamaños de fuente…"),
+        ["預設比例"] = new("Default sizes", "既定サイズ", "기본 크기", "默认比例", "Standardgrößen", "Tailles par défaut", "Tamaños predeterminados"),
+        // 編輯風格檔：色彩區上方的說明（風格檔套用時不碰白平衡）
+        ["套用風格檔時維持照片目前的色溫／色調"] = new("Keeps the photo's temperature / tint", "適用時は色温度／色かぶりを維持", "적용 시 색온도/틴트 유지", "套用风格文件时保持照片当前的色温／色调", "Temperatur/Tönung bleibt erhalten", "Température/teinte conservées", "Temperatura/tinte se conservan"),   // 一行 286px 放得下（德/法/西曾因太長被截）
+        ["已自訂：一般 {0}px、區塊標題 {1}px、小字 {2}px"] = new("Custom: normal {0}px, section title {1}px, small {2}px", "カスタム：標準 {0}px、セクション見出し {1}px、小 {2}px", "사용자 지정: 일반 {0}px, 섹션 제목 {1}px, 작게 {2}px", "已自定义：常规 {0}px、区块标题 {1}px、小字 {2}px", "Angepasst: normal {0}px, Abschnittstitel {1}px, klein {2}px", "Personnalisé : normal {0}px, titre de section {1}px, petit {2}px", "Personalizado: normal {0}px, título de sección {1}px, pequeño {2}px"),
+        [RawPrecisionHelp] = new(
+            "8-bit: the RAW is decoded to 256 levels per colour before editing. Preview cache ≈ 3–5 MB per photo. Fine for normal adjustments.\n\n" +
+            "16-bit: the RAW is decoded to 65,536 levels per colour (processed as float). Preview cache ≈ 35 MB per photo and the first folder open takes longer. Large exposure or shadow lifts stay smooth — no banding.\n\n" +
+            "Processing and output are identical in both modes (float math, 8-bit output); only the amount of information kept from the RAW differs. JPG and other non-RAW files are unaffected.\n\n" +
+            "After changing this, use “Close folder and delete cached thumbnails” to regenerate the preview cache — existing caches are not rebuilt automatically.",
+            "8-bit：RAWを各色256階調にデコードしてから編集します。プレビューキャッシュは1枚あたり約3〜5 MB。通常の調整には十分です。\n\n" +
+            "16-bit：RAWを各色65,536階調にデコードします（浮動小数点で処理）。プレビューキャッシュは1枚あたり約35 MBで、最初のフォルダーを開く時間が長くなります。露出やシャドウを大きく持ち上げてもバンディングが出ません。\n\n" +
+            "処理と出力はどちらも同じです（float演算、8-bit出力）。違いはRAWから保持する情報量だけで、JPGなど非RAWには影響しません。\n\n" +
+            "変更後は「フォルダーを閉じてキャッシュサムネイルを削除」でプレビューキャッシュを作り直してください。既存のキャッシュは自動では更新されません。",
+            "8-bit: RAW를 색상당 256단계로 디코딩한 뒤 편집합니다. 미리보기 캐시는 사진당 약 3–5 MB. 일반적인 조정에는 충분합니다.\n\n" +
+            "16-bit: RAW를 색상당 65,536단계로 디코딩합니다(float로 처리). 미리보기 캐시는 사진당 약 35 MB이며 처음 폴더를 열 때 더 오래 걸립니다. 노출이나 그림자를 크게 올려도 밴딩이 생기지 않습니다.\n\n" +
+            "처리와 출력은 두 모드 모두 동일합니다(float 연산, 8-bit 출력). RAW에서 유지하는 정보량만 다르며 JPG 등 비 RAW 파일에는 영향이 없습니다.\n\n" +
+            "변경 후에는 “폴더 닫고 캐시 썸네일 삭제”로 미리보기 캐시를 다시 만드세요. 기존 캐시는 자동으로 갱신되지 않습니다.",
+            "8-bit：RAW 解码成每色 256 阶再处理，预览缓存每张约 3–5 MB。一般调整足够。\n\n" +
+            "16-bit：RAW 解码成每色 65536 阶（以浮点处理），预览缓存每张约 35 MB、第一次打开文件夹较慢。大幅拉曝光或暗部时不会出现色阶断层（banding）。\n\n" +
+            "两者的运算与输出都一样（float 运算、8-bit 输出），差别只在 RAW 解码保留多少信息；对 JPG 等非 RAW 没有影响。\n\n" +
+            "变更后请用“关闭文件夹并删除缓存缩略图”重新生成预览缓存，旧缓存不会自动更新。",
+            "8 Bit: Das RAW wird vor der Bearbeitung auf 256 Stufen pro Farbe dekodiert. Vorschau-Cache ≈ 3–5 MB pro Foto. Für normale Anpassungen ausreichend.\n\n" +
+            "16 Bit: Das RAW wird auf 65.536 Stufen pro Farbe dekodiert (Verarbeitung als Float). Vorschau-Cache ≈ 35 MB pro Foto, das erste Öffnen eines Ordners dauert länger. Starke Belichtungs- oder Schattenanhebungen bleiben ohne Banding.\n\n" +
+            "Verarbeitung und Ausgabe sind in beiden Modi identisch (Float-Rechnung, 8-Bit-Ausgabe); nur die aus dem RAW behaltene Information unterscheidet sich. JPG und andere Nicht-RAW-Dateien sind nicht betroffen.\n\n" +
+            "Nach der Änderung bitte „Ordner schließen und Cache-Miniaturen löschen“ verwenden, damit der Vorschau-Cache neu erzeugt wird – vorhandene Caches werden nicht automatisch erneuert.",
+            "8 bits : le RAW est décodé en 256 niveaux par couleur avant retouche. Cache d'aperçu ≈ 3–5 Mo par photo. Suffisant pour les réglages courants.\n\n" +
+            "16 bits : le RAW est décodé en 65 536 niveaux par couleur (traitement en float). Cache d'aperçu ≈ 35 Mo par photo et première ouverture du dossier plus longue. Les fortes remontées d'exposition ou d'ombres restent lisses, sans banding.\n\n" +
+            "Le traitement et la sortie sont identiques dans les deux modes (calcul float, sortie 8 bits) ; seule la quantité d'information conservée du RAW change. Les JPG et autres fichiers non RAW ne sont pas concernés.\n\n" +
+            "Après modification, utilisez « Fermer le dossier et supprimer les miniatures en cache » pour régénérer le cache d'aperçu – les caches existants ne sont pas reconstruits automatiquement.",
+            "8 bits: el RAW se decodifica a 256 niveles por color antes de editar. Caché de vista previa ≈ 3–5 MB por foto. Suficiente para ajustes normales.\n\n" +
+            "16 bits: el RAW se decodifica a 65 536 niveles por color (procesado en float). Caché de vista previa ≈ 35 MB por foto y la primera apertura de la carpeta tarda más. Las subidas fuertes de exposición o sombras se mantienen suaves, sin banding.\n\n" +
+            "El procesado y la salida son idénticos en ambos modos (cálculo float, salida de 8 bits); solo cambia cuánta información se conserva del RAW. Los JPG y otros archivos no RAW no se ven afectados.\n\n" +
+            "Tras cambiarlo, use «Cerrar carpeta y borrar miniaturas en caché» para regenerar la caché de vista previa; las cachés existentes no se reconstruyen automáticamente."),
+        ["使用 GPU 加速算圖（偵測不到或失敗時自動改用 CPU）"] = new("Use GPU acceleration (falls back to CPU when unavailable)", "GPUアクセラレーションを使用（使えない場合はCPUに戻す）", "GPU 가속 사용 (사용 불가 시 CPU로 대체)", "使用 GPU 加速运算（检测不到或失败时自动改用 CPU）", "GPU-Beschleunigung verwenden (sonst CPU)", "Accélération GPU (sinon CPU)", "Aceleración GPU (si no, CPU)"),
+        ["GPU 算圖"] = new("GPU", "GPU", "GPU", "GPU 运算", "GPU", "GPU", "GPU"),
+        ["GPU：未偵測到可用裝置，使用 CPU"] = new("GPU: no usable device, using CPU", "GPU：利用可能なデバイスなし、CPUを使用", "GPU: 사용 가능한 장치 없음, CPU 사용", "GPU：未检测到可用设备，使用 CPU", "GPU: kein nutzbares Gerät, CPU wird verwendet", "GPU : aucun périphérique utilisable, CPU utilisé", "GPU: sin dispositivo utilizable, se usa la CPU"),
+        ["GPU：已停用（設定）"] = new("GPU: disabled (settings)", "GPU：無効（設定）", "GPU: 비활성화됨(설정)", "GPU：已停用（设置）", "GPU: deaktiviert (Einstellungen)", "GPU : désactivé (paramètres)", "GPU: desactivada (ajustes)"),
+        ["GPU："] = new("GPU: ", "GPU：", "GPU: ", "GPU：", "GPU: ", "GPU : ", "GPU: "),
         ["高精度 RAW 處理流程 (16-bit / float)"] = new(
             "High-precision RAW pipeline (16-bit / float)",
             "高精度RAW処理（16-bit / float）",

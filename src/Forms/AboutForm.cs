@@ -139,14 +139,16 @@ public sealed class AboutForm : Form
         return link;
     }
 
-    /// <summary>第三方元件兩行，版本於執行期讀取（讀不到就只顯示名稱）。</summary>
+    /// <summary>第三方元件三行，版本於執行期讀取（讀不到就只顯示名稱）。</summary>
     private static string ThirdPartyText()
     {
         string lib = Imaging.LibRawInterop.Version;
         string et = Exif.ExifReader.ExifToolVersion;
+        string cs = Imaging.Gpu.GpuPipeline.LibraryVersion;
         string l1 = "LibRaw" + (lib.Length > 0 ? " " + lib : "") + " (LGPL 2.1)";
         string l2 = "ExifTool" + (et.Length > 0 ? " " + et : "") + " by Phil Harvey (Perl Artistic License)";
-        return l1 + "\n" + l2;
+        string l3 = "ComputeSharp" + (cs.Length > 0 ? " " + cs : "") + " by Sergio Pedri (MIT) — GPU";
+        return l1 + "\n" + l2 + "\n" + l3;
     }
 
     /// <summary>從嵌入資源載入 Email 圖片（AwayPhotoRawEditor.Assets.email.png）。</summary>

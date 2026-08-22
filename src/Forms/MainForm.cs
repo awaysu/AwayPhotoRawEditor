@@ -23,6 +23,10 @@ public sealed class MainForm : Form
 {
     private readonly RawLoader _loader = new();
     private readonly RenderScheduler _scheduler = new();
+    // 編輯當下同步縮圖（2026-08-22 使用者要求，取代「只在寫檔時重畫」）：放手後 200 ms 以目前調整重畫縮圖，
+    // 版本號確保只有最新一次算圖進預覽列（背景算圖完成順序不保證）。
+    private readonly System.Windows.Forms.Timer _thumbLiveTimer = new() { Interval = 200 };
+    private long _thumbLiveVersion;
     // Global export config (persisted). The 標誌/watermark lives here now; when enabled it is
     // drawn live on the main preview and applied on export.
     private readonly ExportSettings _exportSettings = ExportSettings.Load();
@@ -45,6 +49,7 @@ public sealed class MainForm : Form
     private FlatButton _undoStepBtn = null!;
     private Label _pathLabel = null!;
     private Label _status = null!;   // LibRaw / status label in the viewer toolbar
+    private volatile bool _lastRenderUsedGpu;   // 最近一次主預覽算圖有沒有用到 GPU（狀態列顯示）
     private FlatButton _origBtn = null!;   // 對照原圖 toggle in the viewer toolbar
     private bool _showOriginal;            // render with neutral adjustments (keep geometry)
 
@@ -253,7 +258,7 @@ public sealed class MainForm : Form
         z200.Click += (_, _) => { _viewer.Zoom200(); UpdateStatus(); };
         _origBtn = new FlatButton { Text = "對照原圖" }; Ui.Place(_origBtn, 216, 5, 88, 26);
         _origBtn.Click += (_, _) => ToggleShowOriginal();
-        _status = new Label { Dock = DockStyle.Right, Width = Ui.S(160), ForeColor = Theme.TextDim, Font = Theme.Small, TextAlign = ContentAlignment.MiddleCenter, Padding = Ui.Pad(0, 0, 12, 0), Text = "未使用LibRaw讀取" };
+        _status = new Label { Dock = DockStyle.Right, Width = Ui.S(270), ForeColor = Theme.TextDim, Font = Theme.Small, TextAlign = ContentAlignment.MiddleCenter, Padding = Ui.Pad(0, 0, 12, 0), Text = "未使用LibRaw讀取" };
         toolbar.Controls.AddRange(new Control[] { fitBtn, z100, z200, _origBtn, _status });
 
         _viewer.BackColor = Theme.ViewerBg;
@@ -371,9 +376,16 @@ public sealed class MainForm : Form
                 WatermarkScale = wmScale, Watermark = _exportSettings.BuildWatermark(),
                 Camera = _exif?.Camera, WhiteBalanceReference = WhiteBalanceReference.Decode
             };
-            return token => { ctx.Token = token; return ImageProcessor.Apply(proxy, adj, ctx); };
+            return token =>
+            {
+                ctx.Token = token;
+                var bmp = ImageProcessor.Apply(proxy, adj, ctx);
+                _lastRenderUsedGpu = ctx.UsedGpu;   // 背景執行緒寫、UI 執行緒在 OnRenderDone 讀（bool 不需鎖）
+                return bmp;
+            };
         };
         _scheduler.Completed = OnRenderDone;
+        _thumbLiveTimer.Tick += (_, _) => { _thumbLiveTimer.Stop(); LiveRefreshCurrentThumbnail(); };
         _scheduler.Failed = ex => _status.Text = L.T("算圖失敗：") + ex.Message;
     }
 
@@ -684,6 +696,12 @@ public sealed class MainForm : Form
     /// <summary>Re-render one photo's strip thumbnail with the given adjustments (background).</summary>
     private void RefreshThumbnail(PhotoItem item, ImageAdjustments? adj, ExifData? exif)
     {
+        if (_current != null && item.Key == _current.Key)
+        {
+            // 存檔時的重畫取代任何還在排隊的即時重畫
+            _thumbLiveTimer.Stop();
+            Interlocked.Increment(ref _thumbLiveVersion);
+        }
         var loader = _loader;
         string key = item.Key, path = item.SourcePath;
         var snapshot = adj?.Clone();   // 呼叫端可能繼續編輯同一個實例
@@ -832,6 +850,27 @@ public sealed class MainForm : Form
         if (_syncTargets != null) foreach (var it in _syncTargets) it.IsEdited = true;
         if (_current != null || _syncTargets != null) _strip.RefreshBadges();
         _scheduler.Schedule(immediate);
+        _thumbLiveTimer.Stop(); _thumbLiveTimer.Start();   // 縮圖跟著動（debounce）
+    }
+
+    /// <summary>以目前（尚未存檔的）調整重畫目前照片的縮圖；舊的算圖結果若晚到會被版本號丟掉。</summary>
+    private void LiveRefreshCurrentThumbnail()
+    {
+        if (_current is null || _adj is null) return;
+        long v = Interlocked.Increment(ref _thumbLiveVersion);
+        var loader = _loader;
+        string key = _current.Key, path = _current.SourcePath;
+        var snapshot = _adj.Clone();
+        var exif = _exif;
+        bool isRaw = AppPaths.IsRaw(path);
+        Task.Run(() =>
+        {
+            var src = loader.LoadThumbnailCache(path);
+            if (src is null) return;
+            var bmp = RenderThumbnail(src, snapshot, exif, isRaw);
+            if (Interlocked.Read(ref _thumbLiveVersion) != v) { bmp.Dispose(); return; }
+            ShowThumbnail(key, bmp);
+        });
     }
 
     private void PushUndo()
@@ -1688,6 +1727,7 @@ public sealed class MainForm : Form
             : AppSettings.Current.UseLibRaw ? L.T("LibRaw 已啟用") : L.T("未使用LibRaw讀取");
         // 舊版處理：在 v1.0.15 之前編輯過、還沒升級的照片（縮圖右鍵「升級處理版本」）
         if (_adj is { IsLegacyPipeline: true }) s += " · " + L.T("舊版處理");
+        if (_lastRenderUsedGpu) s += " · " + L.T("GPU 算圖");
         _status.Text = s;
     }
 

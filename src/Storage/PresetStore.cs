@@ -107,7 +107,6 @@ public static class PresetStore
         target.ResetTonal();
         target.Exposure = p.Exposure; target.Contrast = p.Contrast; target.Highlights = p.Highlights;
         target.Shadows = p.Shadows; target.Whites = p.Whites; target.Blacks = p.Blacks;
-        target.Temperature = p.Temperature; target.Tint = p.Tint;
         target.Vibrance = p.Vibrance; target.Saturation = p.Saturation;
         target.Sharpening = p.Sharpening; target.NoiseReduction = p.NoiseReduction;
         target.Vignette = p.Vignette; target.Distortion = p.Distortion;

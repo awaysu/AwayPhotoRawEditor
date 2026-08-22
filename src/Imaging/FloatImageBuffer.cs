@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Drawing.Imaging;
+using System.Threading.Tasks;
 
 namespace AwayPhotoRawEditor.Imaging;
 
@@ -48,26 +49,22 @@ public sealed class FloatImageBuffer : IDisposable
         try
         {
             const float inv = 1f / 255f;
-            fixed (float* dstBase = buf.Data)
+            nint scan0 = bd.Scan0; int stride = bd.Stride;
+            var data = buf.Data;
+            // 逐列平行：全解析度匯出時這個轉換單執行緒要幾百毫秒
+            Parallel.For(0, h, y =>
             {
-                for (int y = 0; y < h; y++)
+                byte* row = (byte*)scan0 + (long)y * stride;
+                int o = y * w * 4;
+                for (int x = 0; x < w; x++, o += 4)
                 {
-                    byte* row = (byte*)bd.Scan0 + (long)y * bd.Stride;
-                    float* dst = dstBase + (long)y * w * 4;
-                    for (int x = 0; x < w; x++)
-                    {
-                        // 32bppArgb in memory is B,G,R,A
-                        byte b = row[x * 4 + 0];
-                        byte g = row[x * 4 + 1];
-                        byte r = row[x * 4 + 2];
-                        byte a = row[x * 4 + 3];
-                        dst[x * 4 + 0] = r * inv;
-                        dst[x * 4 + 1] = g * inv;
-                        dst[x * 4 + 2] = b * inv;
-                        dst[x * 4 + 3] = a * inv;
-                    }
+                    // 32bppArgb in memory is B,G,R,A
+                    data[o + 0] = row[x * 4 + 2] * inv;
+                    data[o + 1] = row[x * 4 + 1] * inv;
+                    data[o + 2] = row[x * 4 + 0] * inv;
+                    data[o + 3] = row[x * 4 + 3] * inv;
                 }
-            }
+            });
         }
         finally { bmp.UnlockBits(bd); }
         return buf;
@@ -81,21 +78,20 @@ public sealed class FloatImageBuffer : IDisposable
         var bd = bmp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format32bppArgb);
         try
         {
-            fixed (float* srcBase = Data)
+            nint scan0 = bd.Scan0; int stride = bd.Stride;
+            int w = Width; var data = Data;
+            Parallel.For(0, Height, y =>
             {
-                for (int y = 0; y < Height; y++)
+                byte* row = (byte*)scan0 + (long)y * stride;
+                int o = y * w * 4;
+                for (int x = 0; x < w; x++, o += 4)
                 {
-                    byte* row = (byte*)bd.Scan0 + (long)y * bd.Stride;
-                    float* src = srcBase + (long)y * Width * 4;
-                    for (int x = 0; x < Width; x++)
-                    {
-                        row[x * 4 + 0] = ToByte(src[x * 4 + 2]); // B
-                        row[x * 4 + 1] = ToByte(src[x * 4 + 1]); // G
-                        row[x * 4 + 2] = ToByte(src[x * 4 + 0]); // R
-                        row[x * 4 + 3] = ToByte(src[x * 4 + 3]); // A
-                    }
+                    row[x * 4 + 0] = ToByte(data[o + 2]); // B
+                    row[x * 4 + 1] = ToByte(data[o + 1]); // G
+                    row[x * 4 + 2] = ToByte(data[o + 0]); // R
+                    row[x * 4 + 3] = ToByte(data[o + 3]); // A
                 }
-            }
+            });
         }
         finally { bmp.UnlockBits(bd); }
         return bmp;

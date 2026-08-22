@@ -78,6 +78,7 @@ public static class SelfTest
             Line($"  LibRaw 可用     : {LibRawInterop.Available}");
             Line($"  exiftool.exe    : {AppPaths.FindExifTool() ?? "(未找到)"}");
             Line($"  ExifTool 可用   : {ExifReader.ExifToolAvailable}");
+            Line($"  GPU             : {Imaging.Gpu.GpuPipeline.StatusText}");
             if (AppPaths.IsRaw(imagePath) && LibRawInterop.ReadSizes(imagePath) is { } rs)
             {
                 // 機型不被 LibRaw 支援時 Width/Height 會等於 RawWidth/RawHeight（拿不到可見區裁切表），

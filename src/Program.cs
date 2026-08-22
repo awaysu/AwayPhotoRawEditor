@@ -15,6 +15,7 @@ internal static class Program
         // 而 SetHighDpiMode 也必須在建立任何視窗之前呼叫。
         ApplicationConfiguration.Initialize(); // high-DPI + visual styles from csproj
         AppSettings.Load();                    // 只讀 XML，不碰 Theme/UI，可以放在 Ui.Init 之前
+        Imaging.Gpu.GpuPipeline.Enabled = AppSettings.Current.UseGpu;
         Ui.Init(AppSettings.Current.UiScalePercent);
         if (float.TryParse(Environment.GetEnvironmentVariable("AWPR_UI_SCALE"),
                 System.Globalization.NumberStyles.Float,
@@ -51,6 +52,13 @@ internal static class Program
         Theme.Apply(style);
 
         // Headless engine self-test: --selftest <imagePath> <reportPath>
+        // GPU 對照：--gputest <img> <report>（CPU 與 GPU 各算一次，量差異與耗時）
+        if (args.Length >= 3 && args[0] == "--gputest")
+        {
+            try { Diagnostics.GpuParity.Run(args[1], args[2]); }
+            catch (Exception ex) { System.IO.File.WriteAllText(args[2] + ".err.txt", ex.ToString()); }
+            return;
+        }
         if (args.Length >= 3 && args[0] == "--selftest")
         {
             AwayPhotoRawEditor.Diagnostics.SelfTest.Run(args[1], args[2]);

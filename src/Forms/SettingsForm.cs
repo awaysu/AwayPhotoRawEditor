@@ -10,9 +10,10 @@ namespace AwayPhotoRawEditor.Forms;
 public sealed class SettingsForm : Form
 {
     private readonly DarkCheckBox _useLibRaw;
-    private readonly DarkCheckBox _highPrecision;
+    private readonly ComboBox _precision;   // RAW 處理精度：0 = 8-bit、1 = 16-bit（存成 UseHighPrecisionRawPipeline）
     private readonly DarkCheckBox _showNumber;
     private readonly DarkCheckBox _showScrollBars;
+    private readonly DarkCheckBox _useGpu;
     private readonly UiStyleCard _classicCard;
     private readonly UiStyleCard _paperCard;
     private readonly ComboBox _language;
@@ -38,7 +39,7 @@ public sealed class SettingsForm : Form
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false; MinimizeBox = false;
         StartPosition = FormStartPosition.CenterParent;
-        ClientSize = Ui.FitWorkArea(548, 668);
+        ClientSize = Ui.FitWorkArea(548, 728);
 
         // 以下座標一律是 96 DPI 設計值，透過 Ui.Place / Ui.S 縮放。
         var header = new Label { Text = "設定", Font = Theme.UIPx(Theme.Sizes.DialogTitle, FontStyle.Bold), ForeColor = Theme.Text };
@@ -115,20 +116,59 @@ public sealed class SettingsForm : Form
 
         var optionsLabel = SectionLabel("一般選項", 386);
         _useLibRaw = NewCheck("使用 LibRaw", AppSettings.Current.UseLibRaw, 412);
-        _highPrecision = NewCheck("高精度 RAW 處理流程 (16-bit / float)", AppSettings.Current.UseHighPrecisionRawPipeline, 442);
+        // RAW 處理精度：二選一的品質等級（不是功能開關），所以用下拉；旁邊「說明」點了跳簡短敘述。
+        // 版面：標籤 20..150、下拉 156..346、說明連結 354 起（德文標籤故意挑短的翻譯，150 放得下）
+        var precisionLabel = new Label
+        {
+            Text = L.T("RAW 處理精度"), ForeColor = Theme.Text, Font = Theme.Normal,
+            TextAlign = ContentAlignment.MiddleLeft, AutoEllipsis = true
+        };
+        Ui.Place(precisionLabel, 20, 442, 132, 26);
+        _precision = UiFactory.Combo(L.T("8-bit（省空間）"), L.T("16-bit（高精度）"));
+        Ui.Place(_precision, 156, 441, 190, 28);
+        _precision.SelectedIndex = AppSettings.Current.UseHighPrecisionRawPipeline ? 1 : 0;
+        var precisionHelp = new LinkLabel
+        {
+            Text = L.T("說明"), Font = Theme.Normal, BackColor = Theme.WindowBg,
+            LinkColor = Theme.AccentHover, ActiveLinkColor = Theme.Accent, VisitedLinkColor = Theme.AccentHover,
+            LinkBehavior = LinkBehavior.HoverUnderline, TextAlign = ContentAlignment.MiddleLeft, AutoSize = false
+        };
+        Ui.Place(precisionHelp, 354, 442, 170, 26);
+        precisionHelp.LinkClicked += (_, _) =>
+            MessageBox.Show(this, L.T(L.RawPrecisionHelp), L.T("RAW 處理精度"), MessageBoxButtons.OK, MessageBoxIcon.Information);
         _showNumber = NewCheck("在縮圖左上顯示編號 (#1, #2 …)", AppSettings.Current.ShowThumbnailNumber, 472);
         _showScrollBars = NewCheck("顯示捲軸（視窗過矮時左右欄可捲動）", AppSettings.Current.ShowColumnScrollBars, 502);
+        _useGpu = NewCheck("使用 GPU 加速算圖（偵測不到或失敗時自動改用 CPU）", AppSettings.Current.UseGpu, 532);
 
         string libState = LibRawInterop.Available ? "libraw.dll 已載入" : "libraw.dll 未找到（將退回 WIC / 嵌入預覽）";
         var note = new Label { Text = libState, ForeColor = Theme.TextFaint, Font = Theme.Small };
-        Ui.Place(note, 20, 538, 500, 20);
+        Ui.Place(note, 20, 568, 500, 20);
         string exifState = Exif.ExifReader.ExifToolAvailable ? "exiftool.exe 已載入" : "exiftool.exe 未找到（將退回 WIC metadata）";
         var note2 = new Label { Text = exifState, ForeColor = Theme.TextFaint, Font = Theme.Small };
-        Ui.Place(note2, 20, 558, 500, 20);
+        Ui.Place(note2, 20, 588, 500, 20);
+        // GPU 狀態：裝置名稱，或為什麼沒在用（設定關閉／沒有 D3D12 硬體裝置）
+        var note3 = new Label { Text = GpuStateText(), ForeColor = Theme.TextFaint, Font = Theme.Small };
+        Ui.Place(note3, 20, 608, 500, 20);
 
         var bottom = new Panel { Dock = DockStyle.Bottom, Height = Ui.S(60), BackColor = Theme.PanelBg2 };
         var ok = new FlatButton { Text = "套用", Primary = true }; Ui.Place(ok, 340, 14, 88, 32);
         var cancel = new FlatButton { Text = "取消" }; Ui.Place(cancel, 436, 14, 96, 32);
+        // 恢復預設：只把視窗裡的控制項改回預設值（按「套用」才寫檔、按「取消」就丟掉），與字體大小視窗的行為一致。
+        // 預設值從 new AppSettings() 取，免得和 AppSettings 的初始值脫節。語言刻意不動——那是使用者的身分設定，不是偏好。
+        var defaults = new FlatButton { Text = "恢復預設" }; Ui.Place(defaults, 16, 14, 210, 32);   // 210：德文 "Standard wiederherstellen" 才放得下
+        defaults.Click += (_, _) =>
+        {
+            var d = new AppSettings();
+            SelectStyle(d.InterfaceStyle);
+            _uiScale.SelectedIndex = 0;                       // 自動（依螢幕大小）
+            _fonts = new FontSizes();
+            UpdateFontSummary();
+            _useLibRaw.Checked = d.UseLibRaw;
+            _precision.SelectedIndex = d.UseHighPrecisionRawPipeline ? 1 : 0;
+            _showNumber.Checked = d.ShowThumbnailNumber;
+            _showScrollBars.Checked = d.ShowColumnScrollBars;
+            _useGpu.Checked = d.UseGpu;
+        };
         void ApplyAndClose()
         {
             AppSettings.Current.InterfaceStyle = _selectedStyle;
@@ -136,9 +176,11 @@ public sealed class SettingsForm : Form
             if (_uiScale.SelectedItem is ScaleChoice sc) AppSettings.Current.UiScalePercent = sc.Percent;
             AppSettings.Current.FontSizes = _fonts;
             AppSettings.Current.UseLibRaw = _useLibRaw.Checked;
-            AppSettings.Current.UseHighPrecisionRawPipeline = _highPrecision.Checked;
+            AppSettings.Current.UseHighPrecisionRawPipeline = _precision.SelectedIndex == 1;
             AppSettings.Current.ShowThumbnailNumber = _showNumber.Checked;
             AppSettings.Current.ShowColumnScrollBars = _showScrollBars.Checked;
+            AppSettings.Current.UseGpu = _useGpu.Checked;
+            Imaging.Gpu.GpuPipeline.Enabled = _useGpu.Checked;
             AppSettings.Current.Save();
             DialogResult = DialogResult.OK;
             Close();
@@ -150,14 +192,14 @@ public sealed class SettingsForm : Form
         }
         ok.Click += (_, _) => ApplyAndClose();
         cancel.Click += (_, _) => CancelAndClose();
-        bottom.Controls.AddRange(new Control[] { ok, cancel });
+        bottom.Controls.AddRange(new Control[] { defaults, ok, cancel });
 
         Controls.AddRange(new Control[]
         {
             header, themeLabel, themeHint, _classicCard, _paperCard,
             languageLabel, _language, languageHint,
             scaleLabel, _uiScale, scaleHint, fontBtn, _fontSummary, optionsLabel,
-            _useLibRaw, _highPrecision, _showNumber, _showScrollBars, note, note2, bottom
+            _useLibRaw, precisionLabel, _precision, precisionHelp, _showNumber, _showScrollBars, _useGpu, note, note2, note3, bottom
         });
         L.Apply(this);
         KeyPreview = true;
@@ -177,6 +219,15 @@ public sealed class SettingsForm : Form
         var l = new Label { Text = text, ForeColor = Theme.Accent, Font = Theme.UIPx(Theme.Sizes.Normal, FontStyle.Bold) };
         Ui.Place(l, 20, top, 180, 20);
         return l;
+    }
+
+    /// <summary>設定視窗的 GPU 一行：翻譯的前綴 + 執行期裝置名稱（裝置名稱不翻譯）。</summary>
+    private static string GpuStateText()
+    {
+        if (!AppSettings.Current.UseGpu) return L.T("GPU：已停用（設定）");
+        return Imaging.Gpu.GpuPipeline.IsAvailable
+            ? L.T("GPU：") + Imaging.Gpu.GpuPipeline.DeviceName
+            : L.T("GPU：未偵測到可用裝置，使用 CPU");
     }
 
     private static DarkCheckBox NewCheck(string text, bool value, int top)
