@@ -28,6 +28,7 @@ src\bin\Debug\net8.0-windows\AwayPhotoRawEditor.exe
 ```
 
 ### 發佈 / 簽章 / 安裝檔（2026-07 起）
+0. **先在 `CHANGELOG.md` 最上方加這一版的大要**（2026-08-23 起；每版一段、最新在上，內容對使用者描述、不寫內部細節）
 1. `dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contained true`
 2. 簽 exe：自簽憑證 **`CN=Awaysu, O=Awaysu, C=TW`**
    （`CurrentUser\My`，指紋 `997D278FE3FD6FFA1F8E43683047530DE7210C66`，RSA 3072 / SHA256，
