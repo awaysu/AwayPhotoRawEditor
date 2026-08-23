@@ -24,14 +24,16 @@ A lightweight Windows RAW photo editor with non-destructive editing, color adjus
 提供兩種形式，都是自含式、無需另裝 .NET：
 
 - `AwayPhotoRawEditor-Setup-vX.Y.Z.exe` — 安裝檔（每使用者安裝、不需系統管理員權限）
-- `AwayPhotoRawEditor-vX.Y.Z-portable.zip` — 免安裝，解壓縮即可執行
+- `AwayPhotoRawEditor-vX.Y.Z.zip` — 免安裝（攜帶版），解壓縮即可執行
 
-> 以自簽憑證簽署（`CN=AwayTerminal (awaysu)`），Windows SmartScreen 可能顯示警告，
-> 點「其他資訊 → 仍要執行」即可。
+> 以自簽憑證簽署（`CN=Awaysu`），Windows SmartScreen 可能顯示警告，
+> 點「其他資訊 → 仍要執行」即可。zip 請先「右鍵 → 內容 → 解除封鎖」再解壓縮。
 
 ## 功能
 
 - RAW 解碼（LibRaw）＋一般影像格式（WIC），EXIF 讀取（ExifTool）
+- **GPU 加速算圖**（Direct3D 12）：預覽與匯出都在顯示卡上運算，內建顯示卡（Intel Iris Xe、UHD 630 等）即可使用；偵測不到裝置或運算失敗時自動改用 CPU，結果相同，設定中可關閉
+- 線性光色彩管線：白平衡與曝光在線性域運算，有相機色彩資料時以相機矩陣做白平衡；RAW 可選 8-bit／16-bit 處理精度
 - 基本調整／色彩（Kelvin 白平衡、滴管）／細節（銳利度、暗角、降噪）
 - 裁切、旋轉、廣角變形、多重線性漸層、局部修護
 - 風格檔（內建＋自訂，可編輯覆寫、備份／還原）
@@ -43,6 +45,7 @@ A lightweight Windows RAW photo editor with non-destructive editing, color adjus
 ## 系統需求
 
 - Windows 10 / 11 x64
+- GPU 加速需要支援 Direct3D 12 的顯示卡（2015 年後的 Intel 內顯／NVIDIA／AMD 皆可，不需獨立顯示卡）；沒有也能用，會自動改以 CPU 運算
 
 ## 從原始碼建置
 
@@ -63,6 +66,7 @@ iscc installer\AwayPhotoRawEditor.iss
 
 - [LibRaw](https://www.libraw.org/) 0.22.2 — LGPL 2.1（以動態連結使用，原始碼一併散布於 `tools/libraw/`）
 - [ExifTool](https://exiftool.org/) 13.59 by Phil Harvey — Perl Artistic License（以獨立行程呼叫）
+- [ComputeSharp](https://github.com/Sergio0694/ComputeSharp) 3.2 by Sergio Pedri — MIT（GPU 加速：Direct3D 12 compute shader，shader 於編譯期產生，執行期不需額外元件）
 
 ## 授權 / License
 
