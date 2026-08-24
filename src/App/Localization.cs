@@ -140,6 +140,43 @@ public static class L
         // 帶冒號當獨立 key，避免與「常用位置」的「下載」（下載資料夾）混淆
         ["下載:"] = new("Download:", "ダウンロード:", "다운로드:", "下载:", "Download:", "Téléchargement :", "Descarga:"),
         ["授權："] = new("License: ", "ライセンス: ", "라이선스: ", "许可: ", "Lizenz: ", "Licence : ", "Licencia: "),
+        // 關於 →「檢查更新」（按鈕在版本那一行的右端，寬度會依這裡的譯文量測）
+        ["檢查更新"] = new("Check for updates", "更新を確認", "업데이트 확인", "检查更新",
+            "Nach Updates suchen", "Rechercher des mises à jour", "Buscar actualizaciones"),
+        ["檢查中…"] = new("Checking…", "確認中…", "확인 중…", "检查中…",
+            "Wird gesucht…", "Recherche…", "Buscando…"),
+        ["目前已是最新版本（{0}）。"] = new(
+            "You already have the latest version ({0}).",
+            "すでに最新バージョン（{0}）です。",
+            "이미 최신 버전({0})입니다.",
+            "当前已是最新版本（{0}）。",
+            "Sie haben bereits die neueste Version ({0}).",
+            "Vous disposez déjà de la dernière version ({0}).",
+            "Ya tienes la última versión ({0})."),
+        ["有新版本可以下載。\n\n目前版本：{0}\n最新版本：v{1}"] = new(
+            "A new version is available.\n\nCurrent version: {0}\nLatest version: v{1}",
+            "新しいバージョンがあります。\n\n現在のバージョン: {0}\n最新バージョン: v{1}",
+            "새 버전이 있습니다.\n\n현재 버전: {0}\n최신 버전: v{1}",
+            "有新版本可以下载。\n\n当前版本：{0}\n最新版本：v{1}",
+            "Eine neue Version ist verfügbar.\n\nAktuelle Version: {0}\nNeueste Version: v{1}",
+            "Une nouvelle version est disponible.\n\nVersion actuelle : {0}\nDernière version : v{1}",
+            "Hay una nueva versión disponible.\n\nVersión actual: {0}\nÚltima versión: v{1}"),
+        ["要開啟下載頁面嗎？"] = new(
+            "Open the download page?",
+            "ダウンロードページを開きますか？",
+            "다운로드 페이지를 열까요?",
+            "要打开下载页面吗？",
+            "Download-Seite öffnen?",
+            "Ouvrir la page de téléchargement ?",
+            "¿Abrir la página de descarga?"),
+        ["無法連線到更新伺服器，請稍後再試。"] = new(
+            "Could not reach the update server. Please try again later.",
+            "更新サーバーに接続できませんでした。後でもう一度お試しください。",
+            "업데이트 서버에 연결할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            "无法连接到更新服务器，请稍后再试。",
+            "Der Update-Server ist nicht erreichbar. Bitte später erneut versuchen.",
+            "Impossible de joindre le serveur de mise à jour. Réessayez plus tard.",
+            "No se pudo conectar con el servidor de actualizaciones. Inténtalo más tarde."),
         ["歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。"] = new(
             "You are welcome to modify this into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.",
             "自由に改変してご自身のバージョンを作って構いません。ただし「バージョン情報」に出典（AwayPhotoRawEditor / Awaysu）を記載してください。",

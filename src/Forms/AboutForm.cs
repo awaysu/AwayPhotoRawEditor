@@ -41,6 +41,10 @@ public sealed class AboutForm : Form
 
         int y = 62;
         var version = Text0(L.T("版本：") + AppVersion.Version, body, y, lineH);
+        // 「檢查更新」擺在版本那一行的右端：它問的就是「我這版是不是最新的」，
+        // 貼著版本號才看得懂。實際寬度與位置在下方量測區依翻譯後的字串校正。
+        var checkBtn = new FlatButton { Text = "檢查更新" };
+        int checkRowY = y;
         y += gap;
 
         // 編譯時間緊接版本：兩者都是「這份執行檔是哪一版」的資訊，放一起才好對照
@@ -92,9 +96,18 @@ public sealed class AboutForm : Form
         Controls.AddRange(new Control[]
         {
             header, version, buildTime, authorCap, authorPic, dlCap, dlLink,
-            srcCap, srcLink, thirdCap, thirdList, license, modifyNote, ok
+            srcCap, srcLink, thirdCap, thirdList, license, modifyNote, ok, checkBtn
         });
         L.Apply(this);
+        checkBtn.Click += async (_, _) => await CheckForUpdatesAsync(checkBtn);
+
+        // 「檢查更新」的寬度依翻譯後的字串量測（法/西文比中文長一倍以上），再靠右擺到版本那一行；
+        // 版本標籤要跟著縮短——它的背景不透明又橫跨整列，不縮就會蓋住按鈕（後加入的控制項 z-order 在後面）。
+        int cbW = TextRenderer.MeasureText(checkBtn.Text, checkBtn.Font).Width + Ui.S(24);
+        checkBtn.Size = new Size(Math.Max(Ui.S(96), cbW), Ui.S(30));
+        checkBtn.Left = Ui.S(DlgW - 20) - checkBtn.Width;
+        checkBtn.Top = Ui.S(checkRowY) + (Ui.S(lineH) - checkBtn.Height) / 2;
+        version.Width = Math.Max(Ui.S(80), checkBtn.Left - version.Left - Ui.S(12));
 
         // 說明文字換行後的高度只有量過才知道（德/法/西文比中文長不少），
         // 據此擺「確定」並決定視窗高度，中文版下方才不會留一片空白。
@@ -115,6 +128,61 @@ public sealed class AboutForm : Form
         }
     }
 
+    /// <summary>按「檢查更新」：問網站現在的最新版本，有新版就顯示更新說明並問要不要開下載頁。
+    ///
+    /// <para>只做「查詢＋開頁面」，不自動下載安裝：這個程式同時發行安裝檔與攜帶版 zip，
+    /// 程式無從知道使用者手上是哪一種（攜帶版跑安裝檔會裝出第二份），讓使用者自己挑比較安全。</para>
+    ///
+    /// <para>這是 <c>async void</c> 事件處理常式，例外逸出會直接讓行程當掉，所以整段包 try/catch。</para></summary>
+    private async Task CheckForUpdatesAsync(FlatButton btn)
+    {
+        string caption = btn.Text;          // 已經是翻譯後的字（L.Apply 在建構式就跑過了）
+        btn.Enabled = false;
+        btn.Text = L.T("檢查中…");
+        btn.Invalidate();                   // FlatButton 沒有覆寫 OnTextChanged/OnEnabledChanged
+        try
+        {
+            var info = await UpdateCheck.FetchAsync();
+
+            if (IsDisposed || Disposing) return;      // 查詢期間使用者把視窗關了
+
+            if (info is null)
+                MessageBox.Show(this, L.T("無法連線到更新伺服器，請稍後再試。"), L.T("檢查更新"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            else if (!info.UpdateAvailable)
+                MessageBox.Show(this, L.F("目前已是最新版本（{0}）。", AppVersion.Version), L.T("檢查更新"),
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+            else
+            {
+                string msg = L.F("有新版本可以下載。\n\n目前版本：{0}\n最新版本：v{1}",
+                                 AppVersion.Version, info.LatestVersion);
+                if (info.Notes.Length > 0) msg += "\n\n" + info.Notes;
+                msg += "\n\n" + L.T("要開啟下載頁面嗎？");
+
+                if (MessageBox.Show(this, msg, L.T("檢查更新"),
+                        MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                    OpenUrl(info.PageUrl);
+            }
+        }
+        catch { /* async void：例外絕不能逸出，查不到就當作沒查到 */ }
+        finally
+        {
+            if (!IsDisposed)
+            {
+                btn.Text = caption;
+                btn.Enabled = true;
+                btn.Invalidate();
+            }
+        }
+    }
+
+    /// <summary>用系統預設瀏覽器開網址（開不起來就算了，不要為此跳錯誤）。</summary>
+    private static void OpenUrl(string url)
+    {
+        try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
+        catch { /* 無瀏覽器可開就算了 */ }
+    }
+
     /// <summary>靠左的一段內文（x/寬固定，只給 y 與高度）。</summary>
     private static Label Text0(string text, Font font, int y, int h)
     {
@@ -131,11 +199,7 @@ public sealed class AboutForm : Form
             LinkColor = Theme.AccentHover, ActiveLinkColor = Theme.Accent, VisitedLinkColor = Theme.AccentHover,
             LinkBehavior = LinkBehavior.HoverUnderline
         };
-        link.LinkClicked += (_, _) =>
-        {
-            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true }); }
-            catch { /* 無瀏覽器可開就算了 */ }
-        };
+        link.LinkClicked += (_, _) => OpenUrl(url);
         return link;
     }
 
