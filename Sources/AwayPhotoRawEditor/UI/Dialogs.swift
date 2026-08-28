@@ -1,0 +1,311 @@
+import AppKit
+import AwayRawCore
+
+/// A small helper for the simpler dialogs: a titled panel with a flipped, palette-coloured
+/// content view and the usual sheet plumbing.
+class DialogController: NSObject {
+    let panel: NSPanel
+    let content: FlippedView
+    private weak var host: NSWindow?
+
+    init(title: String, width: CGFloat, height: CGFloat) {
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
+                        styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        content = FlippedView(frame: NSRect(x: 0, y: 0, width: width, height: height))
+        super.init()
+        panel.title = L.t(title)
+        panel.appearance = Theme.appearance
+        content.wantsLayer = true
+        content.layer?.backgroundColor = Theme.panelBg.cgColor
+        panel.contentView = content
+    }
+
+    func resizeContent(to height: CGFloat) {
+        let w = panel.frame.width
+        panel.setContentSize(NSSize(width: w, height: height))
+        content.frame = NSRect(x: 0, y: 0, width: w, height: height)
+    }
+
+    func show(over window: NSWindow?) {
+        host = window
+        guard let window else { panel.makeKeyAndOrderFront(nil); return }
+        window.beginSheet(panel)
+    }
+
+    func close() {
+        if let host, panel.isSheet { host.endSheet(panel) }
+        panel.orderOut(nil)
+    }
+
+    // ---- small builders --------------------------------------------------
+
+    @discardableResult
+    func addLabel(_ text: String, x: CGFloat, y: CGFloat, w: CGFloat,
+                  font: NSFont? = nil, color: NSColor? = nil,
+                  align: NSTextAlignment = .left, lines: Int = 1) -> NSTextField {
+        let l = NSTextField(labelWithString: L.t(text))
+        l.font = font ?? Theme.normal
+        l.textColor = color ?? Theme.text
+        l.alignment = align
+        l.maximumNumberOfLines = lines
+        l.lineBreakMode = lines > 1 ? .byWordWrapping : .byTruncatingTail
+        l.frame = NSRect(x: x, y: y, width: w, height: lines > 1 ? CGFloat(lines) * 18 : 20)
+        content.addSubview(l)
+        return l
+    }
+
+    @discardableResult
+    func addButton(_ title: String, x: CGFloat, y: CGFloat, w: CGFloat, h: CGFloat = 30,
+                   primary: Bool = false, action: @escaping () -> Void) -> FlatButton {
+        let b = FlatButton(title: title, action: action)
+        b.isPrimary = primary
+        b.frame = NSRect(x: x, y: y, width: w, height: h)
+        content.addSubview(b)
+        return b
+    }
+}
+
+// MARK: - 設定
+
+/// Settings: RAW decoding, precision, interface style, language, thumbnail numbers.
+final class SettingsWindowController: DialogController {
+    private let useLibRaw = DarkCheckBox(title: "使用 LibRaw 解碼 RAW")
+    private let highPrecision = DarkCheckBox(title: "高精度 RAW 管線（16-bit）")
+    private let showNumbers = DarkCheckBox(title: "在縮圖顯示編號")
+    private let styleCombo = DarkComboBox(frame: .zero)
+    private let langCombo = DarkComboBox(frame: .zero)
+    private let libRawStatus = NSTextField(labelWithString: "")
+
+    /// Called with true when a change needs a relaunch (language or interface style).
+    var onSaved: ((Bool) -> Void)?
+
+    init() {
+        super.init(title: "設定", width: 460, height: 400)
+        let s = AppSettings.current
+        var y: CGFloat = 20
+
+        addLabel("RAW 解碼", x: 20, y: y, w: 420, font: Theme.dialogTitle); y += 30
+
+        useLibRaw.isChecked = s.useLibRaw
+        useLibRaw.frame = NSRect(x: 30, y: y, width: 400, height: 22); y += 26
+        content.addSubview(useLibRaw)
+
+        libRawStatus.stringValue = LibRawBridge.available
+            ? "LibRaw \(LibRawBridge.version)"
+            : L.t("找不到 LibRaw，將改用系統解碼")
+        libRawStatus.font = Theme.small
+        libRawStatus.textColor = LibRawBridge.available ? Theme.textFaint : Theme.warn
+        libRawStatus.frame = NSRect(x: 52, y: y, width: 390, height: 18); y += 26
+        content.addSubview(libRawStatus)
+
+        highPrecision.isChecked = s.useHighPrecisionRawPipeline
+        highPrecision.frame = NSRect(x: 30, y: y, width: 340, height: 22)
+        content.addSubview(highPrecision)
+        addButton("說明", x: 380, y: y - 3, w: 60, h: 26) { [weak self] in self?.showPrecisionHelp() }
+        y += 36
+
+        addLabel("介面", x: 20, y: y, w: 420, font: Theme.dialogTitle); y += 30
+
+        addLabel("外觀", x: 30, y: y + 4, w: 80, color: Theme.textDim)
+        styleCombo.setItems([L.t("經典深色"), L.t("暖白相紙")])
+        styleCombo.selectedIndex = (s.interfaceStyle == .warmPaper) ? 1 : 0
+        styleCombo.frame = NSRect(x: 120, y: y, width: 200, height: 26)
+        content.addSubview(styleCombo)
+        y += 34
+
+        addLabel("語言", x: 30, y: y + 4, w: 80, color: Theme.textDim)
+        langCombo.setItems(AppLanguage.allCases.map { L.languageDisplayName($0) })
+        langCombo.selectedIndex = AppLanguage.allCases.firstIndex(of: s.uiLanguage) ?? 0
+        langCombo.frame = NSRect(x: 120, y: y, width: 260, height: 26)
+        content.addSubview(langCombo)
+        y += 34
+
+        showNumbers.isChecked = s.showThumbnailNumber
+        showNumbers.frame = NSRect(x: 30, y: y, width: 400, height: 22)
+        content.addSubview(showNumbers)
+        y += 40
+
+        addButton("確定", x: 340, y: y, w: 100, primary: true) { [weak self] in self?.save() }
+        addButton("取消", x: 230, y: y, w: 100) { [weak self] in self?.close() }
+        y += 44
+        resizeContent(to: y)
+    }
+
+    private func showPrecisionHelp() {
+        let a = NSAlert()
+        a.messageText = L.t("RAW 處理精度")
+        a.informativeText = L.rawPrecisionHelp
+        a.addButton(withTitle: L.t("確定"))
+        a.beginSheetModal(for: panel, completionHandler: nil)
+    }
+
+    private func save() {
+        let s = AppSettings.current
+        let oldStyle = s.interfaceStyle
+        let oldLang = s.uiLanguage
+
+        s.useLibRaw = useLibRaw.isChecked
+        s.useHighPrecisionRawPipeline = highPrecision.isChecked
+        s.showThumbnailNumber = showNumbers.isChecked
+        s.interfaceStyle = styleCombo.selectedIndex == 1 ? .warmPaper : .classicDark
+        s.uiLanguage = AppLanguage.allCases[max(0, langCombo.selectedIndex)]
+        s.save()
+
+        // The palette and every translated caption are baked in at build time, so a
+        // change to either goes through a relaunch — the same as on Windows.
+        let needsRestart = (oldStyle != s.interfaceStyle) || (oldLang != s.uiLanguage)
+        close()
+        onSaved?(needsRestart)
+    }
+}
+
+// MARK: - 字體大小
+
+/// Per-item font size tuning, with a restore-defaults button at the bottom.
+final class FontSizeWindowController: DialogController {
+    private var fields: [(path: WritableKeyPath<FontSizes, Int>, stepper: NSStepper, label: NSTextField)] = []
+    private var sizes = AppSettings.current.fontSizes
+    var onSaved: (() -> Void)?
+
+    init() {
+        super.init(title: "字體大小", width: 420, height: 100)
+        var y: CGFloat = 16
+        addLabel("介面字體大小（點）", x: 20, y: y, w: 380, font: Theme.dialogTitle); y += 30
+
+        for (key, path) in FontSizes.fields {
+            addLabel(key, x: 24, y: y + 3, w: 190, color: Theme.textDim)
+            let value = NSTextField(labelWithString: String(sizes[keyPath: path]))
+            value.font = Theme.normal
+            value.textColor = Theme.text
+            value.alignment = .right
+            value.frame = NSRect(x: 300, y: y + 3, width: 40, height: 20)
+            content.addSubview(value)
+
+            let st = NSStepper(frame: NSRect(x: 348, y: y, width: 20, height: 26))
+            st.minValue = Double(FontSizes.minPt)
+            st.maxValue = Double(FontSizes.maxPt)
+            st.increment = 1
+            st.integerValue = sizes[keyPath: path]
+            st.target = self
+            st.action = #selector(stepped(_:))
+            st.tag = fields.count
+            content.addSubview(st)
+
+            fields.append((path, st, value))
+            y += 30
+        }
+        y += 10
+        addButton("恢復預設", x: 24, y: y, w: 110) { [weak self] in self?.restoreDefaults() }
+        addButton("確定", x: 300, y: y, w: 96, primary: true) { [weak self] in self?.save() }
+        y += 44
+        resizeContent(to: y)
+    }
+
+    @objc private func stepped(_ sender: NSStepper) {
+        let f = fields[sender.tag]
+        sizes[keyPath: f.path] = sender.integerValue
+        f.label.stringValue = String(sender.integerValue)
+    }
+
+    private func restoreDefaults() {
+        sizes = FontSizes()
+        for f in fields {
+            f.stepper.integerValue = sizes[keyPath: f.path]
+            f.label.stringValue = String(sizes[keyPath: f.path])
+        }
+    }
+
+    private func save() {
+        sizes.clamp()
+        AppSettings.current.fontSizes = sizes
+        AppSettings.current.save()
+        close()
+        onSaved?()
+    }
+}
+
+// MARK: - 關於
+
+final class AboutWindowController: DialogController {
+    init() {
+        super.init(title: "關於", width: 460, height: 100)
+        var y: CGFloat = 24
+        addLabel("AwayPhotoRawEditor", x: 20, y: y, w: 420,
+                 font: Theme.aboutTitle, align: .center); y += 34
+        addLabel(AppVersion.display, x: 20, y: y, w: 420,
+                 font: Theme.aboutBody, color: Theme.textDim, align: .center); y += 30
+
+        let body = """
+        \(L.t("非破壞式 RAW 相片編輯器")) — macOS
+
+        Copyright © 2026 Chih-Wei Su (Awaysu)
+        BSD 3-Clause License
+
+        \(L.t("第三方元件"))
+        · LibRaw \(LibRawBridge.available ? LibRawBridge.version : "—") — LGPL 2.1
+        · Apple ImageIO / Core Graphics
+
+        awaysu@gmail.com
+        """
+        let l = addLabel(body, x: 30, y: y, w: 400, font: Theme.aboutBody,
+                         color: Theme.text, align: .center, lines: 14)
+        l.stringValue = body       // already localized above; do not translate again
+        y += 14 * 18 + 10
+
+        addButton("下載網頁", x: 100, y: y, w: 120) {
+            if let url = URL(string: "https://www.awaysu.cc/software/awayphotoraweditor") {
+                NSWorkspace.shared.open(url)
+            }
+        }
+        addButton("確定", x: 240, y: y, w: 120, primary: true) { [weak self] in self?.close() }
+        y += 44
+        resizeContent(to: y)
+    }
+}
+
+/// The app's version string, shown in the About window.
+enum AppVersion {
+    static let version = "v1.0.0"
+    static var display: String {
+        let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
+        return build.map { "\(version) (\($0))" } ?? version
+    }
+}
+
+// MARK: - 第一次執行的語言選擇
+
+/// Shown once, when there is no settings.xml yet. Pre-selects the system's language and
+/// falls back to English for anything unrecognised.
+final class FirstRunLanguageController: DialogController {
+    private let group = RadioGroup()
+    private var chosen: AppLanguage = .traditionalChinese
+    var onChosen: ((AppLanguage) -> Void)?
+
+    init() {
+        super.init(title: "選擇語言 / Language", width: 380, height: 100)
+        var y: CGFloat = 20
+        addLabel("選擇語言 / Choose language", x: 20, y: y, w: 340,
+                 font: Theme.dialogTitle, align: .center); y += 34
+
+        let guess = AppLanguage.guessFromSystem()
+        chosen = guess
+        for (i, lang) in AppLanguage.allCases.enumerated() {
+            let r = DarkRadioButton(title: L.languageDisplayName(lang))
+            r.frame = NSRect(x: 40, y: y, width: 300, height: 24)
+            r.isSelected = (lang == guess)
+            content.addSubview(r)
+            group.add(r)
+            y += 28
+            _ = i
+        }
+        group.onChange = { [weak self] i in self?.chosen = AppLanguage.allCases[i] }
+        y += 12
+        addButton("確定 / OK", x: 130, y: y, w: 120, primary: true) { [weak self] in
+            guard let self else { return }
+            self.close()
+            self.onChosen?(self.chosen)
+        }
+        y += 44
+        resizeContent(to: y)
+    }
+}

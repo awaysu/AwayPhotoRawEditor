@@ -1,0 +1,5 @@
+.build/
+build/
+ThirdParty/
+*.xcodeproj
+.DS_Store
