@@ -29,6 +29,10 @@ func usage() -> Never {
 
       bench <image>
           Time each pipeline stage at proxy and full resolution.
+
+      hashtest <image> [report.txt]
+          Colour-pipeline fingerprint (14 cases) for comparison against the C#
+          implementation's --hashtest. See PipelineHash.swift for the criteria.
     """)
     exit(2)
 }
@@ -385,6 +389,10 @@ case "exporttest":
         exit(1)
     }
     r.write(to: reportPath)
+
+case "hashtest":
+    guard args.count >= 2 else { usage() }
+    exit(PipelineHash.run(imagePath: args[1], reportPath: args.count >= 3 ? args[2] : nil))
 
 case "bench":
     guard args.count >= 2 else { usage() }

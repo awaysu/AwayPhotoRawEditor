@@ -292,15 +292,15 @@ extension ImageProcessor {
         let src = buf.clone()   // read from a snapshot so spots don't feed each other
         for spot in adj.healSpots {
             if token.isCancelled { return }
-            let radius = max(1, Int((spot.radiusNorm * maxDim).rounded()))
-            let tx = Int((spot.targetX * Double(W)).rounded())
-            let ty = Int((spot.targetY * Double(H)).rounded())
+            let radius = max(1, Int((spot.radiusNorm * maxDim).roundedHalfEven))
+            let tx = Int((spot.targetX * Double(W)).roundedHalfEven)
+            let ty = Int((spot.targetY * Double(H)).roundedHalfEven)
             if spot.useInpaint {
                 inpaintSpot(buf, src, tx, ty, radius)
             } else {
                 cloneSpot(buf, src, tx, ty,
-                          Int((spot.sourceX * Double(W)).rounded()),
-                          Int((spot.sourceY * Double(H)).rounded()), radius)
+                          Int((spot.sourceX * Double(W)).roundedHalfEven),
+                          Int((spot.sourceY * Double(H)).roundedHalfEven), radius)
             }
         }
     }

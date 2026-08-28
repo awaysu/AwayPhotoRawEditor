@@ -118,8 +118,8 @@ public enum ImageProcessor {
                        adj.cropWidth >= 1 && adj.cropHeight >= 1 && adj.cropAngle == 0
         if !fullCrop {
             let W = t.width, H = t.height
-            let outW = max(1, Int((min(max(adj.cropWidth, 0.02), 1.0) * Double(W)).rounded()))
-            let outH = max(1, Int((min(max(adj.cropHeight, 0.02), 1.0) * Double(H)).rounded()))
+            let outW = max(1, Int((min(max(adj.cropWidth, 0.02), 1.0) * Double(W)).roundedHalfEven))
+            let outH = max(1, Int((min(max(adj.cropHeight, 0.02), 1.0) * Double(H)).roundedHalfEven))
             let cx = (adj.cropX + adj.cropWidth / 2) * Double(W)
             let cy = (adj.cropY + adj.cropHeight / 2) * Double(H)
             let a = adj.cropAngle * Double.pi / 180.0
@@ -226,14 +226,14 @@ public enum ImageProcessor {
 
     static func noiseReductionOp(_ adj: ImageAdjustments) -> BlurOp {
         let strength = Float(adj.noiseReduction / 100.0)
-        let radius = 1 + Int((strength * 2).rounded())
+        let radius = 1 + Int((strength * 2).roundedHalfEven)
         return BlurOp(radius: radius, mode: 0, amount: min(max(strength * 0.8, 0), 1))
     }
 
     static func sharpenOp(_ adj: ImageAdjustments) -> BlurOp {
         let amt = Float(adj.sharpening / 100.0)
         if amt > 0 { return BlurOp(radius: 1, mode: 1, amount: amt * 1.5) }
-        let radius = 1 + Int((-amt * 2).rounded())
+        let radius = 1 + Int((-amt * 2).roundedHalfEven)
         return BlurOp(radius: radius, mode: 0, amount: min(max(-amt, 0), 1))
     }
 

@@ -17,7 +17,7 @@ public enum Watermark {
     public static func draw(_ img: CGImage, _ wm: WatermarkSpec, scale: Double) -> CGImage {
         let w = img.width, h = img.height
         let size = max(4.0, wm.fontSize * scale)
-        let margin = (Double(wm.margin) * scale).rounded()
+        let margin = (Double(wm.margin) * scale).roundedHalfEven
         let alpha = 1.0 - Double(min(max(wm.transparency, 0), 100)) / 100.0
 
         guard let ctx = CGContext(data: nil, width: w, height: h,

@@ -87,3 +87,22 @@ public final class CancelToken: @unchecked Sendable {
 
     public static let none = CancelToken()
 }
+
+// MARK: - .NET-compatible rounding
+
+extension Double {
+    /// `Math.Round(x)` as .NET defines it: **banker's rounding**, half to even.
+    ///
+    /// Swift's `rounded()` is half-away-from-zero, so a plain port silently disagrees on
+    /// exact halves. That is not academic — a 1705 px frame cropped to 0.9 gives exactly
+    /// 1534.5, and the two rules produce 1534 vs 1535, an off-by-one in the output image.
+    /// Every site ported from a C# `Math.Round` uses this.
+    @inline(__always)
+    public var roundedHalfEven: Double { rounded(.toNearestOrEven) }
+}
+
+extension Float {
+    /// See `Double.roundedHalfEven`.
+    @inline(__always)
+    public var roundedHalfEven: Float { rounded(.toNearestOrEven) }
+}

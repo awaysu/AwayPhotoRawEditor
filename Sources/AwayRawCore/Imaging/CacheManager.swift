@@ -104,8 +104,8 @@ public enum CacheManager {
         let longSide = max(src.width, src.height)
         if longSide <= maxDim { return src }
         let scale = Double(maxDim) / Double(longSide)
-        let dw = max(1, Int((Double(src.width) * scale).rounded()))
-        let dh = max(1, Int((Double(src.height) * scale).rounded()))
+        let dw = max(1, Int((Double(src.width) * scale).roundedHalfEven))
+        let dh = max(1, Int((Double(src.height) * scale).roundedHalfEven))
         return resizeFloat(src, dw, dh)
     }
 
@@ -175,8 +175,8 @@ public enum CacheManager {
     public static func resizeToFit(_ src: FloatImageBuffer, maxW: Int, maxH: Int) -> FloatImageBuffer {
         var scale = min(Double(maxW) / Double(src.width), Double(maxH) / Double(src.height))
         if scale >= 1.0 { scale = 1.0 }
-        let w = max(1, Int((Double(src.width) * scale).rounded()))
-        let h = max(1, Int((Double(src.height) * scale).rounded()))
+        let w = max(1, Int((Double(src.width) * scale).roundedHalfEven))
+        let h = max(1, Int((Double(src.height) * scale).roundedHalfEven))
         return resizeFloat(src, w, h)
     }
 
