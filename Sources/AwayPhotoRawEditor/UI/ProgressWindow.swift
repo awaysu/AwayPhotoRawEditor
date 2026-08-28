@@ -44,6 +44,10 @@ final class ProgressWindowController: NSObject {
         subtitleLabel.alignment = .center
         subtitleLabel.maximumNumberOfLines = 2
         subtitleLabel.lineBreakMode = .byWordWrapping
+        subtitleLabel.usesSingleLineMode = false
+        subtitleLabel.cell?.wraps = true
+        subtitleLabel.cell?.isScrollable = false
+        subtitleLabel.preferredMaxLayoutWidth = 380
         subtitleLabel.frame = NSRect(x: 20, y: 46, width: 380, height: 38)
         content.addSubview(subtitleLabel)
 

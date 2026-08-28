@@ -18,6 +18,125 @@ import AwayRawCore
 /// * differences of 1e-3 or more, or an 8-bit channel差 >= 2 → the maths has diverged
 enum PipelineHash {
 
+    /// `gputest <img> [report]` — CPU vs GPU on the same 14 cases.
+    ///
+    /// Byte-identical output is *not* expected: the geometry stages compute in `double`
+    /// on the CPU and Metal has no double, and libm and the Metal standard library round
+    /// transcendentals differently.
+    ///
+    /// The pass criterion is the **8-bit** one the Windows build's GpuParity settled on,
+    /// because that is what actually reaches a file:
+    ///
+    /// * no 8-bit channel may differ by 2 or more — that would mean the maths diverged
+    /// * at most 0.07% of channels may differ by 1
+    ///
+    /// The float difference is reported for information but is not itself the test. A
+    /// resample coordinate of magnitude ~2000 carries about 1e-4 of float rounding, and
+    /// bilinear interpolation turns that into a similar difference in value; the Windows
+    /// build measured 2.9e-4 on the same stage at full resolution. Judging that by a
+    /// float threshold would fail a difference no one can see.
+    static func gpuParity(imagePath: String, reportPath: String?) -> Int32 {
+        var lines: [String] = []
+        func line(_ s: String = "") { print(s); lines.append(s) }
+
+        line("=== CPU / GPU 對照 ===")
+        line("Metal   : \(MetalPipeline.shared.statusText)")
+        line("可用    : \(MetalPipeline.shared.available)")
+        line("尺寸上限: \(MetalPipeline.shared.maxPixels / 1_000_000) MP")
+        line("目標檔案: \((imagePath as NSString).lastPathComponent)")
+
+        guard MetalPipeline.shared.available else {
+            line("!! Metal 不可用，無法比較")
+            write(lines, to: reportPath)
+            return 1
+        }
+
+        guard let (source, cam) = loadSource(imagePath, line) else {
+            write(lines, to: reportPath)
+            return 1
+        }
+        line("來源    : \(source.width) x \(source.height)")
+        line("")
+
+        var failures = 0
+        var worstDiff = 0.0
+        for (name, adj) in cases() {
+            var ranOnGpu = false
+            func render(gpu: Bool) -> FloatImageBuffer? {
+                let ctx = ProcessContext()
+                ctx.camera = cam
+                ctx.whiteBalanceReference = .decode
+                ctx.useGpu = gpu
+                ctx.forceCpu = !gpu
+                let out = try? ImageProcessor.applyToFloat(source, adj, ctx)
+                if gpu { ranOnGpu = ctx.usedGpu }
+                return out
+            }
+            let t0 = Date()
+            guard let cpu = render(gpu: false) else { line("[\(name)] CPU 失敗"); failures += 1; continue }
+            let cpuMs = Date().timeIntervalSince(t0) * 1000
+            let t1 = Date()
+            guard let gpu = render(gpu: true) else { line("[\(name)] GPU 失敗"); failures += 1; continue }
+            let gpuMs = Date().timeIntervalSince(t1) * 1000
+
+            guard ranOnGpu else {
+                // Above the size cap the GPU path is declined, and comparing CPU with CPU
+                // would pass vacuously.
+                line("[\(name)] ⚠️ 未實際使用 GPU（超過尺寸上限或裝置拒絕），略過比較")
+                continue
+            }
+            guard cpu.width == gpu.width, cpu.height == gpu.height else {
+                line("[\(name)] ❌ 尺寸不同 CPU=\(cpu.width)x\(cpu.height) GPU=\(gpu.width)x\(gpu.height)")
+                failures += 1
+                continue
+            }
+
+            var maxDiff: Float = 0
+            var byteDiff2 = 0            // channels differing by >= 2 after 8-bit quantisation
+            var byteDiff1 = 0
+            for i in 0..<(cpu.width * cpu.height * 4) where i % 4 != 3 {
+                let d = abs(cpu.data[i] - gpu.data[i])
+                if d > maxDiff { maxDiff = d }
+                let bd = abs(Int(toByte(cpu.data[i])) - Int(toByte(gpu.data[i])))
+                if bd >= 2 { byteDiff2 += 1 } else if bd == 1 { byteDiff1 += 1 }
+            }
+            worstDiff = max(worstDiff, Double(maxDiff))
+            let total = cpu.width * cpu.height * 3
+            let pct1 = Double(byteDiff1) / Double(total) * 100
+            let ok = byteDiff2 == 0 && pct1 <= 0.07
+            if !ok { failures += 1 }
+            line("[\(name)]")
+            line("  \(ok ? "✅" : "❌")  最大差 \(String(format: "%.2e", Double(maxDiff)))  " +
+                 "8-bit 差1 \(String(format: "%.3f", pct1))%  差≥2 \(byteDiff2)")
+            line("  CPU \(Int(cpuMs)) ms  →  GPU \(Int(gpuMs)) ms  " +
+                 "(\(String(format: "%.1f", cpuMs / max(gpuMs, 0.001)))×)")
+        }
+
+        line("")
+        line("整體最大差: \(String(format: "%.2e", worstDiff))")
+        line(failures == 0 ? "全部通過 ✅" : "有 \(failures) 項超出容許範圍 ❌")
+        write(lines, to: reportPath)
+        return failures == 0 ? 0 : 1
+    }
+
+    /// Shared source preparation for both fingerprint modes.
+    static func loadSource(_ imagePath: String,
+                           _ line: (String) -> Void) -> (FloatImageBuffer, CameraColorInfo?)? {
+        if AppPaths.isRaw(imagePath) {
+            let cam = LibRawBridge.readCameraColor(imagePath)
+            guard let full = LibRawBridge.decodeFull(imagePath, bps: 16) else {
+                line("!! RAW 解碼失敗")
+                return nil
+            }
+            return (CacheManager.resizeFloatToMaxDim(full, maxDim: 2560), cam)
+        }
+        guard let px = ImageIOCodec.loadFloat(path: imagePath) else {
+            line("!! 影像載入失敗")
+            return nil
+        }
+        return (px, nil)
+    }
+
     static func run(imagePath: String, reportPath: String?) -> Int32 {
         var lines: [String] = []
         func line(_ s: String = "") { print(s); lines.append(s) }
@@ -64,6 +183,9 @@ enum PipelineHash {
             let ctx = ProcessContext()
             ctx.camera = cam
             ctx.whiteBalanceReference = .decode
+            // The fingerprint is of the CPU reference: it is what gets compared against
+            // the other implementation, and the GPU is checked separately by `gputest`.
+            ctx.forceCpu = true
             guard let out = try? ImageProcessor.applyToFloat(source, adj, ctx) else {
                 line("[\(name)]")
                 line("  !! 算圖失敗")

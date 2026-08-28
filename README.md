@@ -8,6 +8,7 @@
 ## 功能
 
 - RAW 解碼（LibRaw 0.22.2，與 Windows 版同版本 → 同像素）＋一般格式（ImageIO，含 HEIC）
+- **GPU 加速（Metal）**：預覽算圖快 1.5–4.8×，偵測不到或超過尺寸上限時自動改用 CPU，結果相同
 - 線性光色彩管線：白平衡與曝光在線性域運算，有相機色彩資料時以相機矩陣做白平衡
 - 處理版本（Lightroom 式）：舊照片維持舊算式，可主動升級
 - 基本調整／色彩（Kelvin 白平衡、滴管）／細節（銳利度、暗角、降噪）
@@ -16,6 +17,7 @@
 - 縮圖多選批次編輯、批次復原、虛擬副本
 - 匯出：重新命名規則、尺寸上限、DPI、浮水印、EXIF 保留
 - 八語介面：繁體中文、English、日本語、한국어、简体中文、Deutsch、Français、Español
+- 「關於」視窗可檢查更新
 
 ## 系統需求
 
@@ -37,7 +39,18 @@ Scripts/build_app.sh
 open build/AwayPhotoRawEditor.app
 ```
 
-開發時 `swift build` / `swift run awpr-cli selftest <圖片>` 即可（會改用 Homebrew 的 libraw）。
+開發時 `swift build` / `swift run awpr-cli selftest <圖片>` 即可。
+
+### 診斷指令
+
+```bash
+awpr-cli info <圖片>              # LibRaw 可用性、裁切表、EXIF、相機色彩資料
+awpr-cli selftest <圖片>          # 引擎端到端
+awpr-cli hashtest <圖片> out.txt  # 色彩管線指紋（與 C# 版 --hashtest 逐字元對照用）
+awpr-cli gputest <圖片>           # CPU / GPU 對照
+awpr-cli bench <圖片>             # 各階段 CPU / GPU 耗時
+awpr-cli updatecheck              # 檢查更新 API
+```
 
 ### 簽章與公證
 

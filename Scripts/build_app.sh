@@ -11,8 +11,14 @@ cd "$(dirname "$0")/.."
 ROOT=$(pwd)
 CONFIG=${CONFIG:-release}
 APP="$ROOT/build/AwayPhotoRawEditor.app"
-VERSION=$(grep -m1 'static let version' Sources/AwayPhotoRawEditor/UI/Dialogs.swift \
-          | sed 's/.*"v\(.*\)".*/\1/')
+# The single source of truth is AppVersionInfo, which the update check also sends to
+# the API, so the bundle and the server can never disagree about what is running.
+VERSION=$(grep -m1 'public static let version' Sources/AwayRawCore/App/UpdateCheck.swift \
+          | sed 's/.*"\(.*\)".*/\1/')
+if [ -z "$VERSION" ]; then
+    echo "!! could not read the version from AppVersionInfo" >&2
+    exit 1
+fi
 BUILD_NUMBER=${BUILD_NUMBER:-$(date +%Y%m%d%H%M)}
 
 echo "==> Building ($CONFIG, universal)"

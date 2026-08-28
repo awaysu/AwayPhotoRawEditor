@@ -28,6 +28,15 @@ public final class ProcessContext: @unchecked Sendable {
     /// (pre_mul); the camera's embedded preview (strip thumbnails) → `.asShot`.
     public var whiteBalanceReference: WhiteBalanceReference = .decode
 
+    /// Render on the GPU when one is usable. Follows AppSettings.useGpu.
+    public var useGpu: Bool = AppSettings.current.useGpu
+
+    /// Diagnostics: force the CPU path for this render regardless of `useGpu`.
+    public var forceCpu: Bool = false
+
+    /// Set by the pipeline: this render actually ran on the GPU.
+    public var usedGpu: Bool = false
+
     public var token: CancelToken = .none
 
     public init() {}

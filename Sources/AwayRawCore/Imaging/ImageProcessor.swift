@@ -42,9 +42,27 @@ public enum ImageProcessor {
     // ---- Public entry points --------------------------------------------
 
     /// Run steps 1-10 producing a new float buffer (geometry may change).
+    ///
+    /// Tries the GPU when it is enabled and the image fits, and falls back to the CPU on
+    /// any failure. The GPU path only ever reads `src`, so a failure part-way through
+    /// leaves nothing to undo — the CPU path simply starts again from the original.
     public static func applyToFloat(_ src: FloatImageBuffer, _ adj: ImageAdjustments,
                                     _ ctx: ProcessContext) throws -> FloatImageBuffer {
-        try runPipeline(CPUTarget(buf: src.clone(), adj: adj, ctx: ctx), adj, ctx)
+        if ctx.useGpu, !ctx.forceCpu, MetalPipeline.shared.canHost(width: src.width, height: src.height) {
+            do {
+                let target = try MetalTarget(src: src, adj: adj, ctx: ctx)
+                let result = try runPipeline(target, adj, ctx)
+                MetalPipeline.shared.reportSuccess()
+                ctx.usedGpu = true
+                return result
+            } catch is CancellationError {
+                throw CancellationError()
+            } catch {
+                MetalPipeline.shared.reportFailure(error)
+            }
+        }
+        ctx.usedGpu = false
+        return try runPipeline(CPUTarget(buf: src.clone(), adj: adj, ctx: ctx), adj, ctx)
     }
 
     // ---- the pipeline, written once -------------------------------------

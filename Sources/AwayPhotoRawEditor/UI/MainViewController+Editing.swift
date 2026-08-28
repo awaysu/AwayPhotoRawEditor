@@ -366,7 +366,8 @@ extension MainViewController {
         if loader.libRawAvailable && AppPaths.isRaw(current?.sourcePath ?? "") {
             parts.append("LibRaw \(LibRawBridge.version)")
         }
-        if adj.isLegacyPipeline && current != nil { parts.append(L.t("· 舊版處理")) }
+        if adj.isLegacyPipeline && current != nil { parts.append(L.t("舊版處理")) }
+        if lastRenderUsedGpu && current != nil { parts.append(L.t("GPU 算圖")) }
         if showOriginal { parts.append(L.t("對照原圖")) }
         if pickerActive { parts.append(L.t("白平衡選擇器")) }
         let n = strip.selectedIndices.count

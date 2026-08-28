@@ -49,6 +49,12 @@ class DialogController: NSObject {
         l.alignment = align
         l.maximumNumberOfLines = lines
         l.lineBreakMode = lines > 1 ? .byWordWrapping : .byTruncatingTail
+        if lines > 1 {
+            l.usesSingleLineMode = false
+            l.cell?.wraps = true
+            l.cell?.isScrollable = false
+            l.preferredMaxLayoutWidth = w
+        }
         l.frame = NSRect(x: x, y: y, width: w, height: lines > 1 ? CGFloat(lines) * 18 : 20)
         content.addSubview(l)
         return l
@@ -71,6 +77,12 @@ class DialogController: NSObject {
 final class SettingsWindowController: DialogController {
     private let useLibRaw = DarkCheckBox(title: "使用 LibRaw 解碼 RAW")
     private let highPrecision = DarkCheckBox(title: "高精度 RAW 管線（16-bit）")
+    private let useGpu = DarkCheckBox(title: "GPU 加速（Metal）")
+    // Two single-line labels rather than one wrapping field: the text is Chinese, which
+    // gives word-wrapping nothing to break on, and NSTextField's multi-line cell layout
+    // is more trouble than a second label is worth.
+    private let gpuStatus = NSTextField(labelWithString: "")
+    private let gpuStatus2 = NSTextField(labelWithString: "")
     private let showNumbers = DarkCheckBox(title: "在縮圖顯示編號")
     private let styleCombo = DarkComboBox(frame: .zero)
     private let langCombo = DarkComboBox(frame: .zero)
@@ -103,6 +115,31 @@ final class SettingsWindowController: DialogController {
         content.addSubview(highPrecision)
         addButton("說明", x: 380, y: y - 3, w: 60, h: 26) { [weak self] in self?.showPrecisionHelp() }
         y += 36
+
+        addLabel("算圖", x: 20, y: y, w: 420, font: Theme.dialogTitle); y += 30
+
+        useGpu.isChecked = s.useGpu
+        useGpu.frame = NSRect(x: 30, y: y, width: 400, height: 22); y += 26
+        content.addSubview(useGpu)
+
+        // Say plainly what the GPU will and will not be used for: above the size cap the
+        // renderer falls back to the CPU, and a user watching an export should not be
+        // wondering why the setting appears to do nothing.
+        let metal = MetalPipeline.shared
+        let mp = metal.maxPixels / 1_000_000
+        for (i, label) in [gpuStatus, gpuStatus2].enumerated() {
+            label.font = Theme.small
+            label.textColor = metal.available ? Theme.textFaint : Theme.warn
+            label.lineBreakMode = .byTruncatingTail
+            label.frame = NSRect(x: 52, y: y + CGFloat(i) * 17, width: 390, height: 16)
+            content.addSubview(label)
+        }
+        gpuStatus.stringValue = metal.available
+            ? metal.statusText
+            : L.t("此電腦無法使用 Metal，一律以 CPU 算圖")
+        gpuStatus2.stringValue = metal.available
+            ? L.f("{0} MP 以下的預覽使用，全解析度匯出走 CPU", mp) : ""
+        y += 44
 
         addLabel("介面", x: 20, y: y, w: 420, font: Theme.dialogTitle); y += 30
 
@@ -146,6 +183,8 @@ final class SettingsWindowController: DialogController {
 
         s.useLibRaw = useLibRaw.isChecked
         s.useHighPrecisionRawPipeline = highPrecision.isChecked
+        s.useGpu = useGpu.isChecked
+        if !s.useGpu { MetalPipeline.shared.flushPool() }
         s.showThumbnailNumber = showNumbers.isChecked
         s.interfaceStyle = styleCombo.selectedIndex == 1 ? .warmPaper : .classicDark
         s.uiLanguage = AppLanguage.allCases[max(0, langCombo.selectedIndex)]
@@ -227,6 +266,9 @@ final class FontSizeWindowController: DialogController {
 // MARK: - 關於
 
 final class AboutWindowController: DialogController {
+    private let updateStatus = NSTextField(labelWithString: "")
+    private var checkButton: FlatButton!
+
     init() {
         super.init(title: "關於", width: 460, height: 100)
         var y: CGFloat = 24
@@ -252,20 +294,59 @@ final class AboutWindowController: DialogController {
         l.stringValue = body       // already localized above; do not translate again
         y += 14 * 18 + 10
 
-        addButton("下載網頁", x: 100, y: y, w: 120) {
-            if let url = URL(string: "https://www.awaysu.cc/software/awayphotoraweditor") {
-                NSWorkspace.shared.open(url)
-            }
+        updateStatus.font = Theme.small
+        updateStatus.textColor = Theme.textDim
+        updateStatus.alignment = .center
+        updateStatus.lineBreakMode = .byWordWrapping
+        updateStatus.maximumNumberOfLines = 3
+        updateStatus.usesSingleLineMode = false
+        updateStatus.cell?.wraps = true
+        updateStatus.cell?.isScrollable = false
+        updateStatus.preferredMaxLayoutWidth = 400
+        updateStatus.frame = NSRect(x: 30, y: y, width: 400, height: 46)
+        content.addSubview(updateStatus)
+        y += 52
+
+        checkButton = addButton("檢查更新", x: 40, y: y, w: 120) { [weak self] in
+            self?.checkForUpdate()
         }
-        addButton("確定", x: 240, y: y, w: 120, primary: true) { [weak self] in self?.close() }
+        addButton("下載網頁", x: 172, y: y, w: 120) {
+            if let url = URL(string: UpdateCheck.pageUrl) { NSWorkspace.shared.open(url) }
+        }
+        addButton("確定", x: 304, y: y, w: 120, primary: true) { [weak self] in self?.close() }
         y += 44
         resizeContent(to: y)
     }
+
+    private func checkForUpdate() {
+        checkButton.isEnabledButton = false
+        updateStatus.textColor = Theme.textDim
+        updateStatus.stringValue = L.t("檢查中…")
+        Task { @MainActor in
+            let info = await UpdateCheck.fetch()
+            self.checkButton.isEnabledButton = true
+            guard let info else {
+                // Offline, timed out, or the host answered with something unexpected.
+                self.updateStatus.textColor = Theme.textDim
+                self.updateStatus.stringValue = L.t("無法檢查更新，請稍後再試")
+                return
+            }
+            guard info.updateAvailable else {
+                self.updateStatus.textColor = Theme.textDim
+                self.updateStatus.stringValue = L.f("已是最新版本（{0}）", info.latestVersion)
+                return
+            }
+            self.updateStatus.textColor = Theme.accent
+            let notes = info.notes.isEmpty ? "" : "\n" + info.notes
+            self.updateStatus.stringValue = L.f("有新版本 v{0}", info.latestVersion) + notes
+        }
+    }
 }
 
-/// The app's version string, shown in the About window.
+/// The app's version string, shown in the About window. The number itself lives in
+/// AwayRawCore (AppVersionInfo) because the update check sends it to the API.
 enum AppVersion {
-    static let version = "v1.0.0"
+    static let version = "v" + AppVersionInfo.version
     static var display: String {
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String
         return build.map { "\(version) (\($0))" } ?? version

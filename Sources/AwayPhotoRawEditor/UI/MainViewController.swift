@@ -61,6 +61,9 @@ final class MainViewController: NSViewController {
     /// How the current photo's cached proxy was decoded (see `RawLoader.DecodeSource`).
     var proxySource: DecodeSource = .libRaw
 
+    /// Whether the most recent preview render actually ran on the GPU, for the status line.
+    var lastRenderUsedGpu = false
+
     /// Debounces the live thumbnail redraw of the photo being edited.
     var thumbLiveTimer: Timer?
     var thumbLiveVersion = 0
@@ -407,6 +410,7 @@ final class MainViewController: NSViewController {
                 let out = try ImageProcessor.applyToFloat(proxy, a, ctx)
                 guard var img = ImageIOCodec.toCGImage(out) else { return nil }
                 img = Watermark.apply(img, ctx)
+                DispatchQueue.main.async { [weak self] in self?.lastRenderUsedGpu = ctx.usedGpu }
                 return img
             }
         }

@@ -52,7 +52,7 @@ final class InfoPanel: SectionPanel {
             y += rowH
         }
         if isLegacyPipeline {
-            Theme.drawLeft(L.t("· 舊版處理"), x: labelX, midY: y + rowH / 2,
+            Theme.drawLeft("· " + L.t("舊版處理"), x: labelX, midY: y + rowH / 2,
                            font: Theme.small, color: Theme.copyBadge)
         }
     }

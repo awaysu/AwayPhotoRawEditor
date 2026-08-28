@@ -55,7 +55,7 @@ xcrun notarytool store-credentials awpr-notary \
 | RAW 解碼 | LibRaw 0.22.2 DLL | **LibRaw 0.22.2**（自行建置） | 同版本 → 同像素。這是顏色能對得起來的前提 |
 | 一般格式 | WIC | **ImageIO / CGImageSource** | 系統原生；順便多支援 HEIC |
 | EXIF | ExifTool（外部行程） | **ImageIO 原生** | ExifTool 是 500+ 個未簽章的 Perl 檔，每個 Mach-O 都要簽才過得了公證，不值得 |
-| GPU | Direct3D 12 / ComputeSharp | **尚未實作**（CPU only） | 使用者決定：先純 CPU，Metal 列為後續階段 |
+| GPU | Direct3D 12 / ComputeSharp | **Metal**（見下方「GPU 加速」） | 同樣的 shader 對照 CPU 參考實作逐行寫 |
 | 高 DPI | `Ui.S()` 手動縮放全部版面 | **不需要** | macOS 以點為單位排版、Retina 由系統處理。字級仍可調（設定 → 字體大小） |
 | 版面過高 | `DarkScrollHost` + `AutoFitScale` | **NSScrollView（overlay scroller）** | 同一個問題：右欄內容約 900pt，1040 高的視窗放不下 → 左右欄可捲動 |
 | 語言/外觀切換 | `Application.Restart()` | **重新啟動 app** | 同樣的理由：字型與調色盤是開機時決定的快取靜態值 |
@@ -168,6 +168,82 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 `.f16` 是 16-bit 整數（`AP16` magic），與 Windows 版同一個格式。舊的 `.f32` 裝的是 8-bit 量化值，
 **換副檔名讓它自然失效**，兩種都會被 `deleteCacheFiles` 清掉。
 
+## 與 C# 版逐像素對照（2026-08-29）✅ 完成
+
+`awpr-cli hashtest <img> [report]` 是 C# 版 `--hashtest` 的對應物：
+**同樣 14 組調整**（C# 版又是照 Windows 版 `GpuParity.Cases()` 抄的）、同樣的來源準備、
+同樣對 BGRA bytes 取 SHA-256、同樣的 F9 / G9 數字格式，兩份報告可以直接 `diff`。
+
+```
+7 個檔案 × 14 組 = 98 組指紋，全部逐字元相同
+（Sony ARW、Canon CR3、Panasonic RW2、Adobe DNG、三張 JPEG）
+```
+
+相同的不只是 SHA，還包括 9 位小數的通道均值與 9 位有效數字的取樣點。
+C# 版自己的驗收標準只要求「取樣點差 < 1e-5」（允許 libm 的 ULP 差異），實測是**零差異**。
+
+### ⚠️ 這個對照抓到的真 bug：.NET `Math.Round` 是**銀行家捨入**
+
+`Math.Round(double)` 預設 half-to-even，Swift 的 `rounded()` 是 half-away-from-zero。
+1705 px 的畫面裁 0.9 剛好是 1534.5 → 兩邊得到 1534 與 1535，**輸出圖片差一個像素**。
+
+所有從 C# `Math.Round` 移植過來的地方都改用 `Double.roundedHalfEven`
+（裁切尺寸、模糊半徑、修護座標、縮放尺寸、浮水印邊距）。
+**C# 寫成 `(int)(v + 0.5)` 的地方（例如 8-bit 量化）維持不變** —— 那是 floor，不是 Math.Round。
+
+> 改 `ImageProcessor` / `ColorScience` 後請重跑：
+> `awpr-cli hashtest <img> a.txt` 與 C# 版 `--hashtest <img> b.txt` 再 `diff`。
+
+## GPU 加速（Metal，2026-08-29）
+
+`Imaging/Metal/`：`MetalShaders`（kernel 原始碼，內嵌成字串）、`MetalPipeline`（裝置／pipeline state／
+buffer pool）、`MetalTarget`（`StageTarget` 實作）。**步驟順序沒有重寫** —— 就是當初留的那個縫。
+
+- **kernel 逐行對照 CPU 函式**，並且**上傳同一組 LUT** 而不是在 shader 裡算 `pow()`，
+  就是為了讓兩邊不會漂開。`MTLCompileOptions` 明確關掉 fast-math（會允許編譯器重排運算）。
+- **修護維持 CPU**：只碰幾個小圓。buffer 是 `.storageModeShared`，所以 CPU 直接就地改，不必上傳下載。
+- **所有階段編進同一個 command buffer**，只在 CPU 要讀像素時（heal、result）才 commit＋wait。
+  原本每個階段各自 commit，proxy 尺寸下那個來回跟實際運算一樣久。
+- **回傳結果不複製**：`FloatImageBuffer` 可以「借用」別人擁有的記憶體（`borrowing:owner:`），
+  直接把 shared buffer 交出去並持有 `MTLBuffer`。
+- **scratch buffer 用 pool 重用**：一張 66 MP 的圖每份 buffer 是 1 GB，每個階段重新配置的成本
+  比 kernel 本身還高。
+
+### 驗證：`awpr-cli gputest <img> [report]`
+
+與 hashtest 同樣 14 組，CPU 與 GPU 各跑一次。**驗收看 8-bit，不看 float**：
+
+- 8-bit 通道差 **≥2 一律不允許**（那代表算式分岔）
+- 8-bit 差 1 的比例 ≤ 0.07%
+
+實測（M2）：**14/14 通過**，最大 float 差 1.85e-04、差≥2 為 0、差1 ≤ 0.021%。
+float 差來自幾何階段 —— CPU 用 `double`、Metal 沒有 double，座標量級 ~2000 就帶約 1e-4 的捨入，
+雙線性取樣把它變成同量級的數值差。**Windows 版同一個階段實測 2.9e-4，是一樣的取捨。**
+`gputest` 會在「實際上沒跑 GPU」時明講並略過，不會假通過。
+
+### ⚠️ 尺寸上限 16 MP，這是量出來的
+
+`MetalPipeline.practicalPixelCap`。66 MP 時每份 buffer ~1 GB，階段變成純記憶體頻寬瓶頸，
+GPU 不再有優勢，而且工作集逼近實體記憶體時會崩掉
+（**單一個暗角 pass 實測 8.4 秒，CPU 只要 0.43 秒** —— 那是在換頁，不是在算）。
+
+上限之下 GPU 穩定快 1.5–4.8×（proxy 2560×1707，綜合案例 64 ms → 22 ms，2.8×）。
+上限遠高於任何 proxy（2560 長邊約 4.4 MP），所以**互動編輯一定走 GPU**，
+而全解析度匯出安靜地走 CPU —— 那裡 CPU 本來就有競爭力且可預測。
+
+## 更新檢查（2026-08-29）
+
+`App/UpdateCheck.swift`，「關於」視窗的「檢查更新」。與 Windows 版同一支 API，
+只有 `platform=macos` 不同（實測伺服器認得，會原樣回傳）。
+
+- **版本比較交給伺服器的 `update_available`**，不自己實作（規則是 PHP `version_compare`）。
+- **更新說明只用 `action=changelog&version=`，絕不退回 `release_notes`**（見 Windows CLAUDE.md）。
+- 任何失敗一律回 nil、靜默略過。
+- 測試：`awpr-cli updatecheck`（走與 UI 完全相同的程式碼路徑）。
+- ⚠️ **`latest_version` 目前是 1.0.17（Windows 的版本）**，而 macOS 版是 1.0.0，
+  所以現在一定會說「有新版」。網站的 `downloads` 對 `platform=macos` 是空陣列 ——
+  要等 macOS 版上架後，這個提示才有意義。
+
 ## 實機 RAW 驗證（2026-08-28，`/tmp/raw_test` 16 檔）
 
 Sony ARW ×11、Nikon NEF ×2、Canon CR3、Panasonic RW2、Adobe DNG，**16/16 selftest 全過、全部全解析度**。
@@ -223,9 +299,9 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 
 ## 尚未完成 / 後續
 
-- **Metal 加速**（使用者指定的第二階段）：加一個 `StageTarget` 實作即可，步驟順序不必重寫。
-  C# 版的 `GpuShaders.cs` 是逐行對照 CPU 函式寫的，可以直接當 Metal shader 的藍本。
-- **與 C# 版的逐像素對照**還沒做。as-shot 色溫已證實逐位元相同（見上），但
-  **完整管線的輸出像素**尚未比對過 —— 要做的話：兩邊對同一張 proxy 套同一組調整、輸出 PNG 後逐像素相減。
-- **Fujifilm RAF 尚未測**（手上沒有樣本；X-Trans 的去馬賽克路徑與 Bayer 不同）。
+- **Fujifilm RAF 尚未測**：手上沒有樣本（Windows 版是用 X-T30 測的）。
+  X-Trans 的去馬賽克路徑與 Bayer 不同，值得單獨驗。拿到檔案後跑
+  `awpr-cli info`（看 `libraw sizes` 與相機色彩資料）→ `selftest` → `hashtest` 與 C# 版對照。
+- **上架 Mac App Store** 若要做：得加 `com.apple.security.app-sandbox`＋`user-selected.read-write`，
+  並把重開資料夾用的 security-scoped bookmark 存起來（見 entitlements 的註解）。
 - 更新檢查（Windows 版的 `UpdateCheck`）尚未移植。

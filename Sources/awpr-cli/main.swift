@@ -30,6 +30,12 @@ func usage() -> Never {
       bench <image>
           Time each pipeline stage at proxy and full resolution.
 
+      updatecheck
+          Query the update API exactly as the About window does.
+
+      gputest <image> [report.txt]
+          CPU vs GPU on the same 14 cases, with the GpuParity tolerances.
+
       hashtest <image> [report.txt]
           Colour-pipeline fingerprint (14 cases) for comparison against the C#
           implementation's --hashtest. See PipelineHash.swift for the criteria.
@@ -390,6 +396,34 @@ case "exporttest":
     }
     r.write(to: reportPath)
 
+case "updatecheck":
+    // Runs the same code path the About window uses, so a failure here is a real failure.
+    let sem = DispatchSemaphore(value: 0)
+    Task {
+        let info = await UpdateCheck.fetch()
+        if let info {
+            print("ok              : true")
+            print("latest_version  : \(info.latestVersion)")
+            print("update_available: \(info.updateAvailable)")
+            print("page_url        : \(info.pageUrl)")
+            if info.notes.isEmpty {
+                print("notes           : （空）")
+            } else {
+                print("notes           :")
+                for l in info.notes.split(separator: "\n") { print("    \(l)") }
+            }
+        } else {
+            print("查不到更新資訊（離線、逾時，或回應格式不符）")
+        }
+        sem.signal()
+    }
+    sem.wait()
+    exit(0)
+
+case "gputest":
+    guard args.count >= 2 else { usage() }
+    exit(PipelineHash.gpuParity(imagePath: args[1], reportPath: args.count >= 3 ? args[2] : nil))
+
 case "hashtest":
     guard args.count >= 2 else { usage() }
     exit(PipelineHash.run(imagePath: args[1], reportPath: args.count >= 3 ? args[2] : nil))
@@ -442,12 +476,48 @@ case "bench":
         String(repeating: " ", count: max(0, width - s.count)) + s
     }
 
+    // One warm-up then the best of three: a single cold run measures first-touch page
+    // faults and pool warm-up rather than the pipeline.
+    func time(_ buf: FloatImageBuffer, _ adj: ImageAdjustments,
+              gpu: Bool) throws -> (ms: Double, usedGpu: Bool) {
+        let c = ProcessContext()
+        c.camera = ctx.camera
+        c.whiteBalanceReference = ctx.whiteBalanceReference
+        c.useGpu = gpu
+        c.forceCpu = !gpu
+        _ = try elapsed { _ = try ImageProcessor.applyToFloat(buf, adj, c) }
+        var best = Double.greatestFiniteMagnitude
+        for _ in 0..<3 {
+            best = min(best, try elapsed { _ = try ImageProcessor.applyToFloat(buf, adj, c) })
+        }
+        return (best, c.usedGpu)
+    }
+
+    let gpuUsable = MetalPipeline.shared.available
+    let cap = MetalPipeline.shared.maxPixels
     print("")
-    print(pad("階段", 20) + padLeft("proxy", 12) + padLeft("全解析度", 12))
+    print("Metal: \(MetalPipeline.shared.statusText)   尺寸上限 \(cap / 1_000_000) MP")
+    if full.width * full.height > cap {
+        print("（全圖 \(full.width * full.height / 1_000_000) MP 超過上限 → 全圖欄位一律走 CPU）")
+    }
+    print("")
+    print(pad("階段", 20)
+          + padLeft("proxy CPU", 12) + padLeft("proxy GPU", 12)
+          + padLeft("全圖 CPU", 12) + padLeft("全圖 GPU", 12) + padLeft("proxy 加速", 12))
     for (name, adj) in cases {
-        let pms = try elapsed { _ = try ImageProcessor.applyToFloat(proxy, adj, ctx) }
-        let fms = try elapsed { _ = try ImageProcessor.applyToFloat(full, adj, ctx) }
-        print(pad(name, 20) + padLeft("\(Int(pms)) ms", 12) + padLeft("\(Int(fms)) ms", 12))
+        let pc = try time(proxy, adj, gpu: false)
+        let pg = gpuUsable ? try time(proxy, adj, gpu: true) : (ms: 0, usedGpu: false)
+        let fc = try time(full, adj, gpu: false)
+        let fg = gpuUsable ? try time(full, adj, gpu: true) : (ms: 0, usedGpu: false)
+        // Only call it a speed-up when the GPU was actually used; above the size cap the
+        // "GPU" run silently falls back and the ratio would be meaningless.
+        let proxyCell = pg.usedGpu ? "\(Int(pg.ms)) ms" : "CPU"
+        let fullCell  = fg.usedGpu ? "\(Int(fg.ms)) ms" : "CPU"
+        let speed = pg.usedGpu ? String(format: "%.1f×", pc.ms / max(pg.ms, 0.001)) : "—"
+        print(pad(name, 20)
+              + padLeft("\(Int(pc.ms)) ms", 12) + padLeft(proxyCell, 12)
+              + padLeft("\(Int(fc.ms)) ms", 12) + padLeft(fullCell, 12)
+              + padLeft(speed, 8))
     }
 
 default:

@@ -114,6 +114,16 @@ public enum L {
     // MARK: - Translation table (ported entry-for-entry from the Windows build)
 
     static let table: [String: Tr] = [
+        "GPU 加速（Metal）": Tr("GPU acceleration (Metal)", "GPU アクセラレーション（Metal）", "GPU 가속 (Metal)", "GPU 加速（Metal）", "GPU-Beschleunigung (Metal)", "Accélération GPU (Metal)", "Aceleración GPU (Metal)"),
+        "算圖": Tr("Rendering", "レンダリング", "렌더링", "渲染", "Rendering", "Rendu", "Renderizado"),
+        "GPU 算圖": Tr("GPU", "GPU", "GPU", "GPU 渲染", "GPU", "GPU", "GPU"),
+        "此電腦無法使用 Metal，一律以 CPU 算圖": Tr("Metal is unavailable on this Mac; rendering always uses the CPU", "この Mac では Metal を利用できないため、常に CPU で処理します", "이 Mac에서는 Metal을 사용할 수 없어 항상 CPU로 처리합니다", "此电脑无法使用 Metal，一律以 CPU 渲染", "Metal ist auf diesem Mac nicht verfügbar; es wird immer die CPU verwendet", "Metal n'est pas disponible sur ce Mac ; le rendu utilise toujours le processeur", "Metal no está disponible en este Mac; el renderizado siempre usa la CPU"),
+        "{0} MP 以下的預覽使用，全解析度匯出走 CPU": Tr("Used for previews up to {0} MP; full-resolution export uses the CPU", "{0} MP までのプレビューで使用、フル解像度の書き出しは CPU", "{0} MP 이하 미리보기에 사용, 전체 해상도 내보내기는 CPU", "{0} MP 以下的预览使用，全分辨率导出走 CPU", "Für Vorschauen bis {0} MP; Export in voller Auflösung nutzt die CPU", "Utilisé pour les aperçus jusqu'à {0} MP ; l'export pleine résolution utilise le processeur", "Se usa en vistas previas de hasta {0} MP; la exportación a resolución completa usa la CPU"),
+        "檢查更新": Tr("Check for updates", "アップデートを確認", "업데이트 확인", "检查更新", "Nach Updates suchen", "Rechercher des mises à jour", "Buscar actualizaciones"),
+        "檢查中…": Tr("Checking…", "確認中…", "확인 중…", "检查中…", "Wird geprüft…", "Vérification…", "Comprobando…"),
+        "無法檢查更新，請稍後再試": Tr("Could not check for updates. Please try again later.", "アップデートを確認できませんでした。しばらくしてからもう一度お試しください。", "업데이트를 확인할 수 없습니다. 나중에 다시 시도해 주세요.", "无法检查更新，请稍后再试。", "Updates konnten nicht geprüft werden. Bitte später erneut versuchen.", "Impossible de vérifier les mises à jour. Réessayez plus tard.", "No se pudo buscar actualizaciones. Inténtalo más tarde."),
+        "已是最新版本（{0}）": Tr("You are up to date ({0})", "最新バージョンです（{0}）", "최신 버전입니다 ({0})", "已是最新版本（{0}）", "Sie sind auf dem neuesten Stand ({0})", "Vous êtes à jour ({0})", "Ya tienes la última versión ({0})"),
+        "有新版本 v{0}": Tr("Version v{0} is available", "新しいバージョン v{0} があります", "새 버전 v{0} 이(가) 있습니다", "有新版本 v{0}", "Version v{0} ist verfügbar", "La version v{0} est disponible", "La versión v{0} está disponible"),
         "設定": Tr("Settings", "設定", "설정", "设置", "Einstellungen", "Paramètres", "Configuración"),
         "設定…": Tr("Settings…", "設定…", "설정…", "设置…", "Einstellungen…", "Paramètres…", "Configuración…"),
         "套用": Tr("Apply", "適用", "적용", "应用", "Anwenden", "Appliquer", "Aplicar"),

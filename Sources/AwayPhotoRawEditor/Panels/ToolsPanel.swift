@@ -179,6 +179,10 @@ final class ToolsPanel: SectionPanel {
         gradHint.textColor = Theme.textFaint
         gradHint.lineBreakMode = .byWordWrapping
         gradHint.maximumNumberOfLines = 2
+        gradHint.usesSingleLineMode = false
+        gradHint.cell?.wraps = true
+        gradHint.cell?.isScrollable = false
+        gradHint.preferredMaxLayoutWidth = 266
         addSubview(gradHint)
 
         gradReset.onClick = { [weak self] in
@@ -209,6 +213,10 @@ final class ToolsPanel: SectionPanel {
         healHint.textColor = Theme.textFaint
         healHint.lineBreakMode = .byWordWrapping
         healHint.maximumNumberOfLines = 2
+        healHint.usesSingleLineMode = false
+        healHint.cell?.wraps = true
+        healHint.cell?.isScrollable = false
+        healHint.preferredMaxLayoutWidth = 266
         addSubview(healHint)
 
         healReset.onClick = { [weak self] in

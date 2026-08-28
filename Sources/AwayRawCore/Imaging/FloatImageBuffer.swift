@@ -15,17 +15,35 @@ public final class FloatImageBuffer: @unchecked Sendable {
     public let data: UnsafeMutablePointer<Float>
     public let count: Int
 
+    /// Non-nil when `data` belongs to something else — a Metal buffer, say — which this
+    /// instance keeps alive but must not free. Lets the GPU path hand back its result
+    /// without copying a gigabyte out of shared memory.
+    private let owner: AnyObject?
+
     public init(width: Int, height: Int, zeroed: Bool = true) {
         precondition(width > 0 && height > 0, "Invalid image size")
         self.width = width
         self.height = height
         self.count = width * height * 4
         self.data = UnsafeMutablePointer<Float>.allocate(capacity: count)
-        if zeroed { self.data.initialize(repeating: 0, count: count) }
-        else { self.data.initialize(repeating: 0, count: count) }
+        self.owner = nil
+        self.data.initialize(repeating: 0, count: zeroed ? count : count)
+    }
+
+    /// Wrap memory owned by `owner`, which is retained for this buffer's lifetime.
+    /// The caller guarantees the region holds `width * height * 4` floats.
+    public init(width: Int, height: Int,
+                borrowing pointer: UnsafeMutablePointer<Float>, owner: AnyObject) {
+        precondition(width > 0 && height > 0, "Invalid image size")
+        self.width = width
+        self.height = height
+        self.count = width * height * 4
+        self.data = pointer
+        self.owner = owner
     }
 
     deinit {
+        guard owner == nil else { return }   // borrowed: the owner frees it
         data.deinitialize(count: count)
         data.deallocate()
     }
