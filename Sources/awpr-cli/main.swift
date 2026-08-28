@@ -69,7 +69,9 @@ func describeCamera(_ c: CameraColorInfo) -> [String] {
         out.append("      " + (0..<3).map { fmt(c.rgbCam[r * 3 + $0]) }.joined(separator: ", "))
     }
     if let shot = ColorScience.asShot(c) {
-        out.append("  as-shot : \(Int(shot.kelvin.rounded())) K, tint \(fmt(shot.tint, 1))")
+        // Full precision: this is the number the adjustment XML stores, so it is what a
+        // cross-implementation comparison actually needs.
+        out.append("  as-shot : \(DotNetXml.string(shot.kelvin)) K, tint \(DotNetXml.string(shot.tint))")
     } else {
         out.append("  as-shot : （無法換算）")
     }
@@ -143,7 +145,7 @@ case "selftest":
     var full: FloatImageBuffer?
     let decodeMs = elapsed { full = loader.decodeFullFloat(path: path) }
     check("全解析度解碼", full != nil,
-          full.map { "\($0.width)x\($0.height)，\(Int(decodeMs)) ms，LibRaw=\(loader.lastFullDecodeUsedLibRaw)" } ?? "")
+          full.map { "\($0.width)x\($0.height)，\(Int(decodeMs)) ms，來源=\(loader.lastDecodeSource.rawValue)" } ?? "")
     guard let fullBuf = full else {
         r.add("\n解碼失敗，中止。")
         r.write(to: reportPath)
@@ -153,8 +155,11 @@ case "selftest":
     r.add("")
     r.add("[2] EXIF 與相機色彩")
     var exif: ExifData? = ExifReader.read(path: path)
-    check("EXIF 讀取", !(exif?.cameraModel.isEmpty ?? true) || !AppPaths.isRaw(path),
-          "\(exif?.cameraMake ?? "") \(exif?.cameraModel ?? "")")
+    // Not every file carries a camera model — a converted or stripped DNG legitimately
+    // has none — so this only checks that metadata was read at all.
+    let gotExif = exif != nil && (!(exif!.cameraModel.isEmpty) || exif!.width > 0)
+    check("EXIF 讀取", gotExif,
+          exif.map { "\($0.cameraMake) \($0.cameraModel) \($0.dimensionsDisplay)" } ?? "")
     let enriched = loader.enrichCameraColor(path: path, exif: &exif)
     check("相機色彩資料", !AppPaths.isRaw(path) || exif?.camera != nil,
           enriched ? "本次補上" : (exif?.camera != nil ? "已存在" : "無（退回黑體近似）"))

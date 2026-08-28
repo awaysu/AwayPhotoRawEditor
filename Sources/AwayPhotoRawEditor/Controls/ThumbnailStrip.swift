@@ -289,9 +289,11 @@ final class ThumbnailStrip: NSView {
                 Theme.stroke(cell, Theme.copyBadge, width: 2)
             }
 
-            // filename under the cell
+            // filename under the cell, clipped to the cell so long names cannot run into
+            // the neighbouring thumbnails
             let labelRect = NSRect(x: cell.minX, y: cell.maxY + 2, width: cell.width, height: labelH - 4)
-            Theme.drawCentered(e.item.fileName, in: labelRect, font: Theme.small,
+            let name = Theme.truncate(e.item.fileName, font: Theme.small, maxWidth: cell.width - 4)
+            Theme.drawCentered(name, in: labelRect, font: Theme.small,
                                color: selected ? Theme.text : Theme.textDim)
         }
 

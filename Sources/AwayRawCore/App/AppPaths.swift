@@ -82,7 +82,8 @@ public enum AppPaths {
     /// cache invalidated.
     public static func cacheFiles(_ imagePath: String) -> [String] {
         [thumbnailPath(imagePath), proxyPath(imagePath),
-         proxyPath(imagePath) + ".f16", proxyPath(imagePath) + ".f32"]
+         proxyPath(imagePath) + ".f16", proxyPath(imagePath) + ".f32",
+         proxyPath(imagePath) + ".src"]
     }
 
     // ---- Application data / settings ------------------------------------

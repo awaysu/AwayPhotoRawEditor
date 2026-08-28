@@ -73,8 +73,11 @@ xcrun notarytool store-credentials awpr-notary \
 - 陣列用型別名當子元素：`<PreMul><double>1.9</double>…</PreMul>`
 - **數字用 .NET 的 round-trip 格式**：`5200`，不是 `5200.0`（`DotNetXml.string(_:)`）
 
-> ✅ 已實證：`~/Library/Application Support/AwayPhotoRawEditor/export.xml` 是 **Windows 版寫的**
-> （`<?xml version="1.0" encoding="utf-8"?>`，我們的 writer 不寫 encoding），Swift 端每個欄位都正確讀出。
+> ✅ **已實證（2026-08-28）**：`/tmp/raw_test/RAW_TEMP/` 內是 **`AwayPhotoRawEditor_mac`（C# 版 macOS port）寫的**
+> `.rawpipe.xml`（`<?xml version="1.0" encoding="utf-8"?>` —— 我們的 writer 不寫 encoding，可據此分辨）。
+> Swift 端每個欄位都正確讀出，**且原樣寫回時 16 位數的 double 逐位元相同**。
+> `~/Library/Application Support/AwayPhotoRawEditor/export.xml` 同樣是 C# 版寫的，也讀得正確。
+> ⚠️ 這證明的是**與 C# 實作**相容；與 Windows 版本身的相容性推論自「兩邊都是 .NET XmlSerializer」，尚未直接驗證。
 
 設定檔位置：`%AppData%\AwayPhotoRawEditor\` → **`~/Library/Application Support/AwayPhotoRawEditor/`**。
 
@@ -165,12 +168,64 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 `.f16` 是 16-bit 整數（`AP16` magic），與 Windows 版同一個格式。舊的 `.f32` 裝的是 8-bit 量化值，
 **換副檔名讓它自然失效**，兩種都會被 `deleteCacheFiles` 清掉。
 
+## 實機 RAW 驗證（2026-08-28，`/tmp/raw_test` 16 檔）
+
+Sony ARW ×11、Nikon NEF ×2、Canon CR3、Panasonic RW2、Adobe DNG，**16/16 selftest 全過、全部全解析度**。
+
+### ✅ 與 C# 版逐位元相同的色彩科學
+
+拿 C# macOS port 寫的 `.rawpipe.xml` 當基準，用 Swift 重新從 `cam_mul` 算 as-shot 色溫／色調：
+
+```
+8 / 8 逐位元完全相同   （Sony ILCE-7RM6 ×4、Canon EOS R、Panasonic DC-S5、Sony ×2）
+例：3667.023643867582 K / -12.540928311851719   兩邊 17 位有效數字全同
+```
+
+這條路徑涵蓋 `rgb_cam` 反矩陣 → XYZ↔sRGB → 黑體軌跡（Kang 2002）→ uv↔xy →
+粗掃＋40 次三分搜尋 → Duv/tint 換算 → .NET round-trip 數字格式。**改 `ColorScience` 後請重跑這個比對。**
+
+### ✅ 遮罩黑邊修正確實有效
+
+| 機型 | libraw sizes | ImageIO 可見區 | 結果 |
+|---|---|---|---|
+| Sony ILCE-7RM6 | raw 10240×7168 / visible **10240×7168**（無裁切表）| 9984×6656 | 裁到 9984×6656，**無黑邊** |
+| Nikon Z 8 | raw 8280×5520 / visible **8280×5520**（無裁切表）| 8256×5504 | 裁到 8256×5504 |
+| Canon EOS R | visible 6742×4498（有裁切表 L146 T48）| 6720×4480 | 採 ImageIO 值 |
+
+**ImageIO 成功取代了 ExifTool `FullImageSize` 的角色** —— 這正是當初需要 ExifTool 的唯一硬需求。
+
+### ⚠️ Nikon Z 8 的 HE 壓縮：LibRaw 解不了（Windows 版也一樣）
+
+`libraw_unpack_function_name` 回報 `nikon_he_load_raw()`，但 `libraw_unpack` 回
+`Unsupported file format or not RAW file`。**用 Homebrew 版（有 libjpeg）實測同樣失敗**，
+所以與我們 `-DNO_JPEG` 的取捨無關，是 LibRaw 0.22.2 本身不含 Nikon High Efficiency 的解碼器。
+
+macOS 這邊有 Windows 沒有的救援：**ImageIO 原生解得開，而且是全解析度 8256×5504**。
+因此 `RawLoader.decodeFull` 的退回順序改成：
+
+```
+LibRaw → ImageIO 全解析度 → 內嵌預覽（縮小版，最後手段）
+```
+
+**⚠️ 順序很重要**：原本是「LibRaw → 內嵌預覽 → ImageIO」，而 `extractPreview` 走
+`CGImageSourceCreateThumbnailAtIndex` 且上限 4096px，所以 Z 8 會拿到 4096×2731 的縮圖版而不是全圖。
+
+### ⚠️ 隨之而來的白平衡參考基準問題
+
+ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_mul`），LibRaw 解的則是
+平衡到 `pre_mul`（日光）。餵錯 `WhiteBalanceReference` 會整張偏色
+（此例 preMul/camMul ≈ 1.157 / 1 / 0.823，明顯偏暖）。
+
+所以 proxy 旁邊會寫一個 **`.rawpipe.png.src` 標記檔**（內容 `libraw` 或 `imageio`），
+`RawLoader.proxyDecodeSource(path:)` 讀它決定 `whiteBalanceReference`。
+**刻意不寫進共用 XML** —— 那是跨平台的編輯資料，這只是本機快取的中繼資料。
+沒有標記檔的舊快取一律當 `libraw`（在標記存在之前就是這個行為）。
+
 ## 尚未完成 / 後續
 
 - **Metal 加速**（使用者指定的第二階段）：加一個 `StageTarget` 實作即可，步驟順序不必重寫。
   C# 版的 `GpuShaders.cs` 是逐行對照 CPU 函式寫的，可以直接當 Metal shader 的藍本。
-- **實機 RAW 尚未驗證**：這台機器上沒有 RAW 檔，`selftest` / UI 都是用 JPEG 跑過的。
-  拿到 ARW / NEF / CR3 / RAF 後請跑 `awpr-cli info` 確認 `libraw sizes` 有裁切表、
-  再跑 `selftest` 看相機色彩資料有沒有讀到。
-- **與 C# 版的逐像素對照測試**還沒做（需要兩邊都能跑的機器）。
+- **與 C# 版的逐像素對照**還沒做。as-shot 色溫已證實逐位元相同（見上），但
+  **完整管線的輸出像素**尚未比對過 —— 要做的話：兩邊對同一張 proxy 套同一組調整、輸出 PNG 後逐像素相減。
+- **Fujifilm RAF 尚未測**（手上沒有樣本；X-Trans 的去馬賽克路徑與 Bayer 不同）。
 - 更新檢查（Windows 版的 `UpdateCheck`）尚未移植。

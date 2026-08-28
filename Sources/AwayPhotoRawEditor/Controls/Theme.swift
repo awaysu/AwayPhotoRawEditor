@@ -213,6 +213,14 @@ enum Theme {
         draw(s, at: NSPoint(x: x, y: midY - size.height / 2), font: font, color: color)
     }
 
+    /// Shorten text with an ellipsis until it fits `maxWidth`.
+    static func truncate(_ s: String, font: NSFont, maxWidth: CGFloat) -> String {
+        if measure(s, font: font).width <= maxWidth { return s }
+        var t = s
+        while !t.isEmpty, measure(t + "…", font: font).width > maxWidth { t.removeLast() }
+        return t + "…"
+    }
+
     /// Draw text centred in a rect.
     static func drawCentered(_ s: String, in r: NSRect, font: NSFont, color: NSColor) {
         let size = measure(s, font: font)

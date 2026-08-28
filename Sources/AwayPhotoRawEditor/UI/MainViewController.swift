@@ -58,6 +58,9 @@ final class MainViewController: NSViewController {
     /// to the window. Later renders of the same photo must not disturb the user's zoom.
     var pendingFit = false
 
+    /// How the current photo's cached proxy was decoded (see `RawLoader.DecodeSource`).
+    var proxySource: DecodeSource = .libRaw
+
     /// Debounces the live thumbnail redraw of the photo being edited.
     var thumbLiveTimer: Timer?
     var thumbLiveVersion = 0
@@ -380,7 +383,10 @@ final class MainViewController: NSViewController {
             let a = self.renderAdjustments()
             let ctx = ProcessContext()
             ctx.camera = self.exif?.camera
-            ctx.whiteBalanceReference = .decode
+            // A proxy that ImageIO decoded already has the camera's white balance baked
+            // in; one from LibRaw is balanced to pre_mul. Handing the matrix the wrong
+            // reference tints the whole photo.
+            ctx.whiteBalanceReference = self.proxySource.whiteBalanceReference
             ctx.watermark = self.exportSettings.buildWatermark()
             // The watermark is authored at full resolution, so scale it to the proxy.
             let fullLong = max(self.exif?.width ?? proxy.width, self.exif?.height ?? proxy.height)

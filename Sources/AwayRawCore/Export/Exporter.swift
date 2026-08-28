@@ -102,6 +102,8 @@ public enum Exporter {
         guard let full = decodeFull(item, loader) else {
             throw ExportError.decodeFailed(item.fileName)
         }
+        // Whatever the decode actually used decides what white balance is baked in.
+        let wbReference = loader.lastDecodeSource.whiteBalanceReference
 
         // 2) adjustments + cached EXIF (which carries the camera colour data for the WB matrix)
         var (adjOpt, exif, _) = AdjustmentXmlStore.loadAll(imagePath: item.sourcePath,
@@ -120,7 +122,7 @@ public enum Exporter {
         ctx.watermarkScale = 1.0
         ctx.watermark = s.buildWatermark()
         ctx.camera = exif?.camera
-        ctx.whiteBalanceReference = .decode
+        ctx.whiteBalanceReference = wbReference
         let processed = try ImageProcessor.applyToFloat(full, adj, ctx)
 
         // 4) resize so the longest edge equals the target, preserving aspect (never upscales)

@@ -2,6 +2,19 @@ import Foundation
 import CoreGraphics
 import ImageIO
 
+/// How a photo's pixels were produced. This decides what white balance is already
+/// baked into them, which the linear pipeline's matrix has to undo.
+public enum DecodeSource: String, Sendable {
+    /// LibRaw's own decode: balanced with `pre_mul` (daylight).
+    case libRaw = "libraw"
+    /// ImageIO or the camera's embedded preview: the as-shot `cam_mul` is baked in.
+    case imageIO = "imageio"
+
+    public var whiteBalanceReference: WhiteBalanceReference {
+        self == .libRaw ? .decode : .asShot
+    }
+}
+
 /// Result of a thumbnail load with the extra information the status line shows.
 public struct ThumbnailInfo {
     public var buffer: FloatImageBuffer?
@@ -23,6 +36,9 @@ public final class RawLoader: @unchecked Sendable {
 
     /// Best-effort record of whether the last full decode actually used LibRaw.
     public private(set) var lastFullDecodeUsedLibRaw = false
+
+    /// How the last full decode produced its pixels.
+    public private(set) var lastDecodeSource: DecodeSource = .libRaw
 
     public static let defaultProxyMaxDim = 2560
 
@@ -62,19 +78,27 @@ public final class RawLoader: @unchecked Sendable {
                 let bps = useHighPrecisionRawPipeline ? 16 : 8
                 if let b = LibRawBridge.decodeFull(path, bps: bps, expectedVisible: vis) {
                     lastFullDecodeUsedLibRaw = true
+                    lastDecodeSource = .libRaw
                     return b
                 }
             }
             lastFullDecodeUsedLibRaw = false
-            // Fallback: the camera's embedded preview.
+            lastDecodeSource = .imageIO
+            // ImageIO next, at full resolution. It decodes formats LibRaw cannot — a
+            // Nikon Z 8's High Efficiency NEF is recognised by LibRaw 0.22
+            // (`nikon_he_load_raw`) but not decodable by it, while ImageIO handles it
+            // natively. Trying this before the embedded preview is what keeps such files
+            // at full resolution instead of dropping to a downsized preview.
+            if let b = ImageIOCodec.loadFloat(path: path) { return b }
+            // Last resort: the camera's embedded preview (reduced resolution).
             if let preview = ExifReader.extractPreview(path: path),
                let b = ImageIOCodec.loadFloat(data: preview) {
                 return b
             }
-            // Last resort: let ImageIO decode the RAW itself.
-            return ImageIOCodec.loadFloat(path: path)
+            return nil
         }
         lastFullDecodeUsedLibRaw = false
+        lastDecodeSource = .imageIO
         return ImageIOCodec.loadFloat(path: path)
     }
 
@@ -84,6 +108,7 @@ public final class RawLoader: @unchecked Sendable {
             let vis = ExifReader.readVisibleSize(path: path)
             if let f = LibRawBridge.decodeFull(path, bps: 16, expectedVisible: vis) {
                 lastFullDecodeUsedLibRaw = true
+                lastDecodeSource = .libRaw
                 return f
             }
         }
@@ -191,6 +216,31 @@ public final class RawLoader: @unchecked Sendable {
     // quantised values, so the different extension lets them lapse on their own.
     static func proxyFloatPath(_ path: String) -> String { AppPaths.proxyPath(path) + ".f16" }
 
+    /// A one-word marker recording how the cached proxy was decoded. The renderer needs
+    /// it because a proxy that came from ImageIO already has the camera's white balance
+    /// baked in, while a LibRaw one is balanced to pre_mul — feeding the matrix the wrong
+    /// reference tints the whole photo. Kept as a sidecar rather than a new element in
+    /// the shared XML, since it is per-platform cache metadata, not an edit.
+    static func proxySourcePath(_ path: String) -> String { AppPaths.proxyPath(path) + ".src" }
+
+    /// What the cached proxy's pixels are already balanced to.
+    public func proxyDecodeSource(path: String) -> DecodeSource {
+        guard AppPaths.isRaw(path) else { return .imageIO }
+        guard let s = try? String(contentsOfFile: Self.proxySourcePath(path), encoding: .utf8),
+              let src = DecodeSource(rawValue: s.trimmingCharacters(in: .whitespacesAndNewlines))
+        else {
+            // No marker (an older cache): assume LibRaw, which is what it was before this
+            // marker existed and remains the common case.
+            return .libRaw
+        }
+        return src
+    }
+
+    private func writeProxySource(path: String) {
+        try? lastDecodeSource.rawValue.write(toFile: Self.proxySourcePath(path),
+                                             atomically: true, encoding: .utf8)
+    }
+
     @discardableResult
     public func ensureProxyCache(path: String, maxDim: Int = RawLoader.defaultProxyMaxDim) -> Bool {
         let proxyPath = AppPaths.proxyPath(path)
@@ -204,11 +254,13 @@ public final class RawLoader: @unchecked Sendable {
             let scaled = CacheManager.resizeFloatToMaxDim(full, maxDim: maxDim)
             CacheManager.savePng(scaled, to: proxyPath)
             CacheManager.saveHalf(scaled, to: Self.proxyFloatPath(path))
+            writeProxySource(path: path)
             return true
         } else {
             guard let full = decodeFull(path: path) else { return false }
             let scaled = CacheManager.resizeToMaxDim(full, maxDim: maxDim)
             CacheManager.savePng(scaled, to: proxyPath)
+            writeProxySource(path: path)
             return true
         }
     }

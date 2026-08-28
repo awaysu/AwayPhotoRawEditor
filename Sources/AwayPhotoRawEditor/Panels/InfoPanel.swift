@@ -46,14 +46,7 @@ final class InfoPanel: SectionPanel {
             Theme.drawLeft(L.t(k), x: labelX, midY: y + rowH / 2,
                            font: Theme.small, color: Theme.textDim)
             // Trim overlong values (lens names especially) rather than letting them spill.
-            let maxW = bounds.width - valueX - 10
-            var text = v
-            if Theme.measure(text, font: Theme.normal).width > maxW {
-                while text.count > 3, Theme.measure(text + "…", font: Theme.normal).width > maxW {
-                    text.removeLast()
-                }
-                text += "…"
-            }
+            let text = Theme.truncate(v, font: Theme.normal, maxWidth: bounds.width - valueX - 10)
             Theme.drawLeft(text, x: valueX, midY: y + rowH / 2,
                            font: Theme.normal, color: Theme.text)
             y += rowH

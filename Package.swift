@@ -14,6 +14,12 @@ let librawLib = [
     "-LThirdParty/libraw/lib",
     "-L/opt/homebrew/opt/libraw/lib",
     "-L/usr/local/opt/libraw/lib",
+    // Our own LibRaw has install_name @rpath/libraw.N.dylib so it can be relocated into
+    // the .app; a plain `swift build` binary therefore needs an rpath back to it, or
+    // `swift run awpr-cli` cannot start. Relative to .build/<triple>/<config>/, three
+    // levels up is the package root. (Homebrew's copy has an absolute install_name and
+    // resolves without this.)
+    "-Xlinker", "-rpath", "-Xlinker", "@executable_path/../../../ThirdParty/libraw/lib",
 ]
 
 let package = Package(

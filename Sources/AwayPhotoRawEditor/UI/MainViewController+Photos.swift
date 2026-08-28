@@ -259,9 +259,11 @@ extension MainViewController {
 
             // The proxy is already cached from the folder open, so this is a fast read.
             let proxy = self.loader.loadProxyFloat(path: item.sourcePath)
+            let source = self.loader.proxyDecodeSource(path: item.sourcePath)
 
             DispatchQueue.main.async {
                 guard self.loadVersion == version else { return }   // superseded
+                self.proxySource = source
                 self.applyLoaded(item: item, adjustments: a, exif: e, proxy: proxy)
             }
         }
