@@ -15,7 +15,7 @@ enum Shot {
     nonisolated(unsafe) static var headless = false
 
     static func parse(_ args: [String]) -> Bool {
-        args.contains("--shot") || args.contains("--dlgshot")
+        args.contains("--shot") || args.contains("--dlgshot") || args.contains("--uitest")
     }
 
     /// Render a view hierarchy to a PNG.
@@ -41,6 +41,14 @@ enum Shot {
     static func run(controller: MainViewController, window: NSWindow, args: [String]) {
         headless = true
 
+        if let i = args.firstIndex(of: "--uitest"), i + 1 < args.count {
+            window.setContentSize(NSSize(width: 1500, height: 1040))
+            controller.view.frame = NSRect(x: 0, y: 0, width: 1500, height: 1040)
+            controller.view.layoutSubtreeIfNeeded()
+            UITest.run(controller: controller, folder: args[i + 1],
+                       report: i + 2 < args.count ? args[i + 2] : nil)
+            return
+        }
         if let i = args.firstIndex(of: "--dlgshot"), i + 2 < args.count {
             runDialog(kind: args[i + 1], path: args[i + 2], controller: controller, window: window)
             return

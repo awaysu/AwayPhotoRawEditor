@@ -40,6 +40,10 @@ final class MainViewController: NSViewController {
 
     /// Guards against a stale background load applying over a newer selection.
     var loadVersion = 0
+    /// True between `loadPhoto` and `applyLoaded`. In that window `adj` still belongs to
+    /// the previous photo, so an edit would be applied to the wrong picture and then
+    /// discarded when the load lands; edits are dropped until it does.
+    var isLoading = false
     /// De-duplicates repeated selections of the same item.
     var loadedKey: String?
 

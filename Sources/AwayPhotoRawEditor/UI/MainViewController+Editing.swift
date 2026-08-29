@@ -8,6 +8,7 @@ extension MainViewController {
     // ---- change pump -----------------------------------------------------
 
     func onAdjustmentChanged(immediate: Bool = false) {
+        guard !isLoading else { return }
         dirty = true
         // Any edit gesture cancels the before/after comparison.
         if showOriginal { showOriginal = false; compareButton.isPrimary = false }
@@ -27,6 +28,7 @@ extension MainViewController {
     /// captures the batch sync targets — clicking a thumbnail collapses the selection to
     /// one item *before* the commit runs, so capturing at commit time finds the wrong set.
     func pushUndo() {
+        guard !isLoading else { return }
         redoStack.removeAll()          // a fresh edit invalidates the redo branch
         var step = UndoStep(current: adj)
 

@@ -116,6 +116,7 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 | `awpr-cli bench <img>` | 各階段 proxy / 全解析度耗時 |
 | `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖 |
 | `AwayPhotoRawEditor --dlgshot <export\|settings\|presets\|about\|fonts\|firstrun\|progress> <png>` | 對話框離屏截圖 |
+| `AwayPhotoRawEditor --uitest <folder> [report]` | **UI 流程測試**：把資料夾複製到暫存區，驅動真正的 `MainViewController` 跑 載入→編輯→復原／重做→切圖存檔→多選批次同步與批次復原→風格檔→重設→裁切比例→旋轉→虛擬副本→複製貼上→隱藏／顯示全部／還原→刪除副本→關閉存檔，逐項斷言（含磁碟上的 XML）。截圖測不到的邏輯都在這裡。JPEG 與 RAW 資料夾都要跑。|
 
 **`--shot` 是把 view 自己畫進 bitmap（`cacheDisplay`），不是螢幕截圖** —— 所以不需要「畫面錄製」權限，
 SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macOS 會把視窗夾進螢幕範圍，
@@ -158,6 +159,13 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 - **`RawLoader` 的「上次解碼來源」不能是 instance 屬性**：開資料夾時兩個解碼同時跑會互相覆蓋，proxy 的 `.src` 標記就會寫錯。改成隨像素一起回傳（`decodeFullWithSource`）。
 - **匯出的浮水印要照縮放比例縮**：Windows 是在全解析度畫完再縮圖；這裡在縮圖後畫，所以 `watermarkScale = 縮後長邊 / 全圖長邊`，不然 66 MP 匯成 2400 px 時浮水印大四倍。
 - **`rebuildItems` 會建立新的 `PhotoItem` 物件**：任何重建後 `current` 要重新指向同 key 的新物件，否則 edited 標記更新到孤兒上。`refreshStripKeepSelection` 負責這件事，並在目前照片消失（隱藏／刪除）時選最近的一張。
+- **`loadPhoto` 到 `applyLoaded` 之間有一段非同步空窗**（`isLoading`）：`current` 已經換了、但面板和 `adj` 還是上一張的。
+  這段時間的編輯會套到錯的照片、然後被載入結果蓋掉。`pushUndo` / `onAdjustmentChanged` 在 `isLoading` 時直接丟棄；
+  `--uitest` 有一條斷言專門測這個。切換照片時 `undoStack` **和 `redoStack`** 都要清——不清 redo 會把上一張的編輯貼到這一張。
+- **`openFolder` 開頭就把 `current` / `loadedKey` 設回 nil**：否則快取產生期間的編輯會落在舊資料夾的照片上，
+  從「紀錄」重開同一個資料夾時第一張的 `loadedKey` 相同會讓載入變成 no-op（`current` 指向孤兒物件）。
+- **診斷啟動加 `-ApplePersistenceIgnoreState YES`**：app 曾當機過，macOS 下次啟動會跳「重新開啟視窗？」的 modal；
+  `window.isRestorable = false` 已避免將來再存狀態，但舊的狀態檔還在時仍會問一次。
 - **刪除／隱藏前一定先 `saveCurrentIfDirty()`**——被刪的不一定是目前那張，目前那張的未存編輯不能跟著丟。
 
 - **⚠️ `install_name_tool` 會讓 dylib 的簽章失效，Apple Silicon 上未正確簽章的執行檔會被 SIGKILL**

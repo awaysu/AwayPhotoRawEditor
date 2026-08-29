@@ -51,6 +51,7 @@ awpr-cli hashtest <圖片> out.txt  # 色彩管線指紋（與 C# 版 --hashtest
 awpr-cli gputest <圖片>           # CPU / GPU 對照
 awpr-cli bench <圖片>             # 各階段 CPU / GPU 耗時
 awpr-cli updatecheck              # 檢查更新 API
+AwayPhotoRawEditor --uitest <資料夾>   # UI 流程測試（編輯／復原／批次／副本／隱藏／刪除）
 ```
 
 ### 簽章與公證

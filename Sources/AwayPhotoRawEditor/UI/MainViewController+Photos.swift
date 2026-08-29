@@ -22,6 +22,14 @@ extension MainViewController {
 
     func openFolder(_ path: String) {
         saveCurrentIfDirty()
+        // Nothing is current until the new folder's first photo loads: an edit made
+        // during cache generation must not land on the previous folder's item, and a
+        // stale loadedKey would make the first selection a no-op when the same folder is
+        // reopened from the history.
+        current = nil
+        loadedKey = nil
+        undoStack.removeAll()
+        redoStack.removeAll()
         folder = path
         folderLabel.stringValue = path
         // A diagnostic screenshot run must not rewrite the user's last-opened folder.
@@ -52,9 +60,9 @@ extension MainViewController {
             guard let self else { return }
             progress.finish(message: L.t("完成，可以開始編輯"))
             self.setEditorEnabled(true)
-            if let first = self.items.first {
+            // Unless the user already picked something while the caches were building.
+            if !self.items.isEmpty, self.strip.currentIndex < 0 {
                 self.strip.select(index: 0)
-                _ = first
             }
         }
     }
@@ -234,9 +242,13 @@ extension MainViewController {
         let version = loadVersion
         loadedKey = item.key
         current = item
+        isLoading = true
+        proxy = nil               // nothing to render, pick or crop against until it lands
         // Selecting a different photo ends the undo history, matching Windows: a batch
-        // undo is only valid until you move on.
+        // undo is only valid until you move on. The redo branch goes too — replaying it
+        // would paste the previous photo's edits onto this one.
         undoStack.removeAll()
+        redoStack.removeAll()
         showOriginal = false
         compareButton.isPrimary = false
 
@@ -273,6 +285,7 @@ extension MainViewController {
 
     func applyLoaded(item: PhotoItem, adjustments: ImageAdjustments,
                      exif e: ExifData, proxy p: FloatImageBuffer?) {
+        isLoading = false
         adj = adjustments
         exif = e
         proxy = p
@@ -299,6 +312,7 @@ extension MainViewController {
     }
 
     func clearEditor() {
+        isLoading = false
         current = nil
         loadedKey = nil
         proxy = nil
@@ -306,6 +320,7 @@ extension MainViewController {
         adj = ImageAdjustments()
         dirty = false
         undoStack.removeAll()
+        redoStack.removeAll()
         viewer.setImage(nil, resetView: true)
         viewer.adjustments = nil
         infoPanel.exif = nil
