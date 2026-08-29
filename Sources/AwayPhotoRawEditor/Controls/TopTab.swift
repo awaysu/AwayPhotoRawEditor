@@ -5,6 +5,9 @@ import AwayRawCore
 final class TopTab: NSView {
     var tabs: [String] = [] { didSet { needsDisplay = true } }
     var selectedIndex = 0 { didSet { needsDisplay = true } }
+    /// When true, clicking the active tab deselects it (selectedIndex = -1 = no tab),
+    /// matching the Windows TopTab.AllowDeselect.
+    var allowDeselect = false
     var onSelect: ((Int) -> Void)?
 
     private var hoverIndex = -1 { didSet { needsDisplay = true } }
@@ -36,10 +39,15 @@ final class TopTab: NSView {
     override func mouseExited(with event: NSEvent) { hoverIndex = -1 }
 
     override func mouseUp(with event: NSEvent) {
-        let i = indexAt(convert(event.locationInWindow, from: nil))
-        guard i >= 0 else { return }
-        selectedIndex = i
-        onSelect?(i)
+        click(index: indexAt(convert(event.locationInWindow, from: nil)))
+    }
+
+    /// What a click on tab `i` does (also driven directly by `--uitest`).
+    func click(index i: Int) {
+        guard i >= 0, i < tabs.count else { return }
+        let next = (allowDeselect && i == selectedIndex) ? -1 : i   // click active -> deselect
+        selectedIndex = next
+        onSelect?(next)
     }
 
     override func draw(_ dirtyRect: NSRect) {

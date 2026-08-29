@@ -16,6 +16,16 @@ final class ProgressWindowController: NSObject {
     private weak var host: NSWindow?
     private var finishing = false
 
+    /// Keeps the controller alive from `show` until `close`. Callers hold it only inside
+    /// the completion closure that calls `finish`; once that returns, nothing else does —
+    /// and the 0.8 s delayed close, and the Cancel button, both capture `self` weakly.
+    /// Without this the sheet outlived its controller and could never be dismissed
+    /// (the first thing a real user hit when opening a folder).
+    private var retainedWhileShown: ProgressWindowController?
+
+    /// Number of progress windows currently on screen (for `--uitest`).
+    private(set) static var shownCount = 0
+
     var onCancel: (() -> Void)?
 
     init(title: String, subtitle: String = "") {
@@ -77,6 +87,8 @@ final class ProgressWindowController: NSObject {
 
     func show(over window: NSWindow?) {
         host = window
+        if retainedWhileShown == nil { Self.shownCount += 1 }
+        retainedWhileShown = self
         guard let window else { panel.makeKeyAndOrderFront(nil); return }
         window.beginSheet(panel)
     }
@@ -101,5 +113,7 @@ final class ProgressWindowController: NSObject {
     func close() {
         if let host, panel.isSheet { host.endSheet(panel) }
         panel.orderOut(nil)
+        if retainedWhileShown != nil { Self.shownCount -= 1 }
+        retainedWhileShown = nil
     }
 }

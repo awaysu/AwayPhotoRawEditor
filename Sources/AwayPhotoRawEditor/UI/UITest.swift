@@ -80,7 +80,12 @@ enum UITest {
             check("照片數 \(n)", n >= 3)
             check("第一張為目前照片", c.strip.currentIndex == 0 && c.current?.key == c.items[0].key)
             check("proxy 已載入", c.proxy != nil)
-            stepEdit(c)
+            // The progress sheet closes itself 0.8 s after "done". It once stayed forever
+            // because nothing retained its controller past the completion closure.
+            waitUntil("快取進度視窗自動關閉", timeout: 5, { ProgressWindowController.shownCount == 0 }) {
+                check("快取進度視窗已關閉", ProgressWindowController.shownCount == 0)
+                stepEdit(c)
+            }
         }
     }
 
@@ -190,6 +195,20 @@ enum UITest {
         c.rotate(clockwise: false)
         check("左轉 → R0", c.adj.rotation == .r0)
         c.rotate(clockwise: true)
+
+        line("")
+        line("[5b] 工具切換（再按一次取消）")
+        check("啟動時無工具", c.toolsPanel.tool == .none && c.toolsPanel.tabs.selectedIndex == -1)
+        c.toolsPanel.tabs.click(index: 0)
+        check("按裁切 → 裁切", c.toolsPanel.tool == .crop && c.viewer.tool == .crop && c.toolsPanel.tabs.selectedIndex == 0)
+        c.toolsPanel.tabs.click(index: 0)
+        check("再按裁切 → 取消", c.toolsPanel.tool == .none && c.viewer.tool == .none && c.toolsPanel.tabs.selectedIndex == -1)
+        c.toolsPanel.tabs.click(index: 1)
+        check("按漸層 → 漸層", c.toolsPanel.tool == .gradient && c.viewer.tool == .gradient)
+        c.toolsPanel.tabs.click(index: 2)
+        check("按修護 → 修護（換頁不取消）", c.toolsPanel.tool == .heal && c.viewer.tool == .heal && c.toolsPanel.tabs.selectedIndex == 2)
+        c.cancelPickerOrTool()
+        check("Esc → 無工具且分頁取消", c.toolsPanel.tool == .none && c.viewer.tool == .none && c.toolsPanel.tabs.selectedIndex == -1)
         stepVirtualCopy(c)
     }
 
@@ -266,7 +285,9 @@ enum UITest {
         check("preview_list 無副本", c.previewList.virtualCopies.isEmpty)
         check("原檔仍在", FileManager.default.fileExists(atPath: src))
         check("仍有目前照片", c.current != nil)
-        after(0.3) { stepClose(c) }
+        // Deleting re-selects a neighbour, which reloads it; an edit made while
+        // `isLoading` is dropped by design, so wait for the load rather than a fixed delay.
+        waitUntil("刪除後重新載入完成", { c.current != nil && !c.isLoading && c.proxy != nil }) { stepClose(c) }
     }
 
     // ---- 9: close ----------------------------------------------------------

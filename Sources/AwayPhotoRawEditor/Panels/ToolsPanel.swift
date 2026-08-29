@@ -19,7 +19,12 @@ final class ToolsPanel: SectionPanel {
     /// The 比例 popup changed; the owner reshapes the crop box.
     var onCropAspectChanged: ((String) -> Void)?
 
-    private(set) var tool: ToolMode = .crop
+    /// Starts as `.none`, like Windows: the crop page shows as a placeholder but is
+    /// locked until a tab is picked. Clicking the active tab returns to `.none`.
+    private(set) var tool: ToolMode = .none
+
+    /// Sits over the page controls while no tool is selected and swallows the mouse.
+    private let ribbonLock = RibbonLockView()
 
     // ---- crop page -------------------------------------------------------
     private let ratioLabel = NSTextField(labelWithString: "")
@@ -60,15 +65,32 @@ final class ToolsPanel: SectionPanel {
         buildHealPage()
 
         tabs.tabs = ["裁切", "漸層", "修護"]
-        tabs.selectedIndex = 0
+        tabs.allowDeselect = true
+        tabs.selectedIndex = -1        // no tool until the user picks one
         tabs.onSelect = { [weak self] i in
             guard let self else { return }
-            self.tool = [.crop, .gradient, .heal][i]
+            self.tool = Self.mode(forTab: i)
             self.updateVisibility()
             self.onToolChanged?(self.tool)
         }
         addSubview(tabs)
+        addSubview(ribbonLock)         // last, so it is on top of the page controls
         updateVisibility()
+    }
+
+    private static func mode(forTab i: Int) -> ToolMode {
+        switch i { case 0: return .crop; case 1: return .gradient; case 2: return .heal; default: return .none }
+    }
+    private static func tab(for mode: ToolMode) -> Int {
+        switch mode { case .crop: return 0; case .gradient: return 1; case .heal: return 2; case .none: return -1 }
+    }
+
+    /// Select a tool programmatically (Esc, the c/g/h keys); fires `onToolChanged`.
+    func selectTool(_ mode: ToolMode) {
+        tabs.selectedIndex = Self.tab(for: mode)
+        tool = mode
+        updateVisibility()
+        onToolChanged?(mode)
     }
 
     // ---- construction ----------------------------------------------------
@@ -322,9 +344,12 @@ final class ToolsPanel: SectionPanel {
         let gradViews: [NSView] = [gradAdd, gradExposure, gradContrast, gradHighlights,
                                    gradShadows, gradSaturation, gradHint, gradReset]
         let healViews: [NSView] = [healClone, healInpaint, healSize, healHint, healReset]
-        for v in cropViews { v.isHidden = (tool != .crop) }
+        // With no tool the crop page stays visible as a placeholder, dimmed and locked.
+        let locked = (tool == .none)
+        for v in cropViews { v.isHidden = !(tool == .crop || locked); v.alphaValue = locked ? 0.45 : 1 }
         for v in gradViews { v.isHidden = (tool != .gradient) }
         for v in healViews { v.isHidden = (tool != .heal) }
+        ribbonLock.isHidden = !locked
         needsLayout = true
     }
 
@@ -335,8 +360,10 @@ final class ToolsPanel: SectionPanel {
         var y = titleHeight + 34
         let resetY = bounds.height - 36
 
+        ribbonLock.frame = NSRect(x: 0, y: y - 6, width: bounds.width, height: bounds.height - y + 6)
+
         switch tool {
-        case .crop:
+        case .crop, .none:              // .none lays out the crop page as the placeholder
             // The popup keeps at least 110 pt; a long label (Seitenverhältnis) is clipped.
             let lw = min(Theme.measure(ratioLabel.stringValue, font: Theme.normal).width + 4,
                          w - 96 - 110 - 8)
@@ -367,9 +394,16 @@ final class ToolsPanel: SectionPanel {
             healSize.frame = NSRect(x: x, y: y, width: w, height: 30); y += 36
             healHint.frame = NSRect(x: x, y: y + 2, width: w, height: 30)
             healReset.frame = NSRect(x: x, y: resetY, width: w, height: 28)
-
-        case .none:
-            break
         }
     }
+}
+
+/// Transparent view that eats mouse events, so the placeholder page cannot be edited
+/// while no tool is selected (the Windows build disables the ribbon host instead).
+private final class RibbonLockView: NSView {
+    override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : self }
+    override func mouseDown(with event: NSEvent) {}
+    override func mouseUp(with event: NSEvent) {}
+    override func rightMouseDown(with event: NSEvent) {}
+    override func scrollWheel(with event: NSEvent) { nextResponder?.scrollWheel(with: event) }
 }

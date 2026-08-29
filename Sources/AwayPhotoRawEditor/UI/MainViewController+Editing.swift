@@ -386,9 +386,7 @@ extension MainViewController {
             return
         }
         if viewer.tool != .none {
-            viewer.tool = .none
-            scheduler.schedule(immediate: true)
-            updateStatus()
+            toolsPanel.selectTool(.none)       // deselects the tab and re-renders
         }
     }
 
@@ -454,9 +452,9 @@ extension MainViewController {
         default:
             // Number keys pick a tool, matching the ribbon order.
             switch event.charactersIgnoringModifiers {
-            case "c": toolsPanel.tabs.selectedIndex = 0; onToolChanged(.crop)
-            case "g": toolsPanel.tabs.selectedIndex = 1; onToolChanged(.gradient)
-            case "h": toolsPanel.tabs.selectedIndex = 2; onToolChanged(.heal)
+            case "c": toolsPanel.selectTool(.crop)
+            case "g": toolsPanel.selectTool(.gradient)
+            case "h": toolsPanel.selectTool(.heal)
             default: super.keyDown(with: event)
             }
         }
