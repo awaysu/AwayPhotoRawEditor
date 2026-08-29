@@ -111,7 +111,7 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 |---|---|
 | `awpr-cli info <img>` | LibRaw 可用性與 `libraw sizes`、EXIF、相機色彩資料 |
 | `awpr-cli selftest <img> [report]` | 引擎端到端：解碼→EXIF→快取→管線（含逐階段）→histogram→XML 往返→風格檔 |
-| `awpr-cli exporttest <img> <outDir> [report]` | 匯出全流程（含同名去重、EXIF 保留） |
+| `awpr-cli exporttest <img> <outDir> [report]` | 匯出全流程（含同名去重、EXIF 保留）。`AWPR_TEST_WATERMARK=文字` 開浮水印（`_SIZE`／`_POS=TopLeft…` 可調），匯出後直接開圖看 |
 | `awpr-cli render <img> <out.png> [--exposure N …]` | 單張套用調整後輸出 PNG |
 | `awpr-cli bench <img>` | 各階段 proxy / 全解析度耗時 |
 | `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖 |
@@ -256,12 +256,16 @@ buffer pool）、`MetalTarget`（`StageTarget` 實作）。**步驟順序沒有�
 
 ### 驗證：`awpr-cli gputest <img> [report]`
 
-與 hashtest 同樣 14 組，CPU 與 GPU 各跑一次。**驗收看 8-bit，不看 float**：
+與 hashtest 同樣 14 組，**再加 3 組修護案例（複製／填補／綜合＋修護×2，`healCases()`）**，CPU 與 GPU 各跑一次。
+修護案例刻意不放進那 14 組——`hashtest` 的清單必須與 C# 版逐字相同；而 GPU 路徑的修護是
+「flush → CPU 就地改 shared buffer → 後續階段接著用」，那個交接才是要測的東西。
+因為兩邊跑的是同一段 CPU 修護程式，修護沒生效也會「一致」，所以修護案例**另外對照無修護的 CPU 結果**，
+改動像素數必須 > 0（實測與圓面積吻合：r=77 px → 18601 px vs π·77² ≈ 18626）。**驗收看 8-bit，不看 float**：
 
 - 8-bit 通道差 **≥2 一律不允許**（那代表算式分岔）
 - 8-bit 差 1 的比例 ≤ 0.07%
 
-實測（M2）：**14/14 通過**，最大 float 差 1.85e-04、差≥2 為 0、差1 ≤ 0.021%。
+實測（M2，ARW 與 DNG）：**17/17 通過**，最大 float 差 1.85e-04、差≥2 為 0、差1 ≤ 0.021%；修護案例 float 差 1.19e-07。
 float 差來自幾何階段 —— CPU 用 `double`、Metal 沒有 double，座標量級 ~2000 就帶約 1e-4 的捨入，
 雙線性取樣把它變成同量級的數值差。**Windows 版同一個階段實測 2.9e-4，是一樣的取捨。**
 `gputest` 會在「實際上沒跑 GPU」時明講並略過，不會假通過。
@@ -358,14 +362,16 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 介面大小百分比（系統處理 Retina）、顯示捲軸開關（左右欄本來就是 overlay scroller）、
 介面風格預覽卡（用下拉）、Mac App Store 沙盒（見 entitlements 註解）。
 
+### 已驗證（2026-08-29 補）
+- **浮水印匯出的實際畫面**：`AWPR_TEST_WATERMARK=文字 awpr-cli exporttest <img> <outDir>`，
+  Sony 9984 px → 2400 px 實看：150 pt 縮成 36 px、邊距 30→7 px，右下／左上都對，Ä 變音符、中文回退字型、gjpq 下伸部都完整。
+- **修護（Heal）在 GPU 路徑**：`gputest` 加了 3 組修護案例，ARW／DNG 都 17/17（見「GPU 加速」）。
+
 ### 尚未驗證
-- **浮水印匯出的實際畫面**：程式路徑跑過、縮放比例修過（見「踩過的坑」），但沒親眼看過輸出圖上的字。
-  `AWPR_TEST_WATERMARK=文字 awpr-cli exporttest <img> <outDir>` 可以直接看（此環境變數尚未加進 CLI，要的話在 `exporttest` 的 settings 加幾行）。
 - **Intel 機器**：universal 二進位含 x86_64 切片，但只在 M2 上跑過。
 - **macOS 14**：deployment target 14.0，實測機器是 26。
 - **與 Windows 版本身的逐像素對照**：`hashtest` 對照的是 C# 的 macOS port（98/98 逐字元相同）；Windows 版與它出自同一份 C#，推論相同但沒直接跑過。
 - **補的約 50 條翻譯**（重做、紀錄、GPU、匯出對話框的新標籤等）沒有母語者看過；Windows 原有的 265 條原樣沿用。
-- **修護（Heal）在 GPU 路徑**是「下載→CPU→原地改」：`gputest` 的 14 組沒有 heal 案例，只有 CPU 端 `selftest` 跑過。
 
 ### 程式本身
 功能對照 Windows 版已逐項對完（見「與 Windows 版功能對照」），沒有已知缺的功能。

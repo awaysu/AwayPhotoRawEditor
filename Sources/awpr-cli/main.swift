@@ -26,6 +26,8 @@ func usage() -> Never {
 
       exporttest <image> <outDir> [report.txt]
           Run the export pipeline end to end.
+          AWPR_TEST_WATERMARK=<text> draws a watermark so the output can be inspected;
+          AWPR_TEST_WATERMARK_SIZE / AWPR_TEST_WATERMARK_POS tune it.
 
       bench <image>
           Time each pipeline stage at proxy and full resolution.
@@ -34,7 +36,7 @@ func usage() -> Never {
           Query the update API exactly as the About window does.
 
       gputest <image> [report.txt]
-          CPU vs GPU on the same 14 cases, with the GpuParity tolerances.
+          CPU vs GPU on the same 14 cases plus 3 heal cases, with the GpuParity tolerances.
 
       hashtest <image> [report.txt]
           Colour-pipeline fingerprint (14 cases) for comparison against the C#
@@ -366,6 +368,25 @@ case "exporttest":
     settings.maxLongEdge = 2400
     settings.format = .jpeg
     settings.jpegQuality = 92
+
+    // AWPR_TEST_WATERMARK=<text> turns the watermark on so the output can be inspected by
+    // eye — the only way to verify that the size/margin scaling actually looks right.
+    // Optional tuning: AWPR_TEST_WATERMARK_SIZE (pt at full res, default 150),
+    // AWPR_TEST_WATERMARK_POS (TopLeft/TopRight/BottomLeft/BottomRight, default BottomRight).
+    let env = ProcessInfo.processInfo.environment
+    if let text = env["AWPR_TEST_WATERMARK"], !text.isEmpty {
+        settings.watermarkEnabled = true
+        settings.watermarkText = text
+        settings.watermarkColor = .white
+        settings.watermarkTransparency = 20
+        settings.watermarkMargin = 30
+        if let v = env["AWPR_TEST_WATERMARK_SIZE"], let d = Double(v) { settings.watermarkFontSize = d }
+        if let v = env["AWPR_TEST_WATERMARK_POS"], let pos = WatermarkPosition(xmlName: v) {
+            settings.watermarkPosition = pos
+        }
+        r.add("浮水印: 「\(text)」 \(Int(settings.watermarkFontSize)) pt " +
+              "\(settings.watermarkPosition.xmlName) 邊距 \(settings.watermarkMargin) px（全解析度基準）")
+    }
 
     let loader = RawLoader()
     loader.useHighPrecisionRawPipeline = true

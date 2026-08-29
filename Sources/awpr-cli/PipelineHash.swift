@@ -18,7 +18,8 @@ import AwayRawCore
 /// * differences of 1e-3 or more, or an 8-bit channel差 >= 2 → the maths has diverged
 enum PipelineHash {
 
-    /// `gputest <img> [report]` — CPU vs GPU on the same 14 cases.
+    /// `gputest <img> [report]` — CPU vs GPU on the same 14 cases, plus three heal
+    /// cases that only exist here (see `healCases`).
     ///
     /// Byte-identical output is *not* expected: the geometry stages compute in `double`
     /// on the CPU and Metal has no double, and libm and the Metal standard library round
@@ -60,7 +61,11 @@ enum PipelineHash {
 
         var failures = 0
         var worstDiff = 0.0
-        for (name, adj) in cases() {
+        // The 14 shared cases, plus the heal cases that exist only here: hashtest's list
+        // must stay identical to the C# one, but the GPU path hands healing to the CPU on
+        // a shared buffer (download → fix in place → continue), and that hand-off is
+        // exactly what needs a check.
+        for (name, adj) in cases() + healCases() {
             var ranOnGpu = false
             func render(gpu: Bool) -> FloatImageBuffer? {
                 let ctx = ProcessContext()
@@ -91,6 +96,27 @@ enum PipelineHash {
                 continue
             }
 
+            // A heal case where the spots changed nothing would agree trivially — both
+            // paths run the same CPU routine — so prove the spots actually touched pixels.
+            var healedPx = -1
+            if !adj.healSpots.isEmpty {
+                var bare = adj
+                bare.healSpots = []
+                let ctx = ProcessContext()
+                ctx.camera = cam
+                ctx.whiteBalanceReference = .decode
+                ctx.forceCpu = true
+                if let plain = try? ImageProcessor.applyToFloat(source, bare, ctx),
+                   plain.width == cpu.width, plain.height == cpu.height {
+                    healedPx = 0
+                    for px in 0..<(cpu.width * cpu.height) {
+                        let i = px * 4
+                        if plain.data[i] != cpu.data[i] || plain.data[i + 1] != cpu.data[i + 1]
+                            || plain.data[i + 2] != cpu.data[i + 2] { healedPx += 1 }
+                    }
+                }
+            }
+
             var maxDiff: Float = 0
             var byteDiff2 = 0            // channels differing by >= 2 after 8-bit quantisation
             var byteDiff1 = 0
@@ -103,11 +129,16 @@ enum PipelineHash {
             worstDiff = max(worstDiff, Double(maxDiff))
             let total = cpu.width * cpu.height * 3
             let pct1 = Double(byteDiff1) / Double(total) * 100
-            let ok = byteDiff2 == 0 && pct1 <= 0.07
+            let healOk = adj.healSpots.isEmpty || healedPx > 0
+            let ok = byteDiff2 == 0 && pct1 <= 0.07 && healOk
             if !ok { failures += 1 }
             line("[\(name)]")
             line("  \(ok ? "✅" : "❌")  最大差 \(String(format: "%.2e", Double(maxDiff)))  " +
                  "8-bit 差1 \(String(format: "%.3f", pct1))%  差≥2 \(byteDiff2)")
+            if !adj.healSpots.isEmpty {
+                line("  修護實際改動 \(healedPx < 0 ? "（無法比對）" : "\(healedPx) px")" +
+                     (healOk ? "" : "  ❌ 修護沒有改到任何像素"))
+            }
             line("  CPU \(Int(cpuMs)) ms  →  GPU \(Int(gpuMs)) ms  " +
                  "(\(String(format: "%.1f", cpuMs / max(gpuMs, 0.001)))×)")
         }
@@ -327,6 +358,40 @@ enum PipelineHash {
         out.append(("旋轉 90 + 裁切", a13))
 
         out.append(("綜合", combined()))
+        return out
+    }
+
+    // ---- gputest-only: heal ----------------------------------------------
+    // Not part of the 14 (hashtest must match the C# list), so they are appended only
+    // by gpuParity. The spots sit where a 2560-long-edge proxy still has content, and the
+    // radii are large enough (0.03 × long edge ≈ 77 px) that a mistake would show.
+
+    static func healCases() -> [(String, ImageAdjustments)] {
+        var out: [(String, ImageAdjustments)] = []
+
+        var clone = HealSpot()
+        clone.targetX = 0.35; clone.targetY = 0.45
+        clone.sourceX = 0.55; clone.sourceY = 0.40
+        clone.radiusNorm = 0.03
+
+        var inpaint = HealSpot()
+        inpaint.targetX = 0.65; inpaint.targetY = 0.6
+        inpaint.radiusNorm = 0.025
+        inpaint.useInpaint = true
+
+        var h1 = ImageAdjustments()
+        h1.healSpots = [clone]
+        out.append(("修護 複製（僅 GPU 對照）", h1))
+
+        var h2 = ImageAdjustments()
+        h2.healSpots = [inpaint]
+        out.append(("修護 填補（僅 GPU 對照）", h2))
+
+        // Heal in the middle of a full pipeline: stages before it must be flushed to the
+        // CPU, stages after it must see the edited pixels.
+        var h3 = combined()
+        h3.healSpots = [clone, inpaint]
+        out.append(("綜合 + 修護 ×2（僅 GPU 對照）", h3))
         return out
     }
 
