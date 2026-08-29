@@ -10,6 +10,10 @@ final class ExportWindowController: NSObject {
     private weak var host: NSWindow?
 
     var onConfirm: ((ExportSettings) -> Void)?
+    /// 儲存設定 without starting the export.
+    var onSave: ((ExportSettings) -> Void)?
+    /// Any watermark field changed — the caller re-renders the preview live.
+    var onWatermarkChanged: ((ExportSettings) -> Void)?
 
     // destination
     private let locGroup = RadioGroup()
@@ -27,8 +31,8 @@ final class ExportWindowController: NSObject {
     private let longEdgeField = NSTextField(frame: .zero)
     private let dpiField = NSTextField(frame: .zero)
     private let qualitySlider = AdjustmentSlider()
-    private let preserveExifCheck = DarkCheckBox(title: "保留 EXIF")
-    private let openAfterCheck = DarkCheckBox(title: "完成後開啟資料夾")
+    private let preserveExifCheck = DarkCheckBox(title: "保存 EXIF（相機 / 鏡頭 / 拍攝資訊）")
+    private let openAfterCheck = DarkCheckBox(title: "轉檔完成後開啟檔案總管顯示")
 
     // watermark
     private let wmEnabled = DarkCheckBox(title: "啟用浮水印")
@@ -41,6 +45,7 @@ final class ExportWindowController: NSObject {
     private let wmMargin = NSTextField(frame: .zero)
 
     private let okButton = FlatButton(title: "儲存設定並開始轉存")
+    private let saveButton = FlatButton(title: "儲存設定")
     private let cancelButton = FlatButton(title: "取消")
 
     private let colorNames: [WatermarkColor] = WatermarkColor.allCases
@@ -52,7 +57,7 @@ final class ExportWindowController: NSObject {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 700),
                         styleMask: [.titled, .closable], backing: .buffered, defer: false)
         super.init()
-        panel.title = L.t("匯出照片")
+        panel.title = L.t("匯出設定")
         panel.appearance = Theme.appearance
         build()
         load()
@@ -90,11 +95,17 @@ final class ExportWindowController: NSObject {
             f.focusRingType = .none
         }
 
-        header(L.f("匯出 {0} 張照片", count))
+        header("匯出照片")
+        y -= 8
+        let sub = NSTextField(labelWithString: L.f("共 {0} 張相片將被轉存", count))
+        sub.font = Theme.small; sub.textColor = Theme.textDim
+        sub.frame = NSRect(x: 20, y: y, width: 520, height: 18)
+        content.addSubview(sub)
+        y += 26
 
         // ---- destination
         header("儲存位置")
-        for (i, t) in ["桌面", "與原始檔案相同資料夾", "自訂位置"].enumerated() {
+        for (i, t) in ["桌面", "同原始照片目錄", "自己選擇"].enumerated() {
             let r = DarkRadioButton(title: t)
             r.frame = NSRect(x: 30, y: y, width: 260, height: 22)
             content.addSubview(r)
@@ -125,19 +136,20 @@ final class ExportWindowController: NSObject {
         y += 34
 
         // ---- naming
-        header("檔名")
+        header("重新命名")
         _ = label("重新命名規則")
-        renameCombo.setItems(["按照原始檔案", "日期時間", "數字開始"].map { L.t($0) })
-        renameCombo.frame = NSRect(x: 140, y: y, width: 200, height: 26)
+        renameCombo.setItems(["按照原始檔案", "日期時間（IMG 年月日時分秒＋序號）", "數字開始（IMG00001）"].map { L.t($0) })
+        renameCombo.frame = NSRect(x: 140, y: y, width: 400, height: 26)
         renameCombo.onChange = { [weak self] i in
             self?.settings.rename = [.original, .dateTime, .sequence][i]
         }
         content.addSubview(renameCombo)
         y += 34
 
-        _ = label("同名檔案")
-        conflictCombo.setItems(["檔名接續 _數字", "直接覆蓋"].map { L.t($0) })
-        conflictCombo.frame = NSRect(x: 140, y: y, width: 200, height: 26)
+        let conflictLabelW = min(Theme.measure(L.t("存檔遇到相同檔名"), font: Theme.normal).width + 8, 230)
+        _ = label("存檔遇到相同檔名", w: conflictLabelW)
+        conflictCombo.setItems(["檔名接續 \"_數字\"，例如 _1, _2...", "直接覆蓋"].map { L.t($0) })
+        conflictCombo.frame = NSRect(x: 20 + conflictLabelW + 6, y: y, width: 540 - 20 - conflictLabelW - 6, height: 26)
         conflictCombo.onChange = { [weak self] i in
             self?.settings.conflict = [.appendNumber, .overwrite][i]
         }
@@ -145,7 +157,7 @@ final class ExportWindowController: NSObject {
         y += 34
 
         // ---- image
-        header("影像")
+        header("格式與尺寸")
         _ = label("格式")
         formatCombo.setItems(["JPEG", "PNG", "TIFF", "BMP"])
         formatCombo.frame = NSRect(x: 140, y: y, width: 120, height: 26)
@@ -155,12 +167,13 @@ final class ExportWindowController: NSObject {
         }
         content.addSubview(formatCombo)
 
-        _ = label("長邊上限", x: 280, w: 70)
+        let edgeW = min(Theme.measure(L.t("寬長最大"), font: Theme.normal).width + 6, 100)
+        _ = label("寬長最大", x: 262, w: edgeW)
         style(longEdgeField)
-        longEdgeField.frame = NSRect(x: 356, y: y, width: 80, height: 24)
+        longEdgeField.frame = NSRect(x: 262 + edgeW + 4, y: y, width: 64, height: 24)
         content.addSubview(longEdgeField)
 
-        _ = label("DPI", x: 448, w: 32)
+        _ = label("解析度", x: 424, w: 56)
         style(dpiField)
         dpiField.frame = NSRect(x: 482, y: y, width: 58, height: 24)
         content.addSubview(dpiField)
@@ -176,16 +189,17 @@ final class ExportWindowController: NSObject {
         content.addSubview(qualitySlider)
         y += 36
 
-        preserveExifCheck.frame = NSRect(x: 20, y: y, width: 200, height: 22)
+        preserveExifCheck.frame = NSRect(x: 20, y: y, width: 520, height: 22)
         preserveExifCheck.onToggle = { [weak self] v in self?.settings.preserveExif = v }
         content.addSubview(preserveExifCheck)
-        openAfterCheck.frame = NSRect(x: 250, y: y, width: 260, height: 22)
+        y += 28
+        openAfterCheck.frame = NSRect(x: 20, y: y, width: 520, height: 22)
         openAfterCheck.onToggle = { [weak self] v in self?.settings.openFinderAfter = v }
         content.addSubview(openAfterCheck)
         y += 34
 
         // ---- watermark
-        header("浮水印")
+        header("標誌")
         wmEnabled.frame = NSRect(x: 20, y: y, width: 180, height: 22)
         wmEnabled.onToggle = { [weak self] v in
             self?.settings.watermarkEnabled = v; self?.updateEnabled()
@@ -196,14 +210,14 @@ final class ExportWindowController: NSObject {
         content.addSubview(wmText)
         y += 32
 
-        _ = label("字型")
+        _ = label("字體")
         style(wmFont)
         wmFont.frame = NSRect(x: 140, y: y, width: 180, height: 24)
         content.addSubview(wmFont)
 
-        _ = label("位置", x: 336, w: 40)
+        _ = label("位置", x: 330, w: 64)
         wmPosition.setItems(["左上", "右上", "左下", "右下"].map { L.t($0) })
-        wmPosition.frame = NSRect(x: 380, y: y - 1, width: 160, height: 26)
+        wmPosition.frame = NSRect(x: 396, y: y - 1, width: 144, height: 26)
         wmPosition.onChange = { [weak self] i in
             guard let self else { return }
             self.settings.watermarkPosition = self.positionNames[i]
@@ -220,13 +234,13 @@ final class ExportWindowController: NSObject {
         }
         content.addSubview(wmColor)
 
-        _ = label("邊距", x: 280, w: 40)
+        _ = label("邊距", x: 280, w: 64)
         style(wmMargin)
-        wmMargin.frame = NSRect(x: 324, y: y, width: 70, height: 24)
+        wmMargin.frame = NSRect(x: 346, y: y, width: 64, height: 24)
         content.addSubview(wmMargin)
         y += 34
 
-        wmSize.label = "字級"
+        wmSize.label = "大小"
         wmSize.minValue = 6; wmSize.maxValue = 300; wmSize.defaultValue = 150
         wmSize.bipolar = false
         wmSize.frame = NSRect(x: 20, y: y, width: 520, height: 30)
@@ -242,6 +256,9 @@ final class ExportWindowController: NSObject {
         content.addSubview(wmAlpha)
         y += 44
 
+        saveButton.frame = NSRect(x: 20, y: y, width: 110, height: 32)
+        saveButton.onClick = { [weak self] in self?.saveOnly() }
+        content.addSubview(saveButton)
         okButton.isPrimary = true
         okButton.frame = NSRect(x: 300, y: y, width: 240, height: 32)
         okButton.onClick = { [weak self] in self?.confirm() }
@@ -249,6 +266,21 @@ final class ExportWindowController: NSObject {
         cancelButton.frame = NSRect(x: 200, y: y, width: 88, height: 32)
         cancelButton.onClick = { [weak self] in self?.close() }
         content.addSubview(cancelButton)
+
+        // Live watermark: every watermark control reports through here.
+        wmText.delegate = self
+        wmFont.delegate = self
+        wmMargin.delegate = self
+        let wmToggle = wmEnabled.onToggle
+        wmEnabled.onToggle = { [weak self] v in wmToggle?(v); self?.watermarkChanged() }
+        let wmSizeChanged = wmSize.onValueChanged
+        wmSize.onValueChanged = { [weak self] v in wmSizeChanged?(v); self?.watermarkChanged() }
+        let wmAlphaChanged = wmAlpha.onValueChanged
+        wmAlpha.onValueChanged = { [weak self] v in wmAlphaChanged?(v); self?.watermarkChanged() }
+        let wmColorChanged = wmColor.onChange
+        wmColor.onChange = { [weak self] i in wmColorChanged?(i); self?.watermarkChanged() }
+        let wmPosChanged = wmPosition.onChange
+        wmPosition.onChange = { [weak self] i in wmPosChanged?(i); self?.watermarkChanged() }
         y += 44
 
         panel.setContentSize(NSSize(width: 560, height: y))
@@ -324,6 +356,18 @@ final class ExportWindowController: NSObject {
         onConfirm?(s)
     }
 
+    private func saveOnly() {
+        collect()
+        let s = settings
+        close()
+        onSave?(s)
+    }
+
+    private func watermarkChanged() {
+        collect()
+        onWatermarkChanged?(settings)
+    }
+
     func show(over window: NSWindow?) {
         host = window
         guard let window else { panel.makeKeyAndOrderFront(nil); return }
@@ -333,5 +377,13 @@ final class ExportWindowController: NSObject {
     func close() {
         if let host, panel.isSheet { host.endSheet(panel) }
         panel.orderOut(nil)
+    }
+}
+
+extension ExportWindowController: NSTextFieldDelegate {
+    func controlTextDidChange(_ obj: Notification) {
+        guard let f = obj.object as? NSTextField, f === wmText || f === wmFont || f === wmMargin
+        else { return }
+        watermarkChanged()
     }
 }

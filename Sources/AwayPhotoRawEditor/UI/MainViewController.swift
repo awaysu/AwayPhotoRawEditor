@@ -44,6 +44,9 @@ final class MainViewController: NSViewController {
     var loadedKey: String?
 
     var undoStack: [UndoStep] = []
+    /// Steps undone with ⌘Z, replayable with ⌘⇧Z. A fresh edit clears it. Redo is
+    /// single-photo only: a batch sync is not replayed, matching the Windows build.
+    var redoStack: [ImageAdjustments] = []
     /// The other selected photos a batch gesture will sync to, captured at gesture start —
     /// clicking a thumbnail collapses the selection *before* the commit runs, so grabbing
     /// them at commit time would find the wrong set.
@@ -75,7 +78,7 @@ final class MainViewController: NSViewController {
     let topBar = FlippedView()
     let menuButton = IconButton(glyph: "☰")
     let logoLabel = NSTextField(labelWithString: "AwayPhotoRawEditor")
-    let openFolderButton = FlatButton(title: "開啟資料夾")
+    let openFolderButton = FlatButton(title: "📁  開啟資料夾")
     let folderLabel = NSTextField(labelWithString: "")
     let exportCurrentButton = FlatButton(title: "匯出目前照片")
     let exportAllButton = FlatButton(title: "匯出全部照片")
@@ -113,7 +116,9 @@ final class MainViewController: NSViewController {
     // ---- lifecycle -------------------------------------------------------
 
     override func loadView() {
-        view = FlippedView(frame: NSRect(x: 0, y: 0, width: 1500, height: 1040))
+        let root = FlippedView(frame: NSRect(x: 0, y: 0, width: 1500, height: 1040))
+        root.onDropFolder = { [weak self] f in self?.openFolder(f) }
+        view = root
         view.wantsLayer = true
         view.layer?.backgroundColor = Theme.windowBg.cgColor
         buildLayout()
@@ -129,7 +134,11 @@ final class MainViewController: NSViewController {
         super.viewDidAppear()
         // The window must exist before any background work posts back to it, so the
         // "reopen the last folder" step lives here rather than in loadView.
-        if !settings.lastFolder.isEmpty,
+        // Not in a diagnostic run: a screenshot must show the folder it was asked for,
+        // and touching a folder under Desktop/Documents can raise a TCC permission prompt
+        // that a headless process can never answer.
+        if !Shot.headless,
+           !settings.lastFolder.isEmpty,
            FileManager.default.fileExists(atPath: settings.lastFolder),
            folder.isEmpty {
             openFolder(settings.lastFolder)
@@ -172,6 +181,9 @@ final class MainViewController: NSViewController {
         // strip
         strip.showNumbers = settings.showThumbnailNumber
         view.addSubview(strip)
+
+        // A folder (or a photo, meaning its folder) dropped anywhere on the window opens it.
+        view.registerForDraggedTypes([.fileURL])
 
         // left column — scrollable so a short window clips nothing
         configureScroll(leftScroll, document: leftColumn)
@@ -243,14 +255,21 @@ final class MainViewController: NSViewController {
         menuButton.frame = NSRect(x: 10, y: (T - 34) / 2, width: 34, height: 34)
         let logoW = Theme.measure(logoLabel.stringValue, font: Theme.logo).width + 8
         logoLabel.frame = NSRect(x: 54, y: (T - 26) / 2, width: logoW, height: 26)
-        openFolderButton.frame = NSRect(x: 54 + logoW + 16, y: (T - 30) / 2, width: 120, height: 30)
-        let folderX = 54 + logoW + 16 + 132
-        let exportW: CGFloat = 130
+        // Button widths follow their captions: German and French run well past the
+        // 130 pt the Chinese layout was drawn for.
+        func fit(_ title: String, min: CGFloat) -> CGFloat {
+            max(min, Theme.measure(L.t(title), font: Theme.normal).width + 28)
+        }
+        let openW = fit(openFolderButton.title, min: 120)
+        openFolderButton.frame = NSRect(x: 54 + logoW + 16, y: (T - 30) / 2, width: openW, height: 30)
+        let folderX = 54 + logoW + 16 + openW + 12
+        let exportAllW = fit(exportAllButton.title, min: 130)
+        let exportCurW = fit(exportCurrentButton.title, min: 130)
         folderLabel.frame = NSRect(x: folderX, y: (T - 20) / 2,
-                                   width: max(40, W - folderX - exportW * 2 - 40), height: 20)
-        exportAllButton.frame = NSRect(x: W - exportW - 12, y: (T - 30) / 2, width: exportW, height: 30)
-        exportCurrentButton.frame = NSRect(x: W - exportW * 2 - 20, y: (T - 30) / 2,
-                                           width: exportW, height: 30)
+                                   width: max(40, W - folderX - exportAllW - exportCurW - 40), height: 20)
+        exportAllButton.frame = NSRect(x: W - exportAllW - 12, y: (T - 30) / 2, width: exportAllW, height: 30)
+        exportCurrentButton.frame = NSRect(x: W - exportAllW - exportCurW - 20, y: (T - 30) / 2,
+                                           width: exportCurW, height: 30)
 
         strip.frame = NSRect(x: 0, y: T, width: W, height: S)
 
@@ -282,10 +301,12 @@ final class MainViewController: NSViewController {
         viewerBar.frame = NSRect(x: 0, y: ch - Self.viewerBarH, width: cw, height: Self.viewerBarH)
         var bx: CGFloat = 8
         for b in [fitButton, zoom100Button, zoom200Button] {
-            b.frame = NSRect(x: bx, y: 4, width: 60, height: Self.viewerBarH - 8)
-            bx += 64
+            let bw = max(60, Theme.measure(L.t(b.title), font: Theme.normal).width + 20)
+            b.frame = NSRect(x: bx, y: 4, width: bw, height: Self.viewerBarH - 8)
+            bx += bw + 4
         }
-        compareButton.frame = NSRect(x: bx + 8, y: 4, width: 92, height: Self.viewerBarH - 8)
+        let cw2 = max(92, Theme.measure(L.t(compareButton.title), font: Theme.normal).width + 20)
+        compareButton.frame = NSRect(x: bx + 8, y: 4, width: cw2, height: Self.viewerBarH - 8)
         statusLabel.frame = NSRect(x: cw - 280, y: 8, width: 272, height: 20)
 
         // right column
@@ -346,6 +367,7 @@ final class MainViewController: NSViewController {
             if self.viewer.setHealBrushSize(size) { self.adj = self.viewer.adjustments ?? self.adj }
         }
         toolsPanel.onRotate = { [weak self] cw in self?.rotate(clockwise: cw) }
+        toolsPanel.onCropAspectChanged = { [weak self] aspect in self?.applyCropAspect(aspect) }
     }
 
     private func wireViewer() {
@@ -377,6 +399,11 @@ final class MainViewController: NSViewController {
         strip.onContextMenu = { [weak self] index, event in
             self?.showThumbnailMenu(index: index, event: event)
         }
+        // Double-click forces a reload of the item even when it is already current.
+        strip.onActivate = { [weak self] index in
+            guard let self, index >= 0, index < self.items.count else { return }
+            self.loadPhoto(self.items[index], force: true)
+        }
     }
 
     private func setupScheduler() {
@@ -392,9 +419,11 @@ final class MainViewController: NSViewController {
             ctx.whiteBalanceReference = self.proxySource.whiteBalanceReference
             ctx.watermark = self.exportSettings.buildWatermark()
             // The watermark is authored at full resolution, so scale it to the proxy.
-            let fullLong = max(self.exif?.width ?? proxy.width, self.exif?.height ?? proxy.height)
-            ctx.watermarkScale = fullLong > 0
-                ? Double(max(proxy.width, proxy.height)) / Double(fullLong) : 1.0
+            // EXIF width can be 0 (a non-RAW without a size tag), which must not be
+            // mistaken for "full size is zero".
+            let exifW = self.exif?.width ?? 0, exifH = self.exif?.height ?? 0
+            let fullLong = (exifW > 0 && exifH > 0) ? max(exifW, exifH) : max(proxy.width, proxy.height)
+            ctx.watermarkScale = Double(max(proxy.width, proxy.height)) / Double(fullLong)
             switch self.viewer.tool {
             case .gradient, .heal:
                 // Their handles live in the pre-geometry frame, so the preview must show
@@ -455,7 +484,35 @@ final class MainViewController: NSViewController {
 }
 
 /// A top-left-origin container, so every frame in this file reads the same way the
-/// Windows layout code does.
+/// Windows layout code does. The main window's root also accepts a dropped folder.
 final class FlippedView: NSView {
     override var isFlipped: Bool { true }
+
+    /// Set by the main view controller; nil on the plain containers.
+    var onDropFolder: ((String) -> Void)?
+
+    override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        onDropFolder != nil && droppedFolder(sender) != nil ? .copy : []
+    }
+
+    override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
+        guard let f = droppedFolder(sender) else { return false }
+        onDropFolder?(f)
+        return true
+    }
+
+    /// The folder a drop refers to: a directory as is (RAW_TEMP → its parent), or a
+    /// supported image's containing folder.
+    private func droppedFolder(_ sender: NSDraggingInfo) -> String? {
+        guard let urls = sender.draggingPasteboard.readObjects(forClasses: [NSURL.self],
+                                                               options: nil) as? [URL],
+              let u = urls.first else { return nil }
+        let p = u.path
+        var isDir: ObjCBool = false
+        guard FileManager.default.fileExists(atPath: p, isDirectory: &isDir) else { return nil }
+        if isDir.boolValue {
+            return AppPaths.isRawTemp(p) ? (p as NSString).deletingLastPathComponent : p
+        }
+        return AppPaths.isSupported(p) ? (p as NSString).deletingLastPathComponent : nil
+    }
 }

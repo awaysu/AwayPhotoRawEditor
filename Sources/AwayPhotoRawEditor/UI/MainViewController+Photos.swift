@@ -11,7 +11,8 @@ extension MainViewController {
         panel.canChooseDirectories = true
         panel.canChooseFiles = false
         panel.allowsMultipleSelection = false
-        panel.prompt = L.t("開啟資料夾")
+        panel.message = L.t("選擇相片資料夾")
+        panel.prompt = L.t("確定")
         if !folder.isEmpty { panel.directoryURL = URL(fileURLWithPath: folder) }
         panel.begin { [weak self] resp in
             guard resp == .OK, let url = panel.url else { return }
@@ -26,6 +27,7 @@ extension MainViewController {
         // A diagnostic screenshot run must not rewrite the user's last-opened folder.
         if !Shot.headless {
             settings.lastFolder = path
+            settings.pushRecentFolder(path)
             settings.save()
         }
 
@@ -287,6 +289,7 @@ extension MainViewController {
 
     func rebindAll() {
         basicPanel.bind(adj)
+        colorPanel.setTemperatureMode(isRaw: current == nil || AppPaths.isRaw(current!.sourcePath))
         colorPanel.bind(adj)
         detailPanel.bind(adj)
         toolsPanel.bind(adj)
@@ -361,22 +364,85 @@ extension MainViewController {
 
     func refreshFolder() {
         guard !folder.isEmpty else { return }
-        let key = current?.key
-        rebuildItems()
-        if let key, let i = strip.index(forKey: key) {
-            strip.select(index: i)
-        } else if !items.isEmpty {
-            strip.select(index: 0)
-        } else {
-            clearEditor()
-        }
+        saveCurrentIfDirty()
+        refreshStripKeepSelection()
+        statusLabel.stringValue = L.t("已重新整理資料夾")
     }
 
     /// Rebuild the strip while holding the selection — used after hide/delete, which
     /// clears every thumbnail image.
+    ///
+    /// `rebuildItems` creates new PhotoItem objects, so `current` is re-pointed at the
+    /// one with the same key; otherwise badge updates would land on an orphan. When the
+    /// current photo is gone (hidden, deleted) the nearest remaining one is selected, and
+    /// an empty strip clears the editor.
     func refreshStripKeepSelection() {
         let key = current?.key
+        let oldIndex = strip.currentIndex
         rebuildItems()
-        if let key, let i = strip.index(forKey: key) { strip.select(index: i) }
+        if items.isEmpty { clearEditor(); setEditorEnabled(false); updateStatus(); return }
+        if let key, let i = strip.index(forKey: key) {
+            current = items[i]
+            strip.select(index: i)
+        } else {
+            // The photo that was current is no longer listed.
+            loadedKey = nil
+            current = nil
+            strip.select(index: min(max(oldIndex, 0), items.count - 1))
+        }
+    }
+
+    /// 隱藏且不輸出 for every selected photo (the context menu and ⌫ share this).
+    func hideSelected() {
+        guard !folder.isEmpty else { return }
+        let targets = strip.selectedItems.filter { !$0.isHidden }
+        guard !targets.isEmpty else { return }
+        // The current photo's edits must survive it leaving the strip.
+        saveCurrentIfDirty()
+        for t in targets where !previewList.hidden.contains(t.key) {
+            previewList.hidden.append(t.key)
+            t.isHidden = true
+        }
+        savePreviewList()
+        if settings.showHiddenPhotos { strip.refreshBadges() } else { refreshStripKeepSelection() }
+        statusLabel.stringValue = L.t("已隱藏（不輸出）")
+    }
+
+    func unhideSelected() {
+        let targets = strip.selectedItems.filter { $0.isHidden }
+        guard !targets.isEmpty else { return }
+        for t in targets {
+            previewList.hidden.removeAll { $0 == t.key }
+            t.isHidden = false
+        }
+        savePreviewList()
+        strip.refreshBadges()
+        statusLabel.stringValue = L.t("已取消隱藏")
+    }
+
+    /// Switch 不顯示隱藏 / 顯示全部, rebuilding the strip and keeping the selection where
+    /// it can be kept.
+    func setShowHiddenMode(_ showAll: Bool) {
+        guard settings.showHiddenPhotos != showAll else { return }
+        settings.showHiddenPhotos = showAll
+        if !Shot.headless { settings.save() }
+        guard !folder.isEmpty else { return }
+        saveCurrentIfDirty()
+        refreshStripKeepSelection()
+    }
+
+    /// Un-hide everything hidden via 隱藏且不輸出.
+    func restoreHiddenPhotos() {
+        guard !folder.isEmpty else { return }
+        guard !previewList.hidden.isEmpty else {
+            statusLabel.stringValue = L.t("沒有已隱藏的照片")
+            return
+        }
+        let n = previewList.hidden.count
+        saveCurrentIfDirty()
+        previewList.hidden.removeAll()
+        savePreviewList()
+        refreshStripKeepSelection()
+        statusLabel.stringValue = L.f("已還原 {0} 張隱藏的照片", n)
     }
 }

@@ -279,6 +279,19 @@ case "selftest":
     }
 
     r.add("")
+    r.add("[8] 語言")
+    // Forces the table to build and every language's lookup to run — the duplicate-key
+    // trap only ever fired for non-Chinese languages.
+    let saved = L.currentLanguage
+    for lang in AppLanguage.allCases {
+        L.setLanguage(lang)
+        let sample = L.t("設定")
+        check(L.languageDisplayName(lang), !sample.isEmpty, sample)
+    }
+    L.setLanguage(saved)
+    r.add("  翻譯表 \(L.entries.count) 筆")
+
+    r.add("")
     r.add(failures == 0 ? "全部通過 ✅" : "有 \(failures) 項失敗 ❌")
     r.write(to: reportPath)
     exit(failures == 0 ? 0 : 1)

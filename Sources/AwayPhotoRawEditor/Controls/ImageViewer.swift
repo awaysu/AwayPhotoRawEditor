@@ -332,9 +332,9 @@ final class ImageViewer: NSView {
     private var cropAspect: Double? {
         guard let adj = adjustments, let image else { return nil }
         let s = adj.cropAspectRatio
-        if s == "Original" {
-            return Double(image.width) / Double(image.height)
-        }
+        // The box is in normalised coordinates, so "same shape as the image" is a
+        // normalised ratio of exactly 1 — not the pixel ratio.
+        if s == "Original" { return 1.0 }
         let parts = s.split(separator: ":")
         guard parts.count == 2, let w = Double(parts[0]), let h = Double(parts[1]),
               w > 0, h > 0, image.height > 0 else { return nil }

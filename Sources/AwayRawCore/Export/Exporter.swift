@@ -14,8 +14,8 @@ public enum ExportError: LocalizedError {
 
     public var errorDescription: String? {
         switch self {
-        case .decodeFailed(let f): return L.f("無法解碼影像：{0}", f)
-        case .writeFailed(let f): return L.f("無法寫入檔案：{0}", f)
+        case .decodeFailed(let f): return L.t("無法解碼影像") + "：" + f
+        case .writeFailed(let f): return L.t("無法開啟：") + f
         case .itemFailed(let f, let m): return L.f("匯出「{0}」失敗：{1}", f, m)
         }
     }
@@ -99,11 +99,11 @@ public enum Exporter {
     static func exportOne(_ item: PhotoItem, _ s: ExportSettings, _ loader: RawLoader,
                           _ baseName: String) throws -> String {
         // 1) full-resolution decode — stays float the whole way
-        guard let full = decodeFull(item, loader) else {
+        guard let (full, source) = decodeFull(item, loader) else {
             throw ExportError.decodeFailed(item.fileName)
         }
         // Whatever the decode actually used decides what white balance is baked in.
-        let wbReference = loader.lastDecodeSource.whiteBalanceReference
+        let wbReference = source.whiteBalanceReference
 
         // 2) adjustments + cached EXIF (which carries the camera colour data for the WB matrix)
         var (adjOpt, exif, _) = AdjustmentXmlStore.loadAll(imagePath: item.sourcePath,
@@ -128,10 +128,15 @@ public enum Exporter {
         // 4) resize so the longest edge equals the target, preserving aspect (never upscales)
         let resized = resizeToLongEdge(processed, s.maxLongEdge)
 
-        // 5) watermark on top of the final pixels
+        // 5) watermark. It is authored at full resolution (the Windows build draws it
+        //    before the resize), so when drawn onto the resized frame its size and margin
+        //    scale down by the same factor — otherwise a 2400 px export of a 66 MP photo
+        //    would carry a watermark four times too large.
         guard var img = ImageIOCodec.toCGImage(resized) else {
             throw ExportError.writeFailed(item.fileName)
         }
+        ctx.watermarkScale = Double(max(resized.width, resized.height))
+                           / Double(max(processed.width, processed.height))
         img = Watermark.apply(img, ctx)
 
         // 6) filename + same-name handling
@@ -150,10 +155,11 @@ public enum Exporter {
         return outPath
     }
 
-    static func decodeFull(_ item: PhotoItem, _ loader: RawLoader) -> FloatImageBuffer? {
+    static func decodeFull(_ item: PhotoItem, _ loader: RawLoader)
+        -> (buffer: FloatImageBuffer, source: DecodeSource)? {
         if loader.useHighPrecisionRawPipeline,
-           let f = loader.decodeFullFloat(path: item.sourcePath) { return f }
-        return loader.decodeFull(path: item.sourcePath)
+           let r = loader.decodeFullFloatWithSource(path: item.sourcePath) { return r }
+        return loader.decodeFullWithSource(path: item.sourcePath)
     }
 
     /// Scale so the longest edge equals `maxLongEdge`, preserving aspect. Never upscales.

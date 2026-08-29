@@ -40,7 +40,9 @@ final class InfoPanel: SectionPanel {
         }
         var y = titleHeight + 4
         let labelX: CGFloat = 12
-        let valueX: CGFloat = 78
+        // The value column starts after the widest translated label, not at a fixed 78.
+        let widest = rows.map { Theme.measure(L.t($0.0), font: Theme.small).width }.max() ?? 60
+        let valueX: CGFloat = labelX + widest + 10
         let rowH: CGFloat = 20
         for (k, v) in rows {
             Theme.drawLeft(L.t(k), x: labelX, midY: y + rowH / 2,

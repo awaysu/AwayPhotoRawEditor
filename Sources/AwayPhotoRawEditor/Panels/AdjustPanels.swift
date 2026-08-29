@@ -113,6 +113,34 @@ final class ColorPanel: AdjustPanelBase {
         didSet { pickerButton.isActive = pickerActive }
     }
 
+    /// Slider ±100 ↔ 5200 ± 3000 K for photos that have no camera Kelvin scale.
+    static let nonRawScale = 30.0
+    static func clampToNonRawRange(_ kelvin: Double) -> Double {
+        min(max(kelvin, 5200 - 100 * nonRawScale), 5200 + 100 * nonRawScale)
+    }
+
+    /// RAW photos edit in Kelvin; everything else on a 0-centred ±100 scale (there is no
+    /// as-shot Kelvin to anchor to). Call before `bind` so the value loads in the right
+    /// scale — the Windows build does the same in its RebindAll.
+    private var tempIsRaw = true
+    func setTemperatureMode(isRaw: Bool) {
+        tempIsRaw = isRaw
+        let t = sliders[0]
+        if isRaw {
+            t.setRange(min: ColorScience.minKelvin, max: ColorScience.maxKelvin, default: 5200)
+            t.bipolar = false
+            t.wheelStep = 50
+        } else {
+            t.setRange(min: -100, max: 100, default: 0)
+            t.bipolar = true
+            t.wheelStep = 1
+        }
+        t.needsDisplay = true
+    }
+
+    private func tempToSlider(_ k: Double) -> Double { tempIsRaw ? k : (k - 5200) / Self.nonRawScale }
+    private func sliderToTemp(_ v: Double) -> Double { tempIsRaw ? v : 5200 + v * Self.nonRawScale }
+
     convenience init() {
         self.init(title: "色彩")
 
@@ -142,7 +170,8 @@ final class ColorPanel: AdjustPanelBase {
 
         addSlider("色溫", min: ColorScience.minKelvin, max: ColorScience.maxKelvin,
                   default: 5200, bipolar: false, gradient: .temperature) { [weak self] v in
-            self?.adjustments?.temperature = v
+            guard let self else { return }
+            self.adjustments?.temperature = self.sliderToTemp(v)
         }
         addSlider("色調", gradient: .tint) { [weak self] v in self?.adjustments?.tint = v }
         addSlider("鮮豔度", gradient: .saturation) { [weak self] v in self?.adjustments?.vibrance = v }
@@ -152,7 +181,7 @@ final class ColorPanel: AdjustPanelBase {
     func bind(_ a: ImageAdjustments) {
         adjustments = a
         withoutNotifying {
-            sliders[0].setValueSilent(a.temperature)
+            sliders[0].setValueSilent(tempToSlider(a.temperature))
             sliders[1].setValueSilent(a.tint)
             sliders[2].setValueSilent(a.vibrance)
             sliders[3].setValueSilent(a.saturation)
@@ -173,9 +202,14 @@ final class ColorPanel: AdjustPanelBase {
         let x: CGFloat = 12
         let w = bounds.width - 24
         let rowY = titleHeight + 2
-        pickerLabel.frame = NSRect(x: x, y: rowY + 3, width: 110, height: 18)
-        pickerButton.frame = NSRect(x: x + 116, y: rowY, width: 26, height: 24)
-        asShotButton.frame = NSRect(x: bounds.width - 12 - 96, y: rowY, width: 96, height: 24)
+        // Measured, not fixed: the label changes with language and font size, and a fixed
+        // 110 clips the last character of 白平衡選擇器 in large fonts or long translations.
+        let asShotW = max(96, Theme.measure(L.t(asShotButton.title), font: Theme.normal).width + 20)
+        let labelW = min(Theme.measure(pickerLabel.stringValue, font: Theme.normal).width + 4,
+                         bounds.width - 24 - 26 - asShotW - 12)
+        pickerLabel.frame = NSRect(x: x, y: rowY + 3, width: labelW, height: 18)
+        pickerButton.frame = NSRect(x: x + labelW + 6, y: rowY, width: 26, height: 24)
+        asShotButton.frame = NSRect(x: bounds.width - 12 - asShotW, y: rowY, width: asShotW, height: 24)
         presetNote.frame = NSRect(x: x, y: rowY + 4, width: w, height: 16)
 
         var y = rowY + 32

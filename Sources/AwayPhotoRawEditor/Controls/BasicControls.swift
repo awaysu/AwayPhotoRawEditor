@@ -62,7 +62,11 @@ final class FlatButton: NSView {
 
         let color: NSColor = !isEnabledButton ? Theme.textFaint
                            : (isPrimary ? .white : Theme.text)
-        Theme.drawCentered(L.t(title), in: bounds, font: font ?? Theme.normal, color: color)
+        // German and French captions can outgrow a button sized for Chinese; clip with an
+        // ellipsis rather than drawing across the neighbouring control.
+        let f = font ?? Theme.normal
+        Theme.drawCentered(Theme.truncate(L.t(title), font: f, maxWidth: bounds.width - 10),
+                           in: bounds, font: f, color: color)
     }
 }
 

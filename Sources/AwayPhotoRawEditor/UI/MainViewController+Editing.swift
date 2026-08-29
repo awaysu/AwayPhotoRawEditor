@@ -27,6 +27,7 @@ extension MainViewController {
     /// captures the batch sync targets — clicking a thumbnail collapses the selection to
     /// one item *before* the commit runs, so capturing at commit time finds the wrong set.
     func pushUndo() {
+        redoStack.removeAll()          // a fresh edit invalidates the redo branch
         var step = UndoStep(current: adj)
 
         let selected = strip.selectedItems.filter { $0.key != current?.key }
@@ -46,11 +47,12 @@ extension MainViewController {
             }
         }
         undoStack.append(step)
-        if undoStack.count > 50 { undoStack.removeFirst() }
+        if undoStack.count > 80 { undoStack.removeFirst() }
     }
 
     func doUndo() {
         guard let step = undoStack.popLast() else { return }
+        redoStack.append(adj)          // so ⌘⇧Z can come back
         adj = step.current
         dirty = true
         rebindAll()
@@ -70,6 +72,17 @@ extension MainViewController {
             syncPending = false
             strip.refreshBadges()
         }
+        onAdjustmentChanged(immediate: true)
+    }
+
+    /// ⌘⇧Z: replay the last edit undone with ⌘Z. Pushed straight onto the undo stack —
+    /// no new batch session is opened for it.
+    func doRedo() {
+        guard let next = redoStack.popLast() else { return }
+        undoStack.append(UndoStep(current: adj))
+        adj = next
+        dirty = true
+        rebindAll()
         onAdjustmentChanged(immediate: true)
     }
 
@@ -193,21 +206,9 @@ extension MainViewController {
         guard let patch = ImageStats.patchMean(p, x: x, y: y, radius: 3) else { return }
 
         pushUndo()
-        if !adj.isLegacyPipeline, let cam = exif?.camera, cam.isValid,
-           let mul = ColorScience.neutralizingCamMul(cam, r: patch.r, g: patch.g, b: patch.b,
-                                                     reference: .decode),
-           let kt = ColorScience.camMulToKelvinTint(cam, mul: mul) {
-            // With camera colour data this is an exact solve.
-            adj.temperature = min(max(kt.kelvin, ColorScience.minKelvin), ColorScience.maxKelvin)
-            adj.tint = min(max(kt.tint, -100), 100)
-        } else {
-            // Otherwise search the black-body approximation — in linear for v1, on the
-            // encoded values for legacy, matching what each actually multiplies.
-            let (k, t) = searchNeutral(r: patch.r, g: patch.g, b: patch.b,
-                                       linear: !adj.isLegacyPipeline)
-            adj.temperature = k
-            adj.tint = t
-        }
+        let (k, t) = estimateWhiteBalance(r: patch.r, g: patch.g, b: patch.b)
+        adj.temperature = clampTempForCurrent(k)
+        adj.tint = t
 
         // One click is all the picker is for.
         pickerActive = false
@@ -217,35 +218,73 @@ extension MainViewController {
         onAdjustmentChanged(immediate: true)
     }
 
-    /// Brute-force the Kelvin/tint pair whose multipliers make the sampled patch neutral.
-    private func searchNeutral(r: Double, g: Double, b: Double, linear: Bool)
-        -> (kelvin: Double, tint: Double) {
-        // The sample arrives linear; the legacy path multiplies encoded values, so
-        // re-encode before comparing there.
-        let (sr, sg, sb) = linear
-            ? (r, g, b)
-            : (Double(ColorScience.encode(Float(r))),
-               Double(ColorScience.encode(Float(g))),
-               Double(ColorScience.encode(Float(b))))
-
-        var bestK = 5200.0, bestT = 0.0, bestErr = Double.greatestFiniteMagnitude
-        var k = ColorScience.minKelvin
-        while k <= ColorScience.maxKelvin {
-            var t = -100.0
-            while t <= 100.0 {
-                let m = ImageProcessor.whiteBalanceMultipliers(temperature: k, tint: t)
-                let rr = sr * m.r, gg = sg * m.g, bb = sb * m.b
-                // Neutral means the three channels agree.
-                let mean = (rr + gg + bb) / 3
-                guard mean > 1e-9 else { t += 5; continue }
-                let err = ((rr - mean) * (rr - mean) + (gg - mean) * (gg - mean)
-                           + (bb - mean) * (bb - mean)) / (mean * mean)
-                if err < bestErr { bestErr = err; bestK = k; bestT = t }
-                t += 5
-            }
-            k += 50
+    /// Temperature/tint that neutralises a sampled linear colour — the Windows build's
+    /// `EstimateWhiteBalance`, step for step, so the eyedropper lands on the same numbers.
+    /// v1 with camera data → exact camera-space solve (against the reference the proxy is
+    /// actually balanced to); otherwise a black-body search on the red/blue balance, with
+    /// tint from what is left in green.
+    private func estimateWhiteBalance(r: Double, g: Double, b: Double) -> (kelvin: Double, tint: Double) {
+        if r <= 1e-4 && g <= 1e-4 && b <= 1e-4 { return (5200, 0) }
+        let legacy = adj.isLegacyPipeline
+        if !legacy, let cam = exif?.camera, cam.isValid,
+           let mul = ColorScience.neutralizingCamMul(cam, r: r, g: g, b: b,
+                                                     reference: proxySource.whiteBalanceReference),
+           let kt = ColorScience.camMulToKelvinTint(cam, mul: mul) {
+            return (min(max(kt.kelvin, ColorScience.minKelvin), ColorScience.maxKelvin), kt.tint)
         }
-        return (bestK, bestT)
+        // The legacy path multiplies encoded values, so compare there; v1 stays linear.
+        var rr = r, gg = g, bb = b
+        if legacy {
+            rr = Double(ColorScience.encode(Float(r)))
+            gg = Double(ColorScience.encode(Float(g)))
+            bb = Double(ColorScience.encode(Float(b)))
+        }
+        var bestT = 5200.0, bestErr = Double.greatestFiniteMagnitude
+        var t = 2000.0
+        while t <= 12000 {
+            let m = ImageProcessor.whiteBalanceMultipliers(temperature: t, tint: 0)
+            let err = abs(rr * m.r - bb * m.b)
+            if err < bestErr { bestErr = err; bestT = t }
+            t += 100
+        }
+        let m2 = ImageProcessor.whiteBalanceMultipliers(temperature: bestT, tint: 0)
+        let gBal = gg * m2.g, avg = (rr * m2.r + bb * m2.b) / 2
+        let tint = min(max((gBal - avg) * 300, -100), 100)   // + green → negative tint
+        return (bestT, -tint)
+    }
+
+    /// Non-RAW photos use the ±100 (≈5200 ± 3000 K) temperature scale, so any value that
+    /// reaches the adjustments must stay inside it or the slider stops matching the maths.
+    func clampTempForCurrent(_ kelvin: Double) -> Double {
+        guard let c = current, !AppPaths.isRaw(c.sourcePath) else { return kelvin }
+        return ColorPanel.clampToNonRawRange(kelvin)
+    }
+
+    /// The 比例 popup changed: reshape the crop box to the largest centred rectangle of
+    /// that ratio (in image pixels) that fits the frame. "Original" restores the full frame;
+    /// a custom ratio that does not parse leaves the box alone.
+    func applyCropAspect(_ aspect: String) {
+        guard current != nil, let p = proxy else { return }
+        if aspect == "Original" {
+            adj.cropX = 0; adj.cropY = 0; adj.cropWidth = 1; adj.cropHeight = 1
+            viewer.adjustments = adj
+            onAdjustmentChanged(immediate: true)
+            return
+        }
+        let parts = aspect.split(separator: ":")
+        guard parts.count == 2, let a = Double(parts[0]), let b = Double(parts[1]), b > 0
+        else { onAdjustmentChanged(); return }
+        let ratio = a / b
+        // The proxy the viewer shows is already rotated, so measure the rotated frame.
+        let swap = (adj.rotation == .r90 || adj.rotation == .r270)
+        let pw = Double(swap ? p.height : p.width), ph = Double(swap ? p.width : p.height)
+        let imgRatio = pw / ph
+        var w = 1.0, h = 1.0
+        if ratio > imgRatio { h = imgRatio / ratio } else { w = ratio / imgRatio }
+        adj.cropWidth = w; adj.cropHeight = h
+        adj.cropX = (1 - w) / 2; adj.cropY = (1 - h) / 2
+        viewer.adjustments = adj
+        onAdjustmentChanged(immediate: true)
     }
 
     /// 拍攝時設定 — return temperature/tint to what the camera recorded.
@@ -253,12 +292,14 @@ extension MainViewController {
         guard current != nil else { return }
         pushUndo()
         if let cam = exif?.camera, cam.isValid, let shot = ColorScience.asShot(cam) {
-            adj.temperature = min(max(shot.kelvin, ColorScience.minKelvin), ColorScience.maxKelvin)
+            adj.temperature = clampTempForCurrent(
+                min(max(shot.kelvin, ColorScience.minKelvin), ColorScience.maxKelvin))
             adj.tint = shot.tint
         } else if let e = exif, e.hasAsShotWhiteBalance {
-            adj.temperature = e.colorTemperature
+            adj.temperature = clampTempForCurrent(e.colorTemperature)
             adj.tint = 0
         } else {
+            statusLabel.stringValue = L.t("此相片沒有可用的拍攝白平衡資訊")
             adj.temperature = 5200
             adj.tint = 0
         }
@@ -363,8 +404,13 @@ extension MainViewController {
             parts.append(item.displayName)
             parts.append("\(Int(viewer.zoomPercent.rounded()))%")
         }
-        if loader.libRawAvailable && AppPaths.isRaw(current?.sourcePath ?? "") {
-            parts.append("LibRaw \(LibRawBridge.version)")
+        // The LibRaw wording is the Windows build's, so it translates.
+        if current != nil {
+            if !loader.libRawAvailable { parts.append(L.t("未使用LibRaw讀取")) }
+            else if proxySource == .libRaw && AppPaths.isRaw(current?.sourcePath ?? "") {
+                parts.append(L.t("LibRaw 讀取中"))
+            } else if settings.useLibRaw { parts.append(L.t("LibRaw 已啟用")) }
+            else { parts.append(L.t("未使用LibRaw讀取")) }
         }
         if adj.isLegacyPipeline && current != nil { parts.append(L.t("舊版處理")) }
         if lastRenderUsedGpu && current != nil { parts.append(L.t("GPU 算圖")) }
@@ -387,6 +433,7 @@ extension MainViewController {
         // A field being edited owns the keyboard.
         if view.window?.firstResponder is NSText { super.keyDown(with: event); return }
 
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch event.keyCode {
         case 53:                                    // esc
             cancelPickerOrTool()
@@ -394,7 +441,13 @@ extension MainViewController {
             stepSelection(-1)
         case 124:                                   // right
             stepSelection(1)
-        case 42 where event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty:
+        case 51, 117:                               // delete / forward delete
+            // ⇧⌫ deletes the file; ⌫ alone is 隱藏且不輸出 — the same split as Windows.
+            if mods.contains(.shift) { if let c = current { deletePhotoFile(c) } }
+            else { hideSelected() }
+        case 96:                                    // F5
+            refreshFolder()
+        case 42 where mods.isEmpty:
             toggleShowOriginal()                    // backslash
         default:
             // Number keys pick a tool, matching the ribbon order.

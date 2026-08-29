@@ -133,6 +133,19 @@ public final class AppSettings: @unchecked Sendable {
     /// Last used folder — restored at startup.
     public var lastFolder = ""
 
+    /// Folders opened before, most recent first. Same element as the Windows build
+    /// (`<RecentFolders><string>…</string></RecentFolders>`), so the list survives a copy.
+    public var recentFolders: [String] = []
+
+    /// Add a folder to the history: de-duplicated, most recent first, capped at 20.
+    public func pushRecentFolder(_ folder: String) {
+        let f = folder.trimmingCharacters(in: .whitespaces)
+        guard !f.isEmpty else { return }
+        recentFolders.removeAll { $0.caseInsensitiveCompare(f) == .orderedSame }
+        recentFolders.insert(f, at: 0)
+        if recentFolders.count > 20 { recentFolders.removeLast(recentFolders.count - 20) }
+    }
+
     /// True when settings.xml did not exist at startup — drives the first-run language pick.
     public private(set) var isFirstRun = false
 
@@ -158,6 +171,9 @@ public final class AppSettings: @unchecked Sendable {
         if let v = root.string("UiLanguage"), let l = AppLanguage(rawValue: v) { s.uiLanguage = l }
         s.uiScalePercent = root.int("UiScalePercent", default: s.uiScalePercent)
         s.lastFolder = root.string("LastFolder", default: "")
+        if let r = root.child("RecentFolders") {
+            s.recentFolders = r.childrenNamed("string").compactMap { $0.text }.filter { !$0.isEmpty }
+        }
         if let f = root.child("FontSizes") {
             var fs = FontSizes()
             fs.small = f.int("Small", default: fs.small)
@@ -202,6 +218,8 @@ public final class AppSettings: @unchecked Sendable {
         f.add("Logo", fontSizes.logo)
         f.add("MenuGlyph", fontSizes.menuGlyph)
         root.add("LastFolder", lastFolder)
+        let r = root.add(XmlNode("RecentFolders"))
+        for f in recentFolders { r.add("string", f) }
         try? root.documentData().write(to: URL(fileURLWithPath: AppPaths.settingsPath), options: .atomic)
     }
 }

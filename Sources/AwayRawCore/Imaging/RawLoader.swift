@@ -70,6 +70,13 @@ public final class RawLoader: @unchecked Sendable {
 
     /// Full-resolution, orientation-corrected buffer. Nil only on total failure.
     public func decodeFull(path: String) -> FloatImageBuffer? {
+        decodeFullWithSource(path: path)?.buffer
+    }
+
+    /// As `decodeFull`, but the decode source rides along with the pixels. The folder
+    /// cache runs two decodes at once, so a "last decode" instance property would race —
+    /// callers that need the source (the proxy marker, export) take it from here.
+    public func decodeFullWithSource(path: String) -> (buffer: FloatImageBuffer, source: DecodeSource)? {
         if AppPaths.isRaw(path) {
             if useLibRaw, LibRawBridge.available {
                 // Hand LibRaw the visible size from metadata: on models it has no crop
@@ -79,7 +86,7 @@ public final class RawLoader: @unchecked Sendable {
                 if let b = LibRawBridge.decodeFull(path, bps: bps, expectedVisible: vis) {
                     lastFullDecodeUsedLibRaw = true
                     lastDecodeSource = .libRaw
-                    return b
+                    return (b, .libRaw)
                 }
             }
             lastFullDecodeUsedLibRaw = false
@@ -89,30 +96,35 @@ public final class RawLoader: @unchecked Sendable {
             // (`nikon_he_load_raw`) but not decodable by it, while ImageIO handles it
             // natively. Trying this before the embedded preview is what keeps such files
             // at full resolution instead of dropping to a downsized preview.
-            if let b = ImageIOCodec.loadFloat(path: path) { return b }
+            if let b = ImageIOCodec.loadFloat(path: path) { return (b, .imageIO) }
             // Last resort: the camera's embedded preview (reduced resolution).
             if let preview = ExifReader.extractPreview(path: path),
                let b = ImageIOCodec.loadFloat(data: preview) {
-                return b
+                return (b, .imageIO)
             }
             return nil
         }
         lastFullDecodeUsedLibRaw = false
         lastDecodeSource = .imageIO
-        return ImageIOCodec.loadFloat(path: path)
+        guard let b = ImageIOCodec.loadFloat(path: path) else { return nil }
+        return (b, .imageIO)
     }
 
     /// Full-resolution high-precision decode (for export / high-precision preview).
     public func decodeFullFloat(path: String) -> FloatImageBuffer? {
+        decodeFullFloatWithSource(path: path)?.buffer
+    }
+
+    public func decodeFullFloatWithSource(path: String) -> (buffer: FloatImageBuffer, source: DecodeSource)? {
         if AppPaths.isRaw(path), useLibRaw, useHighPrecisionRawPipeline, LibRawBridge.available {
             let vis = ExifReader.readVisibleSize(path: path)
             if let f = LibRawBridge.decodeFull(path, bps: 16, expectedVisible: vis) {
                 lastFullDecodeUsedLibRaw = true
                 lastDecodeSource = .libRaw
-                return f
+                return (f, .libRaw)
             }
         }
-        return decodeFull(path: path)
+        return decodeFullWithSource(path: path)
     }
 
     // ---- Thumbnails ------------------------------------------------------
@@ -236,9 +248,9 @@ public final class RawLoader: @unchecked Sendable {
         return src
     }
 
-    private func writeProxySource(path: String) {
-        try? lastDecodeSource.rawValue.write(toFile: Self.proxySourcePath(path),
-                                             atomically: true, encoding: .utf8)
+    private func writeProxySource(path: String, _ source: DecodeSource) {
+        try? source.rawValue.write(toFile: Self.proxySourcePath(path),
+                                   atomically: true, encoding: .utf8)
     }
 
     @discardableResult
@@ -250,17 +262,17 @@ public final class RawLoader: @unchecked Sendable {
         if !needPng && !needFloat { return true }
 
         if useHighPrecisionRawPipeline {
-            guard let full = decodeFullFloat(path: path) else { return false }
+            guard let (full, source) = decodeFullFloatWithSource(path: path) else { return false }
             let scaled = CacheManager.resizeFloatToMaxDim(full, maxDim: maxDim)
             CacheManager.savePng(scaled, to: proxyPath)
             CacheManager.saveHalf(scaled, to: Self.proxyFloatPath(path))
-            writeProxySource(path: path)
+            writeProxySource(path: path, source)
             return true
         } else {
-            guard let full = decodeFull(path: path) else { return false }
+            guard let (full, source) = decodeFullWithSource(path: path) else { return false }
             let scaled = CacheManager.resizeToMaxDim(full, maxDim: maxDim)
             CacheManager.savePng(scaled, to: proxyPath)
-            writeProxySource(path: path)
+            writeProxySource(path: path, source)
             return true
         }
     }

@@ -16,6 +16,8 @@ final class ToolsPanel: SectionPanel {
     var onHealModeChanged: ((HealMode) -> Void)?
     var onHealBrushSize: ((Double) -> Void)?
     var onRotate: ((Bool) -> Void)?          // true = clockwise
+    /// The 比例 popup changed; the owner reshapes the crop box.
+    var onCropAspectChanged: ((String) -> Void)?
 
     private(set) var tool: ToolMode = .crop
 
@@ -30,7 +32,7 @@ final class ToolsPanel: SectionPanel {
     private let rotateRight = FlatButton(title: "照片右轉90度")
     private let cropReset = FlatButton(title: "裁切重設")
 
-    private let ratioNames = ["Original", "3:2", "4:3", "16:9", "1:1", "自訂"]
+    private let ratioNames = ["Original", "3:2", "4:3", "16:9", "1:1", "Custom"]
 
     // ---- gradient page ---------------------------------------------------
     private let gradAdd = FlatButton(title: "新增線性漸層")
@@ -40,7 +42,7 @@ final class ToolsPanel: SectionPanel {
     private let gradShadows = AdjustmentSlider()
     private let gradSaturation = AdjustmentSlider()
     private let gradHint = NSTextField(labelWithString: "")
-    private let gradReset = FlatButton(title: "漸層重設")
+    private let gradReset = FlatButton(title: "漸層重設（清除全部）")
 
     // ---- heal page -------------------------------------------------------
     private let healClone = FlatButton(title: "仿製")
@@ -99,13 +101,16 @@ final class ToolsPanel: SectionPanel {
         ratioLabel.textColor = Theme.textDim
         addSubview(ratioLabel)
 
-        ratioCombo.setItems(ratioNames.map { L.t($0) })
+        // Display names are translated; "Original"/"Custom" are the storage keys.
+        ratioCombo.setItems(ratioNames.map { $0 == "Original" ? L.t("原始") : ($0 == "Custom" ? L.t("自訂") : $0) })
         ratioCombo.onChange = { [weak self] i in
             guard let self, !self.binding else { return }
             self.onEditBegin?()
-            self.adjustments?.cropAspectRatio = self.currentRatioString(i)
+            let aspect = self.currentRatioString(i)
+            self.adjustments?.cropAspectRatio = aspect
             self.updateRatioFieldsEnabled()
             self.onChanged?()
+            self.onCropAspectChanged?(aspect)
         }
         addSubview(ratioCombo)
 
@@ -114,8 +119,10 @@ final class ToolsPanel: SectionPanel {
         let custom: (Int) -> Void = { [weak self] _ in
             guard let self, !self.binding, self.ratioCombo.selectedIndex == 5 else { return }
             self.onEditBegin?()
-            self.adjustments?.cropAspectRatio = "\(self.ratioW.intValue):\(self.ratioH.intValue)"
+            let aspect = "\(self.ratioW.intValue):\(self.ratioH.intValue)"
+            self.adjustments?.cropAspectRatio = aspect
             self.onChanged?()
+            self.onCropAspectChanged?(aspect)
         }
         ratioW.onChange = custom
         ratioH.onChange = custom
@@ -203,7 +210,7 @@ final class ToolsPanel: SectionPanel {
         addSubview(healClone)
         addSubview(healInpaint)
 
-        slider(healSize, "筆刷大小", min: 1, max: 50, default: 10, bipolar: false) { [weak self] v in
+        slider(healSize, "大小", min: 1, max: 50, default: 10, bipolar: false) { [weak self] v in
             self?.adjustments?.healSize = v
             self?.onHealBrushSize?(v)
         }
@@ -330,8 +337,11 @@ final class ToolsPanel: SectionPanel {
 
         switch tool {
         case .crop:
-            ratioLabel.frame = NSRect(x: x, y: y + 4, width: 34, height: 18)
-            ratioCombo.frame = NSRect(x: x + 38, y: y, width: w - 38 - 96, height: 26)
+            // The popup keeps at least 110 pt; a long label (Seitenverhältnis) is clipped.
+            let lw = min(Theme.measure(ratioLabel.stringValue, font: Theme.normal).width + 4,
+                         w - 96 - 110 - 8)
+            ratioLabel.frame = NSRect(x: x, y: y + 4, width: lw, height: 18)
+            ratioCombo.frame = NSRect(x: x + lw + 4, y: y, width: w - lw - 4 - 96, height: 26)
             ratioW.frame = NSRect(x: bounds.width - 12 - 92, y: y, width: 44, height: 26)
             ratioH.frame = NSRect(x: bounds.width - 12 - 44, y: y, width: 44, height: 26)
             y += 34

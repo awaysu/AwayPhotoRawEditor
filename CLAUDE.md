@@ -121,7 +121,44 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macOS 會把視窗夾進螢幕範圍，
 走視窗的話結果會隨執行的螢幕而變。截完直接 `exit()`——背景快取工作否則會讓行程一直活著。
 
+## 與 Windows 版功能對照（2026-08-29 全面比對後補齊）
+
+拿 Windows 版的 `MainForm` 選單／快捷鍵／右鍵選單／各對話框逐項對過。以下是補齊的：
+
+- **重做**（Windows Ctrl+Y → macOS ⌘⇧Z）：`redoStack`，新編輯清空 redo；只重播單張、不重播批次同步（同 Windows）。undo 上限 80。
+- **紀錄**（☰ → 紀錄 ▸ 最近 20 個資料夾，`清除紀錄`）：存 settings.xml 的 `<RecentFolders><string>…`，與 Windows 同格式。資料夾不存在時提示。
+- **快捷鍵**：⌫ = 隱藏且不輸出、⇧⌫ = 刪除檔案、F5 = 重新整理、Esc、←→、`\`。
+- **縮圖右鍵選單**照 Windows 順序：全選／反向選擇／取消全選、套用風格檔 ▸、複製／貼上照片設定、升級處理版本、建立副本、隱藏且不輸出／取消隱藏、刪除檔案、不顯示隱藏／顯示全部（勾選）、匯出照片。
+- **雙擊縮圖**強制重新載入。**拖曳資料夾（或照片）到視窗**即開啟。
+- **隱藏的照片一律不匯出**（匯出全部／選取／目前皆同），沒有可匯出的就提示。
+- **非 RAW 照片的色溫滑桿**是 ±100（= 5200 ± 3000 K，`ColorPanel.nonRawScale`），RAW 才是 Kelvin。`rebindAll` 依照片切換。
+- **比例下拉改變時重排裁切框**（`applyCropAspect`，含旋轉後的畫面比例）。
+- **白平衡滴管**改用 Windows 的 `EstimateWhiteBalance` 演算法（紅藍平衡搜尋＋綠色偏移算 tint），並依 proxy 的解碼來源選對參考基準。
+- **設定**：恢復預設、字體大小… 移進設定視窗（按「套用」才寫）。**匯出**：儲存設定（不匯出）、浮水印即時預覽。**關於**：版本／編譯時間／作者／下載／原始碼／第三方／授權，檢查更新改為對話框並可直接開下載頁。
+- **支援RAW檔相機列表**連結、還原已隱藏的照片顯示張數、狀態列用 Windows 的「LibRaw 讀取中／已啟用」字樣。
+- 診斷用環境變數 `AWPR_UI_LANGUAGE` / `AWPR_UI_STYLE`（只改記憶體、不寫 settings.xml）。
+
+**刻意沒搬的**：介面大小百分比（macOS 以點排版、Retina 由系統處理）、顯示捲軸開關（左右欄本來就用 overlay scroller）、介面風格預覽卡（用下拉）。
+
 ## 慣例 / 注意事項（踩過的坑）
+
+- **⚠️⚠️ 翻譯表曾經是字典字面值，重複的 key 會在第一次使用時 trap** —— 而 `L.t` 對繁中直接回傳、不碰表，
+  所以**繁中全部測試通過、其他七種語言一啟動就當**（2026-08-29 發現時已經有 14 個重複 key，從 Metal 那次 commit 起就會當）。
+  現在改成 `entries: [(String, Tr)]` 再 `Dictionary(_, uniquingKeysWith:)`，重複只會後者蓋前者。
+  `selftest` 的 `[8] 語言` 會把八種語言都查一次。**改 UI 字串後一律用 `AWPR_UI_LANGUAGE=English` 跑一次 `--dlgshot`**。
+- **UI 字串一律用翻譯表裡的 key**（= Windows 版的繁中原文），不要自己發明新的繁中句子——沒對上 key 的字串在七種語言下會原樣顯示中文。
+  有 `python3` 稽核腳本的做法：抓出所有 `L.t(` / `title:` / `addLabel(` 的 CJK 字串比對 `Localization.swift`（見 git log 2026-08-29）。
+- **固定寬度的控制項要量文字再排**（`Theme.measure` / `Theme.truncate`）：德文、法文比中文長一倍以上。`FlatButton` 現在會把過長的標題截成「…」；
+  頂列按鈕、檢視列按鈕、照片資訊的值欄、白平衡列、比例列都改為量寬。**新加的固定版面要用 `AWPR_UI_LANGUAGE=German` 截圖看一次。**
+- **`NSTextField` 的 label 不會自己換行**：`maximumNumberOfLines` 不夠，還要 `usesSingleLineMode=false`、`cell?.wraps=true`、`preferredMaxLayoutWidth`；
+  而且中文沒有空格，word-wrap 根本無處可斷——真的要兩行就用兩個 label。
+- **⚠️ app 當機後 macOS 會在下次啟動跳「要重新開啟視窗嗎？」的 modal**（`NSPersistentUIRestorer`），headless 的 `--shot` 會永遠卡住、看起來像 hang。
+  已設 `window.isRestorable = false`；診斷時再加 `-ApplePersistenceIgnoreState YES` 保險。用 `sample <pid>` 看主執行緒卡在哪裡，不要猜。
+- **headless 不自動開啟上次資料夾**（`viewDidAppear` 有 `Shot.headless` 守門）：截圖要顯示指定的資料夾，而且碰到桌面／文件底下的資料夾會跳 TCC 授權對話框，無人可按。
+- **`RawLoader` 的「上次解碼來源」不能是 instance 屬性**：開資料夾時兩個解碼同時跑會互相覆蓋，proxy 的 `.src` 標記就會寫錯。改成隨像素一起回傳（`decodeFullWithSource`）。
+- **匯出的浮水印要照縮放比例縮**：Windows 是在全解析度畫完再縮圖；這裡在縮圖後畫，所以 `watermarkScale = 縮後長邊 / 全圖長邊`，不然 66 MP 匯成 2400 px 時浮水印大四倍。
+- **`rebuildItems` 會建立新的 `PhotoItem` 物件**：任何重建後 `current` 要重新指向同 key 的新物件，否則 edited 標記更新到孤兒上。`refreshStripKeepSelection` 負責這件事，並在目前照片消失（隱藏／刪除）時選最近的一張。
+- **刪除／隱藏前一定先 `saveCurrentIfDirty()`**——被刪的不一定是目前那張，目前那張的未存編輯不能跟著丟。
 
 - **⚠️ `install_name_tool` 會讓 dylib 的簽章失效，Apple Silicon 上未正確簽章的執行檔會被 SIGKILL**
   （crash report 寫 `Code Signature Invalid`）。所以 `build_app.sh` 改完 install name **一定要重簽**

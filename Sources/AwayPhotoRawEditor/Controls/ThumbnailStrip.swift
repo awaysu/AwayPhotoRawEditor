@@ -18,6 +18,8 @@ final class ThumbnailStrip: NSView {
 
     var onSelectionChanged: (() -> Void)?
     var onContextMenu: ((Int, NSEvent) -> Void)?
+    /// Double-click.
+    var onActivate: ((Int) -> Void)?
 
     var showNumbers = true { didSet { needsDisplay = true } }
 
@@ -100,6 +102,21 @@ final class ThumbnailStrip: NSView {
         onSelectionChanged?()
     }
 
+    func invertSelection() {
+        guard !entries.isEmpty else { return }
+        selectedIndices = Set(0..<entries.count).subtracting(selectedIndices)
+        needsDisplay = true
+        onSelectionChanged?()
+    }
+
+    /// Clears the multi-selection but keeps the current photo in the editor, so the
+    /// panels never point at nothing.
+    func deselectAll() {
+        if currentIndex >= 0 { selectedIndices = [currentIndex] } else { selectedIndices = [] }
+        needsDisplay = true
+        onSelectionChanged?()
+    }
+
     func refreshBadges() { needsDisplay = true }
 
     private func scrollToVisible(_ index: Int) {
@@ -171,6 +188,10 @@ final class ThumbnailStrip: NSView {
         }
         let i = indexAt(p)
         guard i >= 0 else { return }
+        if event.clickCount == 2 {
+            onActivate?(i)
+            return
+        }
         select(index: i,
                extend: event.modifierFlags.contains(.shift),
                toggle: event.modifierFlags.contains(.command))

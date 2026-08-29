@@ -7,6 +7,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var controller: MainViewController!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // First run: the language is chosen before anything else exists, so every caption
+        // is built in the chosen language from the start. Diagnostic runs skip it.
+        let diagnostic = Shot.parse(Array(CommandLine.arguments.dropFirst()))
+        Shot.headless = diagnostic
+        if settings.isFirstRun && !diagnostic {
+            let picker = FirstRunLanguageController()
+            picker.onChosen = { lang in
+                let s = AppSettings.current
+                s.uiLanguage = lang
+                s.save()
+                L.setLanguage(lang)
+                NSApp.stopModal()
+            }
+            picker.panel.center()
+            picker.show(over: nil)
+            NSApp.runModal(for: picker.panel)
+        }
+
         buildMainMenu()
 
         controller = MainViewController()
@@ -17,6 +35,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.appearance = Theme.appearance
         window.contentViewController = controller
         window.minSize = NSSize(width: 1100, height: 720)
+        // No state restoration: the app rebuilds its own state from settings.xml, and
+        // opting out also keeps macOS from putting up its modal "reopen windows?" alert
+        // after a crash — which a headless diagnostic run could never dismiss.
+        window.isRestorable = false
         window.delegate = self
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -33,25 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         NSApp.activate(ignoringOtherApps: true)
-
-        // First run: ask which language before anything else is on screen.
-        if settings.isFirstRun {
-            let picker = FirstRunLanguageController()
-            picker.onChosen = { [weak self] lang in
-                let s = AppSettings.current
-                s.uiLanguage = lang
-                s.save()
-                L.setLanguage(lang)
-                // Captions are pulled at draw time, so a redraw is enough here — no
-                // relaunch needed on the very first run.
-                self?.controller.view.needsDisplay = true
-                self?.controller.view.subviewsNeedDisplay()
-            }
-            picker.show(over: window)
-        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
+    func applicationSupportsSecureRestorableState(_ app: NSApplication) -> Bool { true }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         controller?.saveCurrentIfDirty()
@@ -84,9 +91,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // File
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: L.t("檔案"))
-        fileMenu.addItem(withTitle: L.t("開啟資料夾"), action: #selector(openFolder), keyEquivalent: "o")
+        fileMenu.addItem(withTitle: L.t("開啟資料夾…"), action: #selector(openFolder), keyEquivalent: "o")
             .target = self
-        fileMenu.addItem(withTitle: L.t("重新整理資料夾"), action: #selector(refreshFolder), keyEquivalent: "r")
+        fileMenu.addItem(withTitle: L.t("重新整理資料夾  (F5)"), action: #selector(refreshFolder), keyEquivalent: "r")
             .target = self
         fileMenu.addItem(withTitle: L.t("關閉資料夾"), action: #selector(closeFolder), keyEquivalent: "w")
             .target = self
@@ -105,10 +112,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let editMenu = NSMenu(title: L.t("編輯"))
         editMenu.addItem(withTitle: L.t("恢復上一步"), action: #selector(undo), keyEquivalent: "z")
             .target = self
+        let redo = editMenu.addItem(withTitle: L.t("重做"), action: #selector(redoEdit), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]     // ⌘⇧Z, the Mac's Ctrl+Y
+        redo.target = self
         editMenu.addItem(.separator())
-        editMenu.addItem(withTitle: L.t("複製設定"), action: #selector(copySettings), keyEquivalent: "c")
+        editMenu.addItem(withTitle: L.t("複製照片設定"), action: #selector(copySettings), keyEquivalent: "c")
             .target = self
-        editMenu.addItem(withTitle: L.t("貼上設定"), action: #selector(pasteSettings), keyEquivalent: "v")
+        editMenu.addItem(withTitle: L.t("貼上照片設定"), action: #selector(pasteSettings), keyEquivalent: "v")
             .target = self
         editMenu.addItem(.separator())
         editMenu.addItem(withTitle: L.t("全選"), action: #selector(selectAll), keyEquivalent: "a")
@@ -148,6 +158,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc func exportCurrent() { controller.exportCurrent() }
     @objc func exportAll() { controller.exportAll() }
     @objc func undo() { controller.doUndo() }
+    @objc func redoEdit() { controller.doRedo() }
     @objc func resetAll() { controller.resetAllAdjustments() }
     @objc func presetEditor() { controller.showPresetEditor() }
     @objc func zoomFit() { controller.viewer.zoomToFit() }
