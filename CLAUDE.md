@@ -342,11 +342,31 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 **刻意不寫進共用 XML** —— 那是跨平台的編輯資料，這只是本機快取的中繼資料。
 沒有標記檔的舊快取一律當 `libraw`（在標記存在之前就是這個行為）。
 
-## 尚未完成 / 後續
+## 尚未完成 / 後續（2026-08-29 盤點）
 
-- **Fujifilm RAF 尚未測**：手上沒有樣本（Windows 版是用 X-T30 測的）。
-  X-Trans 的去馬賽克路徑與 Bayer 不同，值得單獨驗。拿到檔案後跑
-  `awpr-cli info`（看 `libraw sizes` 與相機色彩資料）→ `selftest` → `hashtest` 與 C# 版對照。
-- **上架 Mac App Store** 若要做：得加 `com.apple.security.app-sandbox`＋`user-selected.read-write`，
-  並把重開資料夾用的 security-scoped bookmark 存起來（見 entitlements 的註解）。
-- 更新檢查（Windows 版的 `UpdateCheck`）尚未移植。
+### 需要使用者才能做的
+- **Developer ID 簽章＋公證**：憑證申請中。`Scripts/sign_and_notarize.sh` 已寫好，憑證到手後
+  `xcrun notarytool store-credentials awpr-notary …` 一次，之後一行指令跑完（簽 dylib → 簽 .app → 公證 → staple → DMG → DMG 公證）。
+- **Fujifilm RAF**：沒有樣本（Windows 版是用 X-T30 測的）。X-Trans 去馬賽克與 Bayer 路徑不同，拿到後跑
+  `awpr-cli info`（看 `libraw sizes` 有沒有裁切表、相機色彩資料讀不讀得到）→ `selftest` → `hashtest` 與 C# 版對照。
+- **網站上架 macOS 版**：「檢查更新」目前一定回 Windows 的 1.0.17（`downloads` 對 `platform=macos` 是空陣列），
+  是網站資料的事，程式端已完成。
+- **真人操作**：viewer 上的滑鼠手勢（裁切拖框、漸層白／黃／藍手把、修護圈圈與右鍵刪除）、trackpad 縮放手感、
+  拖曳資料夾到視窗、第一次執行的語言選擇——邏輯都有 `--uitest` / 截圖覆蓋，但沒有真人摸過。
+
+### 刻意沒搬（macOS 不需要）
+介面大小百分比（系統處理 Retina）、顯示捲軸開關（左右欄本來就是 overlay scroller）、
+介面風格預覽卡（用下拉）、Mac App Store 沙盒（見 entitlements 註解）。
+
+### 尚未驗證
+- **浮水印匯出的實際畫面**：程式路徑跑過、縮放比例修過（見「踩過的坑」），但沒親眼看過輸出圖上的字。
+  `AWPR_TEST_WATERMARK=文字 awpr-cli exporttest <img> <outDir>` 可以直接看（此環境變數尚未加進 CLI，要的話在 `exporttest` 的 settings 加幾行）。
+- **Intel 機器**：universal 二進位含 x86_64 切片，但只在 M2 上跑過。
+- **macOS 14**：deployment target 14.0，實測機器是 26。
+- **與 Windows 版本身的逐像素對照**：`hashtest` 對照的是 C# 的 macOS port（98/98 逐字元相同）；Windows 版與它出自同一份 C#，推論相同但沒直接跑過。
+- **補的約 50 條翻譯**（重做、紀錄、GPU、匯出對話框的新標籤等）沒有母語者看過；Windows 原有的 265 條原樣沿用。
+- **修護（Heal）在 GPU 路徑**是「下載→CPU→原地改」：`gputest` 的 14 組沒有 heal 案例，只有 CPU 端 `selftest` 跑過。
+
+### 程式本身
+功能對照 Windows 版已逐項對完（見「與 Windows 版功能對照」），沒有已知缺的功能。
+引擎（selftest／gputest／exporttest／C# hashtest 對照）、UI 流程（`--uitest` JPEG＋RAW）、八語啟動 smoke 全綠。
