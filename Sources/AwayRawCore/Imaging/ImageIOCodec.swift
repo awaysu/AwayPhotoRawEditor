@@ -174,8 +174,16 @@ public enum ImageIOCodec {
     public static func write(_ img: CGImage, to path: String, format: OutputFormat,
                              dpi: Int? = nil,
                              metadataFrom sourcePath: String? = nil) -> Bool {
-        let url = URL(fileURLWithPath: path) as CFURL
+        // Write to a sibling temp file and rename it into place. A cache PNG that is
+        // read while still being written, or left half-written by a kill, decodes as a
+        // correct top and a garbage bottom — exactly what a user saw on the slowest
+        // (60 MP) files. rename(2) is atomic, so a reader only ever sees none or all.
+        let dir = (path as NSString).deletingLastPathComponent
+        let tmpPath = (dir as NSString).appendingPathComponent(
+            ".\((path as NSString).lastPathComponent).\(UUID().uuidString).part")
+        let url = URL(fileURLWithPath: tmpPath) as CFURL
         guard let dest = CGImageDestinationCreateWithURL(url, format.utType, 1, nil) else { return false }
+        defer { unlink(tmpPath) }   // no-op after a successful rename
 
         var props: [CFString: Any] = [:]
         if case .jpeg(let q) = format {
@@ -220,7 +228,8 @@ public enum ImageIOCodec {
         }
 
         CGImageDestinationAddImage(dest, img, props as CFDictionary)
-        return CGImageDestinationFinalize(dest)
+        guard CGImageDestinationFinalize(dest) else { return false }
+        return rename(tmpPath, path) == 0
     }
 
     @discardableResult

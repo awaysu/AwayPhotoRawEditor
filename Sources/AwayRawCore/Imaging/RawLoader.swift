@@ -192,10 +192,12 @@ public final class RawLoader: @unchecked Sendable {
     @discardableResult
     public func ensureThumbnailCache(path: String, maxW: Int, maxH: Int) -> Bool {
         let cachePath = AppPaths.thumbnailPath(path)
-        if FileManager.default.fileExists(atPath: cachePath) { return true }
-        let info = loadThumbnailWithInfo(path: path, maxW: maxW, maxH: maxH,
-                                        useCache: true, materialize: false)
-        return FileManager.default.fileExists(atPath: cachePath) || info.fromCache
+        return Self.withPathLock(cachePath) {
+            if FileManager.default.fileExists(atPath: cachePath) { return true }
+            let info = loadThumbnailWithInfo(path: path, maxW: maxW, maxH: maxH,
+                                            useCache: true, materialize: false)
+            return FileManager.default.fileExists(atPath: cachePath) || info.fromCache
+        }
     }
 
     public func loadThumbnailCache(path: String) -> FloatImageBuffer? {
@@ -253,8 +255,27 @@ public final class RawLoader: @unchecked Sendable {
                                    atomically: true, encoding: .utf8)
     }
 
+    /// One generator per cache file at a time. The folder-open worker and a click on
+    /// that same photo used to decode and write the proxy concurrently; with atomic
+    /// writes that is merely wasteful (a second 60 MP decode), but it also means the
+    /// click waits for the file instead of racing it.
+    private static var pathLocks: [String: NSLock] = [:]
+    private static let pathLocksGuard = NSLock()
+
+    static func withPathLock<T>(_ key: String, _ body: () -> T) -> T {
+        pathLocksGuard.lock()
+        let lock = pathLocks[key] ?? { let l = NSLock(); pathLocks[key] = l; return l }()
+        pathLocksGuard.unlock()
+        lock.lock(); defer { lock.unlock() }
+        return body()
+    }
+
     @discardableResult
     public func ensureProxyCache(path: String, maxDim: Int = RawLoader.defaultProxyMaxDim) -> Bool {
+        Self.withPathLock(AppPaths.proxyPath(path)) { ensureProxyCacheLocked(path: path, maxDim: maxDim) }
+    }
+
+    private func ensureProxyCacheLocked(path: String, maxDim: Int) -> Bool {
         let proxyPath = AppPaths.proxyPath(path)
         let needPng = !FileManager.default.fileExists(atPath: proxyPath)
         let needFloat = useHighPrecisionRawPipeline &&
@@ -281,16 +302,27 @@ public final class RawLoader: @unchecked Sendable {
     public func loadProxy(path: String, maxDim: Int = RawLoader.defaultProxyMaxDim) -> FloatImageBuffer? {
         ensureProxyCache(path: path, maxDim: maxDim)
         let proxyPath = AppPaths.proxyPath(path)
-        if FileManager.default.fileExists(atPath: proxyPath),
-           let b = CacheManager.load(proxyPath) { return b }
+        if let b = CacheManager.load(proxyPath) { return b }
+        // `load` discards a half-written file; build it again rather than falling back
+        // to a full-resolution decode on every selection from now on.
+        ensureProxyCache(path: path, maxDim: maxDim)
+        if let b = CacheManager.load(proxyPath) { return b }
         return decodeFull(path: path)
     }
 
     /// Load the high-precision float proxy (falling back to the 8-bit proxy).
     public func loadProxyFloat(path: String, maxDim: Int = RawLoader.defaultProxyMaxDim) -> FloatImageBuffer? {
         ensureProxyCache(path: path, maxDim: maxDim)
-        if useHighPrecisionRawPipeline,
-           let f = CacheManager.loadHalf(Self.proxyFloatPath(path)) { return f }
+        if useHighPrecisionRawPipeline {
+            let fp = Self.proxyFloatPath(path)
+            if let f = CacheManager.loadHalf(fp) { return f }
+            if FileManager.default.fileExists(atPath: fp) {
+                // Present but unreadable (short file, bad magic): regenerate once.
+                try? FileManager.default.removeItem(atPath: fp)
+                ensureProxyCache(path: path, maxDim: maxDim)
+                if let f = CacheManager.loadHalf(fp) { return f }
+            }
+        }
         return loadProxy(path: path, maxDim: maxDim)
     }
 }

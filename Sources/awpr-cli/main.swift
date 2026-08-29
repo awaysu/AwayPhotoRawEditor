@@ -32,6 +32,9 @@ func usage() -> Never {
       bench <image>
           Time each pipeline stage at proxy and full resolution.
 
+      cmpbench <image> [--gpu]
+          The C# port's --decodetest/--rendertest/--enginetest timings, same conditions.
+
       updatecheck
           Query the update API exactly as the About window does.
 
@@ -461,6 +464,114 @@ case "gputest":
 case "hashtest":
     guard args.count >= 2 else { usage() }
     exit(PipelineHash.run(imagePath: args[1], reportPath: args.count >= 3 ? args[2] : nil))
+
+case "cmpbench":
+    // Mirrors the C# macOS port's --decodetest / --rendertest / --enginetest timings so
+    // the two implementations can be compared on equal terms: same 2400 px source,
+    // the same six adjustment sets (including the two watermark specs), one cold run
+    // each on the CPU, and the proxy cold/warm pair. `--gpu` appends the Metal runs.
+    guard args.count >= 2 else { usage() }
+    let path = args[1]
+    let wantGpu = args.contains("--gpu")
+    let renderOnly = args.contains("--render-only")   // exactly the C# --rendertest work
+    let loader = RawLoader()
+    loader.useHighPrecisionRawPipeline = true
+    func ms(_ t: Date) -> Int { Int(Date().timeIntervalSince(t) * 1000) }
+    let isRaw = AppPaths.isRaw(path)
+
+    if isRaw && !renderOnly {
+        // --decodetest: 8-bit pixels (DecodeToPixels)
+        let t8 = Date()
+        guard let dec8 = loader.decodeFull(path: path) else { print("RAW 解碼失敗"); exit(1) }
+        print("DECODE8   \(dec8.width)x\(dec8.height)  \(ms(t8)) ms")
+    }
+    // --rendertest source: float decode (DecodeToFloat) or ImageIO for non-RAW
+    let tf = Date()
+    let full: FloatImageBuffer
+    if isRaw {
+        guard let f = loader.decodeFullFloat(path: path) else { print("RAW 解碼失敗"); exit(1) }
+        full = f
+    } else {
+        guard let f = ImageIOCodec.loadFloat(path: path) else { print("影像載入失敗"); exit(1) }
+        full = f
+    }
+    print("DECODEF   \(full.width)x\(full.height)  \(ms(tf)) ms")
+    var exif: ExifData? = ExifReader.read(path: path)
+    _ = loader.enrichCameraColor(path: path, exif: &exif)
+    let cam = exif?.camera
+    let tr = Date()
+    let src = isRaw ? CacheManager.resizeFloatToMaxDim(full, maxDim: 2400) : full
+    print("RESIZE    \(src.width)x\(src.height)  \(ms(tr)) ms  相機色彩: \(cam != nil ? "有" : "無")")
+
+    struct Case { let tag: String; let adj: ImageAdjustments; let wm: WatermarkSpec? }
+    func wm(_ text: String, _ font: String, _ size: Double, _ tr: Int, _ color: WatermarkColor,
+            _ pos: WatermarkPosition, _ margin: Int) -> WatermarkSpec {
+        var w = WatermarkSpec()
+        w.enabled = true; w.text = text; w.fontName = font; w.fontSize = size
+        w.transparency = tr; w.color = color; w.position = pos; w.margin = margin
+        return w
+    }
+    var cases: [Case] = []
+    cases.append(Case(tag: "01_original", adj: ImageAdjustments(), wm: nil))
+    var a2 = ImageAdjustments(); a2.exposure = 0.8; a2.temperature = 7500; a2.contrast = 20; a2.vibrance = 30
+    cases.append(Case(tag: "02_warm_bright", adj: a2, wm: nil))
+    var a3 = ImageAdjustments(); a3.exposure = -0.5; a3.temperature = 3800; a3.highlights = -40; a3.shadows = 35; a3.vignette = 55
+    cases.append(Case(tag: "03_cool_moody", adj: a3, wm: nil))
+    var a4 = ImageAdjustments(); a4.cropX = 0.1; a4.cropY = 0.1; a4.cropWidth = 0.7; a4.cropHeight = 0.7; a4.cropAngle = 5; a4.sharpening = 45
+    cases.append(Case(tag: "04_crop_rotate", adj: a4, wm: nil))
+    var a5 = ImageAdjustments(); a5.exposure = 0.3
+    cases.append(Case(tag: "05_watermark_white", adj: a5,
+                      wm: wm("© Awaysu 2026 攝影", "PingFang TC", 150, 20, .white, .bottomRight, 30)))
+    cases.append(Case(tag: "06_watermark_black_tl", adj: ImageAdjustments(),
+                      wm: wm("AwayPhotoRawEditor", "Helvetica Neue", 120, 10, .black, .topLeft, 40)))
+
+    // The C# Apply returns 8-bit pixels and draws the watermark inside it, so the Swift
+    // measurement covers applyToFloat + 8-bit conversion (+ watermark) to match.
+    func render(_ c: Case, gpu: Bool) -> (ms: Int, w: Int, h: Int, usedGpu: Bool, img: CGImage?) {
+        let ctx = ProcessContext()
+        ctx.camera = cam
+        ctx.whiteBalanceReference = .decode
+        ctx.forceCpu = !gpu
+        ctx.useGpu = gpu
+        ctx.watermark = c.wm
+        ctx.watermarkScale = c.wm == nil ? 1.0 : Double(src.width) / 6000.0
+        let t = Date()
+        guard let out = try? ImageProcessor.applyToFloat(src, c.adj, ctx),
+              var img = ImageIOCodec.toCGImage(out) else { return (-1, 0, 0, false, nil) }
+        if c.wm != nil { img = Watermark.apply(img, ctx) }
+        return (ms(t), out.width, out.height, ctx.usedGpu, img)
+    }
+    let outDir = (NSTemporaryDirectory() as NSString).appendingPathComponent("awpr_cmpbench")
+    try? FileManager.default.createDirectory(atPath: outDir, withIntermediateDirectories: true)
+    for c in cases {
+        let r = render(c, gpu: false)
+        let jpg = (outDir as NSString).appendingPathComponent(c.tag + ".jpg")
+        let te = Date()
+        if let img = r.img { _ = ImageIOCodec.write(img, to: jpg, format: .jpeg(quality: 0.92), dpi: 300) }
+        let kb = ((try? FileManager.default.attributesOfItem(atPath: jpg)[.size] as? NSNumber)??.intValue ?? 0) / 1024
+        print("CPU  \(c.tag.padding(toLength: 22, withPad: " ", startingAt: 0)) \(r.w)x\(r.h)  \(r.ms) ms  encode \(ms(te)) ms  \(kb) KB")
+    }
+    if wantGpu {
+        for c in cases {
+            let cold = render(c, gpu: true)
+            let warm = render(c, gpu: true)
+            print("GPU  \(c.tag.padding(toLength: 22, withPad: " ", startingAt: 0)) \(cold.w)x\(cold.h)  cold \(cold.ms) ms  warm \(warm.ms) ms\(cold.usedGpu ? "" : "  (未使用 GPU)")")
+        }
+    }
+
+    if isRaw && !renderOnly {
+        // --enginetest step 5: proxy cold (decode + resize + PNG + .f16) then warm read.
+        let proxyPath = AppPaths.proxyPath(path)
+        for stale in [proxyPath, proxyPath + ".f16", proxyPath + ".f32", proxyPath + ".src"] {
+            try? FileManager.default.removeItem(atPath: stale)
+        }
+        let tc = Date()
+        _ = loader.ensureProxyCache(path: path)
+        let cold = ms(tc)
+        let tw = Date()
+        let p = loader.loadProxyFloat(path: path)
+        print("PROXY     \(p?.width ?? 0)x\(p?.height ?? 0)  cold \(cold) ms  warm \(ms(tw)) ms")
+    }
 
 case "bench":
     guard args.count >= 2 else { usage() }

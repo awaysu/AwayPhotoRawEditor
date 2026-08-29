@@ -114,6 +114,7 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 | `awpr-cli exporttest <img> <outDir> [report]` | 匯出全流程（含同名去重、EXIF 保留）。`AWPR_TEST_WATERMARK=文字` 開浮水印（`_SIZE`／`_POS=TopLeft…` 可調），匯出後直接開圖看 |
 | `awpr-cli render <img> <out.png> [--exposure N …]` | 單張套用調整後輸出 PNG |
 | `awpr-cli bench <img>` | 各階段 proxy / 全解析度耗時 |
+| `awpr-cli cmpbench <img> [--gpu] [--render-only]` | **與 C# mac 版對照用**：逐項照它的 `--decodetest`／`--rendertest`／`--enginetest` 條件（2400 px、同六組調整、單次冷跑）。結果與結論見 `Docs/Comparison-CSharp-vs-Swift-2026-08-30.md` |
 | `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖 |
 | `AwayPhotoRawEditor --dlgshot <export\|settings\|presets\|about\|fonts\|firstrun\|progress> <png>` | 對話框離屏截圖 |
 | `AwayPhotoRawEditor --uitest <folder> [report]` | **UI 流程測試**：把資料夾複製到暫存區，驅動真正的 `MainViewController` 跑 載入→編輯→復原／重做→切圖存檔→多選批次同步與批次復原→風格檔→重設→裁切比例→旋轉→虛擬副本→複製貼上→隱藏／顯示全部／還原→刪除副本→關閉存檔，逐項斷言（含磁碟上的 XML）。截圖測不到的邏輯都在這裡。JPEG 與 RAW 資料夾都要跑。|
@@ -130,6 +131,9 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 - **紀錄**（☰ → 紀錄 ▸ 最近 20 個資料夾，`清除紀錄`）：存 settings.xml 的 `<RecentFolders><string>…`，與 Windows 同格式。資料夾不存在時提示。
 - **快捷鍵**：⌫ = 隱藏且不輸出、⇧⌫ = 刪除檔案、F5 = 重新整理、Esc、←→、`\`。
 - **縮圖右鍵選單**照 Windows 順序：全選／反向選擇／取消全選、套用風格檔 ▸、複製／貼上照片設定、升級處理版本、建立副本、隱藏且不輸出／取消隱藏、刪除檔案、不顯示隱藏／顯示全部（勾選）、匯出照片。
+- **工具分頁再按一次取消**（2026-08-30 真人操作發現漏搬）：Windows 的 `TopTab.AllowDeselect`——啟動時**沒有選工具**（裁切頁灰掉當佔位、鎖住），
+  按選中的分頁 → `ToolMode.None`（viewer 顯示最終裁切結果、左鍵可平移／循環縮放），Esc 與 c/g/h 一律走 `toolsPanel.selectTool`，分頁外觀才會跟著變。
+  `--uitest [5b]` 有斷言。
 - **雙擊縮圖**強制重新載入。**拖曳資料夾（或照片）到視窗**即開啟。
 - **隱藏的照片一律不匯出**（匯出全部／選取／目前皆同），沒有可匯出的就提示。
 - **非 RAW 照片的色溫滑桿**是 ±100（= 5200 ± 3000 K，`ColorPanel.nonRawScale`），RAW 才是 Kelvin。`rebindAll` 依照片切換。
@@ -166,6 +170,24 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   從「紀錄」重開同一個資料夾時第一張的 `loadedKey` 相同會讓載入變成 no-op（`current` 指向孤兒物件）。
 - **診斷啟動加 `-ApplePersistenceIgnoreState YES`**：app 曾當機過，macOS 下次啟動會跳「重新開啟視窗？」的 modal；
   `window.isRestorable = false` 已避免將來再存狀態，但舊的狀態檔還在時仍會問一次。
+- **⚠️ `ProgressWindowController` 要自己持有自己（`show`→`close` 之間）**：呼叫端只在 completion 閉包裡抓著它，
+  閉包一回傳 controller 就死了，而 `finish()` 排的 0.8 秒延遲關閉與「取消」按鈕都是 `[weak self]` →
+  sheet 永遠留在畫面上、也按不掉。這是**第一次真人開資料夾就撞到的 bug**（2026-08-29），`--uitest` 全綠也沒抓到，
+  現在 `[1] 載入` 有一條「快取進度視窗自動關閉」斷言（`ProgressWindowController.shownCount`）。
+  **debug 建置下 16 張 RAW 的 uitest 會逾時**（快取重建超過 30 s），用 3 張的資料夾跑。
+  **uitest 步驟之間不要用固定延遲**：`[8]` 刪除副本會觸發重新載入，之前固定等 0.3 s 再編輯，機器一忙 RAW 就載不完、
+  編輯被 `isLoading` 守門丟掉 → `[9]` 偶發失敗。一律 `waitUntil(!isLoading && proxy != nil)`。
+- **⚠️ 快取檔一律原子寫入、讀取時驗檔尾**（2026-08-30，真人操作發現「7RM5／7RM6 編輯區下半部是彩色亂塊」）：
+  `ImageIOCodec.write` 原本 `CGImageDestinationCreateWithURL` 直接寫目標路徑，開資料夾的背景工人與使用者點到同一張時的 `loadPhoto`
+  會**同時寫同一個 proxy PNG**（60 MP 解碼最久、最容易撞到），或被 kill 留下半個檔；ImageIO 解截斷／交錯的 PNG **不會報錯**
+  （`CGImageSourceGetStatus` 照樣回 complete），上半部正確、下半部是垃圾。現在：
+  (1) 先寫 `.<name>.<uuid>.part` 再 `rename(2)`（匯出也走這條）；(2) `CacheManager.load` 檢查 PNG 以 `IEND` chunk、JPEG 以 `FF D9` 結尾，
+  不對就刪掉回 nil，`loadProxy`／`loadProxyFloat` 會**再產生一次**（不是退回全解析度解碼）；(3) `ensureProxyCache`／`ensureThumbnailCache`
+  以路徑為 key 單飛（`withPathLock`），點到正在產生的照片會等它。
+  重現：把 proxy PNG `head -c 45%` 截斷再 `--shot`，修前下半黑、修後自動重做。
+- **`MetalTarget` 的 scratch buffer 在 command buffer 完成前不回共用 pool**：各階段編在同一個 command buffer、到 `result()` 才 commit，
+  原本 `release()` 立刻歸還 pool，另一個 target（縮圖算圖是並行的）借走後 CPU `update(from:)` 會寫進**尚未執行的 kernel 還要讀的記憶體**。
+  現在 `release()` 進 target 自己的 `retired` 清單（同 target 後續階段可重用，Metal 會追蹤同一 command buffer 內的 hazard），`flush()` 之後才歸還。gputest 17/17 不變。
 - **刪除／隱藏前一定先 `saveCurrentIfDirty()`**——被刪的不一定是目前那張，目前那張的未存編輯不能跟著丟。
 
 - **⚠️ `install_name_tool` 會讓 dylib 的簽章失效，Apple Silicon 上未正確簽章的執行檔會被 SIGKILL**
@@ -357,6 +379,11 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
   是網站資料的事，程式端已完成。
 - **真人操作**：viewer 上的滑鼠手勢（裁切拖框、漸層白／黃／藍手把、修護圈圈與右鍵刪除）、trackpad 縮放手感、
   拖曳資料夾到視窗、第一次執行的語言選擇——邏輯都有 `--uitest` / 截圖覆蓋，但沒有真人摸過。
+
+### 效能：RAW 解碼比 C# mac 版慢 1.4–2.2×，原因是 LibRaw 沒開 OpenMP（2026-08-30 實測）
+`Docs/Comparison-CSharp-vs-Swift-2026-08-30.md`。後製 CPU 快 3×、GPU 快 5–10×、proxy 熱取快 3–5×、記憶體少 30–45%，
+**只有解碼輸**：C# 打包 Homebrew libraw 連著 `libomp`，LibRaw 的去馬賽克／CR3／raw2image 都有 `#pragma omp`（3 核 vs 1.2 核）。
+補法：`build_libraw.sh` 拿掉 `-DLIBRAW_NOTHREADS`、`-Xclang -fopenmp`、打包＋簽 `libomp.dylib`。當初不開是為了少簽一個 dylib。
 
 ### 刻意沒搬（macOS 不需要）
 介面大小百分比（系統處理 Retina）、顯示捲軸開關（左右欄本來就是 overlay scroller）、

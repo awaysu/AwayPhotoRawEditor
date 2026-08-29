@@ -19,7 +19,32 @@ public enum CacheManager {
 
     public static func load(_ path: String) -> FloatImageBuffer? {
         guard FileManager.default.fileExists(atPath: path) else { return nil }
+        guard isComplete(path) else {
+            // Half-written by an earlier crash or kill (writes are atomic now, but old
+            // caches may still carry one). ImageIO decodes such a file without complaint
+            // — top rows fine, the rest garbage — so drop it and let it be regenerated.
+            try? FileManager.default.removeItem(atPath: path)
+            return nil
+        }
         return ImageIOCodec.loadFloat(path: path)
+    }
+
+    /// Cheap completeness check from the file's last bytes: a PNG ends with its IEND
+    /// chunk, a JPEG with the EOI marker. ImageIO reports even a truncated file as
+    /// "complete", so it cannot be asked.
+    static func isComplete(_ path: String) -> Bool {
+        guard let fh = FileHandle(forReadingAtPath: path) else { return false }
+        defer { try? fh.close() }
+        guard let size = try? fh.seekToEnd(), size >= 12 else { return false }
+        try? fh.seek(toOffset: size - 8)
+        guard let tail = try? fh.readToEnd(), tail.count == 8 else { return false }
+        let b = [UInt8](tail)
+        let pngEnd: [UInt8] = [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82]   // "IEND" + CRC
+        if b == pngEnd { return true }
+        if b[6] == 0xFF && b[7] == 0xD9 { return true }                              // JPEG EOI
+        // Some writers pad a JPEG with a trailing zero or newline.
+        if b[5] == 0xFF && b[6] == 0xD9 { return true }
+        return false
     }
 
     static func ensureDir(_ path: String) {

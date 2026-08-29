@@ -69,6 +69,12 @@ extension ImageProcessor {
         /// Buffers taken from the pool, returned when this target goes away. The one
         /// finally handed back to the caller is removed from this list first.
         private var borrowed: [MTLBuffer] = []
+        /// Buffers this target is done encoding against but whose command buffer has
+        /// not completed. They are reused by later stages of *this* target (Metal
+        /// tracks the hazard inside one command buffer) and only go back to the shared
+        /// pool after `flush()` — handing them out to another target earlier would let
+        /// its CPU upload land in memory the pending kernels still read.
+        private var retired: [MTLBuffer] = []
 
         init(src: FloatImageBuffer, adj: ImageAdjustments, ctx: ProcessContext) throws {
             guard gpu.available,
@@ -89,11 +95,19 @@ extension ImageProcessor {
 
         deinit {
             // An abandoned render (cancelled or failed) must not leave the encoder open.
+            // Nothing was committed without a wait, so every buffer is idle here.
             encoder?.endEncoding()
             for b in borrowed { gpu.returnBuffer(b) }
+            for b in retired { gpu.returnBuffer(b) }
         }
 
         private func take(width w: Int, height h: Int) throws -> MTLBuffer {
+            let length = w * h * 4 * MemoryLayout<Float>.size
+            if let i = retired.firstIndex(where: { $0.length == length }) {
+                let b = retired.remove(at: i)
+                borrowed.append(b)
+                return b
+            }
             guard let b = gpu.borrowBuffer(width: w, height: h) else {
                 throw MetalError.allocationFailed
             }
@@ -103,7 +117,7 @@ extension ImageProcessor {
 
         private func release(_ b: MTLBuffer) {
             if let i = borrowed.firstIndex(where: { $0 === b }) { borrowed.remove(at: i) }
-            gpu.returnBuffer(b)
+            retired.append(b)
         }
 
         // All stages are encoded into a single command buffer and submitted once. Each
@@ -138,6 +152,10 @@ extension ImageProcessor {
             cmd = nil
             c.commit()
             c.waitUntilCompleted()
+            // The GPU is done with everything encoded so far: the retired scratch can
+            // now safely serve other targets.
+            for b in retired { gpu.returnBuffer(b) }
+            retired.removeAll()
             if let e = c.error { throw MetalError.commandFailed(e.localizedDescription) }
         }
 
