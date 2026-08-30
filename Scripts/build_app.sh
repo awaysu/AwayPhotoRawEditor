@@ -123,6 +123,14 @@ echo "    using $LIBRAW"
 cp -L "$LIBRAW" "$FW/$(basename "$LIBRAW")"
 chmod u+w "$FW/$(basename "$LIBRAW")"
 collect_deps "$FW/$(basename "$LIBRAW")"
+# Our own LibRaw may reference @rpath/libomp.dylib (Scripts/build_libomp.sh); @rpath
+# deps cannot be located by collect_deps, so take the copy that sits beside libraw.
+OMP_SIBLING="$(dirname "$LIBRAW")/libomp.dylib"
+if otool -L "$FW/$(basename "$LIBRAW")" | grep -q "libomp.dylib" && [ -f "$OMP_SIBLING" ]; then
+    echo "    + libomp.dylib (OpenMP runtime)"
+    cp -L "$OMP_SIBLING" "$FW/libomp.dylib"
+    chmod u+w "$FW/libomp.dylib"
+fi
 
 # Rewrite every id and cross-reference to @rpath.
 for lib in "$FW"/*.dylib; do

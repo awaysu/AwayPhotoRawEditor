@@ -43,10 +43,25 @@ export MACOSX_DEPLOYMENT_TARGET="$DEPLOY"
 SOVER=$(echo "$VERSION" | awk -F. '{printf "%d", $2+3}')   # 0.22.x -> libraw.25.dylib
 DYLIB="libraw.$SOVER.dylib"
 
-# LIBRAW_NOTHREADS: no OpenMP, so libomp stays out of the bundle — one less unsigned
-# dylib to carry through notarization, and demosaic threading is not our bottleneck.
+# OpenMP: LibRaw's demosaic (AHD/DHT), CR3 decoder, raw2image and postprocessing are
+# `#pragma omp parallel`. Measured against the C# port (which links Homebrew's libomp),
+# building without it made full-resolution decode 1.4–2.2x slower — one core instead
+# of three. Scripts/build_libomp.sh produces a universal, minos-14 libomp; when it is
+# present LibRaw links it and the .app bundles (and signs) one more dylib. Without it
+# the build falls back to LIBRAW_NOTHREADS, as it was originally.
 # The optional decoders we do not use are compiled out too.
-DEFINES="-DNDEBUG -DLIBRAW_NOTHREADS -DNO_JASPER -DNO_JPEG -DNO_LCMS -DUSE_ZLIB"
+OMP="$ROOT/ThirdParty/libomp"
+DEFINES="-DNDEBUG -DNO_JASPER -DNO_JPEG -DNO_LCMS -DUSE_ZLIB"
+OMP_CFLAGS=""
+OMP_LDFLAGS=""
+if [ -f "$OMP/lib/libomp.dylib" ] && [ -f "$OMP/include/omp.h" ]; then
+    echo "==> OpenMP: linking $OMP/lib/libomp.dylib"
+    OMP_CFLAGS="-Xclang -fopenmp -I$OMP/include"
+    OMP_LDFLAGS="-L$OMP/lib -lomp"
+else
+    echo "==> OpenMP: ThirdParty/libomp not found, building single-threaded (run Scripts/build_libomp.sh)"
+    DEFINES="$DEFINES -DLIBRAW_NOTHREADS"
+fi
 
 echo "==> Compiling (this takes a few minutes)"
 # *_ph.cpp are placeholder translation units for a build *without* postprocessing —
@@ -59,10 +74,10 @@ clang++ -shared -o "$PREFIX/lib/$DYLIB" \
     -arch arm64 -arch x86_64 \
     -mmacosx-version-min="$DEPLOY" \
     -O3 -fPIC -std=c++11 -w \
-    $DEFINES \
+    $DEFINES $OMP_CFLAGS \
     -I. -Ilibraw \
     $SOURCES \
-    -lz -lstdc++ \
+    -lz -lstdc++ $OMP_LDFLAGS \
     -install_name "@rpath/$DYLIB" \
     -compatibility_version "$SOVER.0.0" \
     -current_version "$SOVER.0.0" \
@@ -70,6 +85,9 @@ clang++ -shared -o "$PREFIX/lib/$DYLIB" \
 
 cp -R libraw "$PREFIX/include/"
 ln -sf "$DYLIB" "$PREFIX/lib/libraw.dylib"
+# libraw references @rpath/libomp.dylib; keep a copy beside it so the single rpath the
+# package and the .app already use resolves both.
+if [ -n "$OMP_LDFLAGS" ]; then cp "$OMP/lib/libomp.dylib" "$PREFIX/lib/libomp.dylib"; fi
 
 LIB="$PREFIX/lib/$DYLIB"
 echo "==> Built $LIB"

@@ -14,8 +14,10 @@ macOS 版的 AwayPhotoRawEditor：由 Windows 的 C# / .NET 8 / WinForms 版移�
 ## 建置 / 執行
 
 ```bash
-# 先建一次 LibRaw（只需做一次，或升級 LibRaw 時）
-Scripts/build_libraw.sh
+# 先建一次 libomp 與 LibRaw（只需做一次，或升級時）。順序不能反：LibRaw 要連 libomp。
+brew install cmake            # 只有 build_libomp.sh 需要
+Scripts/build_libomp.sh       # LLVM OpenMP runtime → ThirdParty/libomp（universal、minos 14）
+Scripts/build_libraw.sh       # 自動偵測 ThirdParty/libomp，有就開 OpenMP；沒有就退回單執行緒
 
 # 開發用
 swift build
@@ -52,7 +54,7 @@ xcrun notarytool store-credentials awpr-notary \
 
 | 項目 | Windows | macOS | 為什麼 |
 |---|---|---|---|
-| RAW 解碼 | LibRaw 0.22.2 DLL | **LibRaw 0.22.2**（自行建置） | 同版本 → 同像素。這是顏色能對得起來的前提 |
+| RAW 解碼 | LibRaw 0.22.2 DLL | **LibRaw 0.22.2**（自行建置，**含 OpenMP**） | 同版本 → 同像素。這是顏色能對得起來的前提。OpenMP 見下方 |
 | 一般格式 | WIC | **ImageIO / CGImageSource** | 系統原生；順便多支援 HEIC |
 | EXIF | ExifTool（外部行程） | **ImageIO 原生** | ExifTool 是 500+ 個未簽章的 Perl 檔，每個 Mach-O 都要簽才過得了公證，不值得 |
 | GPU | Direct3D 12 / ComputeSharp | **Metal**（見下方「GPU 加速」） | 同樣的 shader 對照 CPU 參考實作逐行寫 |
@@ -200,9 +202,17 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   而且直接編才能一行同時產出 arm64 + x86_64 並指定 deployment target。
   **要排除 `src/**/*_ph.cpp`** —— 那是「不含 postprocessing 的建置」用的 placeholder，
   會重複定義 `dcraw_process` 等符號。
-- **`-DLIBRAW_NOTHREADS -DNO_JPEG -DNO_LCMS`**：少三個 dylib 要簽。代價是
+- **`-DNO_JPEG -DNO_LCMS`**：少兩個 dylib 要簽。代價是
   lossy DNG 等少數格式 LibRaw 解不了 —— 但 `RawLoader` 會依序退回「內嵌預覽 → ImageIO」，
   macOS 原生就認得那些格式，所以實際覆蓋率沒有損失。
+- **⚠️ LibRaw 一定要開 OpenMP（2026-08-30 量出來的）**：原本為了少簽一個 dylib 用 `-DLIBRAW_NOTHREADS`，
+  結果全解析度解碼比 C# mac 版慢 1.4–2.2×（LibRaw 的 AHD/DHT 去馬賽克、CR3 `crx`、`raw2image`、postprocessing 都是 `#pragma omp`，
+  單核 vs 三核）。**不能拿 Homebrew 的 libomp**：arm64-only、minos 26。`Scripts/build_libomp.sh` 從 LLVM 20.1.8 原始碼建
+  universal／minos 14 的 `libomp.dylib`（37 秒），`build_libraw.sh` 偵測到就 `-Xclang -fopenmp` 連上，並複製一份到
+  `ThirdParty/libraw/lib` 旁邊（同一個 rpath 解析兩個）；`build_app.sh` 看到 libraw 引用 `@rpath/libomp.dylib` 就一起打包簽章
+  （`collect_deps` 本來就跳過 `@rpath/*`，所以要特別處理）。
+  實測：7RM6 4929 → 2874 ms、CR3 2075 → 897、7M3 1376 → 635、RW2 1579 → 839（追平或超過 C#）；
+  **hashtest 三檔 42 組 SHA 逐字元不變**——OpenMP 只切列、不改算式。
 - **`isFlipped` 要一路蓋到容器**：版面座標全是「由上往下」，但 `NSView` 預設原點在左下。
   只有根 view 翻轉不夠 —— `topBar` / `leftColumn` / `centerColumn` / `viewerBar` / `rightColumn` /
   `rightBottom` 都必須是 `FlippedView`，否則**子元件會整組上下顛倒**（移植途中實際踩到：
@@ -380,10 +390,9 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 - **真人操作**：viewer 上的滑鼠手勢（裁切拖框、漸層白／黃／藍手把、修護圈圈與右鍵刪除）、trackpad 縮放手感、
   拖曳資料夾到視窗、第一次執行的語言選擇——邏輯都有 `--uitest` / 截圖覆蓋，但沒有真人摸過。
 
-### 效能：RAW 解碼比 C# mac 版慢 1.4–2.2×，原因是 LibRaw 沒開 OpenMP（2026-08-30 實測）
-`Docs/Comparison-CSharp-vs-Swift-2026-08-30.md`。後製 CPU 快 3×、GPU 快 5–10×、proxy 熱取快 3–5×、記憶體少 30–45%，
-**只有解碼輸**：C# 打包 Homebrew libraw 連著 `libomp`，LibRaw 的去馬賽克／CR3／raw2image 都有 `#pragma omp`（3 核 vs 1.2 核）。
-補法：`build_libraw.sh` 拿掉 `-DLIBRAW_NOTHREADS`、`-Xclang -fopenmp`、打包＋簽 `libomp.dylib`。當初不開是為了少簽一個 dylib。
+### 效能：與 C# mac 版比較（2026-08-30，`Docs/Comparison-CSharp-vs-Swift-2026-08-30.md`）
+後製 CPU 快 3×、GPU 快 5–10×、proxy 熱取快 3–5×、記憶體少 30–45%；解碼原本慢 1.4–2.2×（LibRaw 沒開 OpenMP），
+**同日補上 OpenMP 後追平或超過 C#**（見「踩過的坑」）。公證時 `Contents/Frameworks` 現在有 `libraw.25.dylib` 與 `libomp.dylib` 兩個。
 
 ### 刻意沒搬（macOS 不需要）
 介面大小百分比（系統處理 Retina）、顯示捲軸開關（左右欄本來就是 overlay scroller）、

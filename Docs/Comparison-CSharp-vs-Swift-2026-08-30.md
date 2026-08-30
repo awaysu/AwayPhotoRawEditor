@@ -100,9 +100,19 @@ Swift 的 GPU 第一次 cold 約 40 ms（pipeline state／buffer pool 暖機）�
 **整體：Swift 版比較好**——使用者實際感受到的（拉滑桿、切照片、匯出）快 3–10 倍，記憶體與體積都小得多。
 唯一輸的是「開資料夾第一次產生快取」那一段，而且原因單一、可補。
 
-## 後續
+## 後續 → 同日完成：LibRaw 開 OpenMP
 
-1. **LibRaw 開 OpenMP**：`Scripts/build_libraw.sh` 拿掉 `-DLIBRAW_NOTHREADS`、加 `-Xclang -fopenmp`，
-   連結並打包 `libomp.dylib`（Homebrew 的 `libomp` 是 universal，minos 需重驗）、`build_app.sh` 多簽一個 dylib。
-   預期解碼追平 C#（同一版 LibRaw），開資料夾冷啟快 1.5–2×。
-2. C# 版若要繼續：Phase 8 Metal 是它最大的缺口，Swift 的 `MetalShaders` 可以逐行搬（kernel 本來就是照 CPU 參考實作寫的）。
+Homebrew 的 `libomp` 是 arm64-only、minos 26，不能打包；`Scripts/build_libomp.sh` 改從 LLVM 20.1.8 原始碼建
+universal／minos 14 的 `libomp.dylib`，`build_libraw.sh` 以 `-Xclang -fopenmp` 連上，`build_app.sh` 一起打包簽章。
+hashtest 三檔 42 組 SHA 逐字元不變。重量（同條件、ms）：
+
+| 檔案 | Swift 改前 | **Swift 改後** | C# | proxy 冷啟 改前 → 改後（C#） |
+|---|---|---|---|---|
+| 7RM6 60 MP | 4929 | **2874** | 3335 | 5940 → **3790**（3922） |
+| CR3 30 MP | 2075 | **897** | 1112 | 2364 → **1164**（1600） |
+| 7M3 24 MP | 1376 | **635** | 636 | 1613 → **850**（1091） |
+| RW2 24 MP | 1579 | **839** | 1074 | 1841 → **1102**（1548） |
+
+解碼改善 1.7–2.3×，**現在每一項都是 Swift 勝出或持平**。
+
+C# 版若要繼續：Phase 8 Metal 是它最大的缺口，Swift 的 `MetalShaders` 可以逐行搬（kernel 本來就是照 CPU 參考實作寫的）。
