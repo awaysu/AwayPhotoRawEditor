@@ -9,7 +9,7 @@ import AwayRawCore
 /// export agree.
 final class ImageViewer: NSView {
 
-    private enum Drag {
+    enum Drag {
         case none, pan
         case cropMove, cropL, cropR, cropT, cropB, cropTL, cropTR, cropBL, cropBR
         case gradCenter, gradRange, gradRotate
@@ -305,7 +305,82 @@ final class ImageViewer: NSView {
         addCursorRect(bounds, cursor: c)
     }
 
+    // ---- hover cursors ---------------------------------------------------
+
+    private var cursorTracking: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let t = cursorTracking { removeTrackingArea(t) }
+        let t = NSTrackingArea(rect: bounds,
+                               options: [.mouseMoved, .mouseEnteredAndExited,
+                                         .activeInKeyWindow, .inVisibleRect],
+                               owner: self)
+        addTrackingArea(t)
+        cursorTracking = t
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        guard tool == .crop, !whiteBalancePickerActive, drag == .none else { return }
+        cursor(for: cropHitZone(convert(event.locationInWindow, from: nil))).set()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if tool == .crop { NSCursor.arrow.set() }
+    }
+
+    private func cursor(for zone: Drag) -> NSCursor {
+        switch zone {
+        case .cropTL, .cropBR: return Self.resizeNWSE
+        case .cropTR, .cropBL: return Self.resizeNESW
+        case .cropL, .cropR:   return .resizeLeftRight
+        case .cropT, .cropB:   return .resizeUpDown
+        case .cropMove:        return .openHand
+        default:               return .arrow
+        }
+    }
+
+    /// AppKit has no public diagonal resize cursors, so draw the double arrow once.
+    static let resizeNWSE = ImageViewer.makeDiagonalCursor(flip: false)
+    static let resizeNESW = ImageViewer.makeDiagonalCursor(flip: true)
+
+    private static func makeDiagonalCursor(flip: Bool) -> NSCursor {
+        let sz: CGFloat = 24
+        let img = NSImage(size: NSSize(width: sz, height: sz), flipped: false) { _ in
+            guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
+            ctx.translateBy(x: sz / 2, y: sz / 2)
+            if flip { ctx.scaleBy(x: -1, y: 1) }
+            // A ↘︎↖︎ double arrow: shaft plus two heads, white with a black outline so
+            // it reads on any photo.
+            let a: CGFloat = 8       // half shaft length
+            let h: CGFloat = 5.5     // arrowhead size
+            let path = CGMutablePath()
+            path.move(to: CGPoint(x: -a, y: -a)); path.addLine(to: CGPoint(x: a, y: a))
+            for s in [CGFloat(1), -1] {
+                path.move(to: CGPoint(x: s * a, y: s * a))
+                path.addLine(to: CGPoint(x: s * (a - h), y: s * a))
+                path.move(to: CGPoint(x: s * a, y: s * a))
+                path.addLine(to: CGPoint(x: s * a, y: s * (a - h)))
+            }
+            ctx.setLineCap(.round)
+            ctx.setLineJoin(.round)
+            ctx.addPath(path)
+            ctx.setLineWidth(5)
+            ctx.setStrokeColor(NSColor.black.withAlphaComponent(0.85).cgColor)
+            ctx.strokePath()
+            ctx.addPath(path)
+            ctx.setLineWidth(2.5)
+            ctx.setStrokeColor(NSColor.white.cgColor)
+            ctx.strokePath()
+            return true
+        }
+        return NSCursor(image: img, hotSpot: NSPoint(x: sz / 2, y: sz / 2))
+    }
+
     // ---- crop interaction ------------------------------------------------
+
+    /// Exposed for --uitest, which asserts the corner zones answer correctly.
+    func cropViewRectForTest() -> NSRect { cropViewRect() }
 
     private func cropViewRect() -> NSRect {
         guard let adj = adjustments else { return bounds }
@@ -314,7 +389,10 @@ final class ImageViewer: NSView {
         return NSRect(x: tl.x, y: tl.y, width: br.x - tl.x, height: br.y - tl.y)
     }
 
-    private func beginCropDrag(_ p: NSPoint) -> Bool {
+    /// Which crop element the point is over — shared by the drag start and the hover
+    /// cursor, so the double-arrow always appears exactly where a drag would grab.
+    func cropHitZone(_ p: NSPoint) -> Drag {
+        guard adjustments != nil, image != nil else { return .none }
         let r = cropViewRect()
         let g = cropEdgeGrab, gc = cropCornerGrab
         let l = abs(p.x - r.minX) < g, rr = abs(p.x - r.maxX) < g
@@ -325,12 +403,16 @@ final class ImageViewer: NSView {
         let cl = abs(p.x - r.minX) < gc, cr = abs(p.x - r.maxX) < gc
         let ct = abs(p.y - r.minY) < gc, cb = abs(p.y - r.maxY) < gc
 
-        var d: Drag = .none
-        if cl && ct { d = .cropTL } else if cr && ct { d = .cropTR }
-        else if cl && cb { d = .cropBL } else if cr && cb { d = .cropBR }
-        else if l && inY { d = .cropL } else if rr && inY { d = .cropR }
-        else if t && inX { d = .cropT } else if b && inX { d = .cropB }
-        else if r.contains(p) { d = .cropMove }
+        if cl && ct { return .cropTL }; if cr && ct { return .cropTR }
+        if cl && cb { return .cropBL }; if cr && cb { return .cropBR }
+        if l && inY { return .cropL }; if rr && inY { return .cropR }
+        if t && inX { return .cropT }; if b && inX { return .cropB }
+        if r.contains(p) { return .cropMove }
+        return .none
+    }
+
+    private func beginCropDrag(_ p: NSPoint) -> Bool {
+        let d = cropHitZone(p)
         guard d != .none else { return false }
         drag = d
         onEditBegin?()

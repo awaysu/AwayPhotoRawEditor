@@ -161,6 +161,18 @@ enum UITest {
         check("三次復原 → 無漸層、預設曝光", c.adj.gradients.isEmpty && c.adj.exposure == 0, "\(c.adj.gradients.count) \(c.adj.exposure)")
 
         line("")
+        line("[2d] 裁切角落的游標區域")
+        c.toolsPanel.selectTool(.crop)
+        let box = c.viewer.cropViewRectForTest()
+        check("四角回報對角把手",
+              c.viewer.cropHitZone(NSPoint(x: box.minX, y: box.minY)) == .cropTL
+              && c.viewer.cropHitZone(NSPoint(x: box.maxX, y: box.minY)) == .cropTR
+              && c.viewer.cropHitZone(NSPoint(x: box.minX, y: box.maxY)) == .cropBL
+              && c.viewer.cropHitZone(NSPoint(x: box.maxX, y: box.maxY)) == .cropBR)
+        check("框內回報移動、框外回報無", c.viewer.cropHitZone(NSPoint(x: box.midX, y: box.midY)) == .cropMove)
+        c.toolsPanel.selectTool(.none)
+
+        line("")
         line("[3] 多選批次同步")
         let n = c.items.count
         // ⌘A must reach the strip through the real main menu, not a direct call.

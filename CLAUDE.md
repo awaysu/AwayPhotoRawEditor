@@ -185,6 +185,8 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   `RibbonLockView` 的 `hitTest` 原本沒隱藏就一律回 `self`，把整個工具面板（含分頁列）的點擊全吃掉；要 `frame.contains(point)` 才回自己。
   **uitest 直接呼叫 `tabs.click(index:)` 測不到這種事**——現在 `[5b]` 另外走真正的 `toolsPanel.hitTest`（分頁列點得到、參數區回鎖層）。
   覆寫 `hitTest` 的 view 一律要加這種斷言。
+- **裁切框有懸停游標（macOS 版增補，Windows 版沒有）**：滑過角落顯示自畫的斜向雙箭頭（AppKit 沒有公開的對角 resize 游標）、
+  邊是 ↔↕、框內是手掌。區域判定與 `beginCropDrag` 共用同一個 `cropHitZone`，游標出現的地方就一定抓得到。`--uitest [2d]` 斷言四角。
 - **viewer 手把尺寸是真人調出來的（2026-08-30）**：裁切角落判定 18 pt（邊 10）、角把手是畫在框**內側**的 L 形（畫在外側會在框貼齊圖邊時被裁掉）；
   漸層點半徑 10、白點 12、藍點距白點 256 pt、藍點內畫旋轉箭頭、命中半徑 14。C# 版是 5／6／64／10。改這些後用 `AWPR_SHOT_TOOL` 截圖看。
 - **⌘A 全選走主選單（`AppDelegate.selectAll`）**，`--uitest [3]` 用 `NSApp.mainMenu.performKeyEquivalent` 驗證；另外接了 **Ctrl+A**（Windows 習慣）。
