@@ -56,8 +56,14 @@ final class ImageViewer: NSView {
     /// Below this many points of movement a left-drag counts as a click, so a click can
     /// cycle the zoom without the picture twitching.
     private let panThreshold: CGFloat = 4
-    private var handleHitRadius: CGFloat { 10 }
-    private var rotHandleDist: CGFloat { 64 }
+    /// Gradient handles: dots are 10 pt (a user found the 5 pt originals too fiddly),
+    /// so the grab radius is a little larger than the dot.
+    private var handleHitRadius: CGFloat { 14 }
+    /// The blue rotate handle sits this far from the white dot (was 64; 4x on request).
+    private var rotHandleDist: CGFloat { 256 }
+    /// Crop box: corners get a wider grab zone than edges — they are the hard target.
+    private let cropEdgeGrab: CGFloat = 10
+    private let cropCornerGrab: CGFloat = 18
 
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
@@ -310,15 +316,18 @@ final class ImageViewer: NSView {
 
     private func beginCropDrag(_ p: NSPoint) -> Bool {
         let r = cropViewRect()
-        let g: CGFloat = 10
+        let g = cropEdgeGrab, gc = cropCornerGrab
         let l = abs(p.x - r.minX) < g, rr = abs(p.x - r.maxX) < g
         let t = abs(p.y - r.minY) < g, b = abs(p.y - r.maxY) < g
         let inX = p.x > r.minX - g && p.x < r.maxX + g
         let inY = p.y > r.minY - g && p.y < r.maxY + g
+        // Corners first, with their own (wider) zone.
+        let cl = abs(p.x - r.minX) < gc, cr = abs(p.x - r.maxX) < gc
+        let ct = abs(p.y - r.minY) < gc, cb = abs(p.y - r.maxY) < gc
 
         var d: Drag = .none
-        if l && t { d = .cropTL } else if rr && t { d = .cropTR }
-        else if l && b { d = .cropBL } else if rr && b { d = .cropBR }
+        if cl && ct { d = .cropTL } else if cr && ct { d = .cropTR }
+        else if cl && cb { d = .cropBL } else if cr && cb { d = .cropBR }
         else if l && inY { d = .cropL } else if rr && inY { d = .cropR }
         else if t && inX { d = .cropT } else if b && inX { d = .cropB }
         else if r.contains(p) { d = .cropMove }
@@ -457,6 +466,30 @@ final class ImageViewer: NSView {
     private static func gradAxis(_ g: LinearGradient) -> (ux: Double, uy: Double) {
         let a = g.angle * Double.pi / 180
         return (sin(a), cos(a))     // axis of variation (view coords, Y down)
+    }
+
+    /// A circular arrow inside the blue dot, so the handle reads as "rotate".
+    private func drawRotateGlyph(at c: NSPoint, radius r: CGFloat) {
+        NSColor.white.setStroke()
+        NSColor.white.setFill()
+        let arc = NSBezierPath()
+        // Open ring from 60° round to 330° (flipped view: angles run clockwise).
+        arc.appendArc(withCenter: c, radius: r, startAngle: 60, endAngle: 330, clockwise: false)
+        arc.lineWidth = 2
+        arc.lineCapStyle = .round
+        arc.stroke()
+        // Arrowhead at the 330° end, pointing along the arc's direction of travel.
+        let a = 330 * CGFloat.pi / 180
+        let tip = NSPoint(x: c.x + cos(a) * r, y: c.y + sin(a) * r)
+        let tangent = NSPoint(x: -sin(a), y: cos(a))          // direction of increasing angle
+        let normal = NSPoint(x: cos(a), y: sin(a))
+        let head = NSBezierPath()
+        let len: CGFloat = r * 0.9, half: CGFloat = r * 0.55
+        head.move(to: NSPoint(x: tip.x + tangent.x * len, y: tip.y + tangent.y * len))
+        head.line(to: NSPoint(x: tip.x + normal.x * half, y: tip.y + normal.y * half))
+        head.line(to: NSPoint(x: tip.x - normal.x * half, y: tip.y - normal.y * half))
+        head.close()
+        head.fill()
     }
 
     /// Blue rotate handle: a fixed screen offset to the right of the white handle,
@@ -671,14 +704,24 @@ final class ImageViewer: NSView {
         thin.lineWidth = 1
         thin.stroke()
 
-        // handles
+        // Handles. Corners are L-shaped brackets (a real target, sized to the corner
+        // grab zone), edges are short bars at their midpoints. Drawn just inside the
+        // box: when the box sits on the image edge, anything outside is clipped away.
+        let arm: CGFloat = 22, thick: CGFloat = 4
         NSColor.white.setFill()
-        for pt in [NSPoint(x: r.minX, y: r.minY), NSPoint(x: r.maxX, y: r.minY),
-                   NSPoint(x: r.minX, y: r.maxY), NSPoint(x: r.maxX, y: r.maxY),
-                   NSPoint(x: r.midX, y: r.minY), NSPoint(x: r.midX, y: r.maxY),
-                   NSPoint(x: r.minX, y: r.midY), NSPoint(x: r.maxX, y: r.midY)] {
-            NSRect(x: pt.x - 3, y: pt.y - 3, width: 6, height: 6).fill()
+        for (pt, sx, sy) in [(NSPoint(x: r.minX, y: r.minY), 1.0, 1.0), (NSPoint(x: r.maxX, y: r.minY), -1.0, 1.0),
+                             (NSPoint(x: r.minX, y: r.maxY), 1.0, -1.0), (NSPoint(x: r.maxX, y: r.maxY), -1.0, -1.0)] {
+            let sx = CGFloat(sx), sy = CGFloat(sy)
+            NSRect(x: min(pt.x, pt.x + sx * arm), y: min(pt.y, pt.y + sy * thick),
+                   width: arm, height: thick).fill()
+            NSRect(x: min(pt.x, pt.x + sx * thick), y: min(pt.y, pt.y + sy * arm),
+                   width: thick, height: arm).fill()
         }
+        let bar: CGFloat = 20
+        NSRect(x: r.midX - bar / 2, y: r.minY, width: bar, height: thick).fill()
+        NSRect(x: r.midX - bar / 2, y: r.maxY - thick, width: bar, height: thick).fill()
+        NSRect(x: r.minX, y: r.midY - bar / 2, width: thick, height: bar).fill()
+        NSRect(x: r.maxX - thick, y: r.midY - bar / 2, width: thick, height: bar).fill()
     }
 
     private func drawGradientOverlay() {
@@ -709,7 +752,7 @@ final class ImageViewer: NSView {
         line.lineWidth = isActive ? 1.6 : 1.2
         line.stroke()
 
-        let hr: CGFloat = 5
+        let hr: CGFloat = 10
         if !isActive {
             // A small white dot so an inactive gradient can be clicked to select it.
             NSColor(white: 1, alpha: 0.78).setFill()
@@ -743,9 +786,10 @@ final class ImageViewer: NSView {
         rl.stroke()
         NSColor(srgbRed: 0.47, green: 0.78, blue: 1, alpha: 1).setFill()
         NSBezierPath(ovalIn: NSRect(x: rot.x - hr, y: rot.y - hr, width: hr * 2, height: hr * 2)).fill()
+        drawRotateGlyph(at: rot, radius: hr * 0.62)
 
         // White position handle on top.
-        let wr: CGFloat = 6
+        let wr: CGFloat = 12
         NSColor.white.setFill()
         NSBezierPath(ovalIn: NSRect(x: center.x - wr, y: center.y - wr,
                                     width: wr * 2, height: wr * 2)).fill()

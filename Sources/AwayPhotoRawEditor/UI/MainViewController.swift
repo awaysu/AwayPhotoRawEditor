@@ -33,7 +33,20 @@ final class MainViewController: NSViewController {
     var previewList = PreviewList()
 
     var current: PhotoItem?
-    var adj = ImageAdjustments()
+    /// The photo's adjustments. ImageAdjustments is a struct, and every panel keeps its
+    /// own copy to mutate; whenever the owner's value changes (a viewer gesture, an undo,
+    /// another panel) every copy is refreshed here, otherwise the next slider drag on a
+    /// stale panel writes that stale copy back and silently drops the change — a user
+    /// added a gradient, touched 色溫, and the gradient vanished.
+    var adj = ImageAdjustments() {
+        didSet {
+            basicPanel.adjustments = adj
+            colorPanel.adjustments = adj
+            detailPanel.adjustments = adj
+            toolsPanel.adjustments = adj
+            viewer.adjustments = adj
+        }
+    }
     var exif: ExifData?
     var proxy: FloatImageBuffer?
     var dirty = false
@@ -200,6 +213,12 @@ final class MainViewController: NSViewController {
 
         // center column
         view.addSubview(centerColumn)
+        // macOS 14 stopped clipping NSView drawing to its bounds by default. The viewer
+        // draws the zoomed image at its full size, so at 100%/200% it painted straight
+        // over the left column and the top bar; the strip scrolls its cells the same way.
+        centerColumn.clipsToBounds = true
+        viewer.clipsToBounds = true
+        strip.clipsToBounds = true
         centerColumn.addSubview(viewer)
 
         viewerBar.wantsLayer = true

@@ -8,6 +8,9 @@ final class ExportWindowController: NSObject {
     private var settings: ExportSettings
     private let count: Int
     private weak var host: NSWindow?
+    /// See DialogController.retainedWhileShown — the caller drops its reference right
+    /// after show(), and every button closure captures self weakly.
+    private var retainedWhileShown: ExportWindowController?
 
     var onConfirm: ((ExportSettings) -> Void)?
     /// 儲存設定 without starting the export.
@@ -370,6 +373,7 @@ final class ExportWindowController: NSObject {
 
     func show(over window: NSWindow?) {
         host = window
+        retainedWhileShown = self
         guard let window else { panel.makeKeyAndOrderFront(nil); return }
         window.beginSheet(panel)
     }
@@ -377,6 +381,7 @@ final class ExportWindowController: NSObject {
     func close() {
         if let host, panel.isSheet { host.endSheet(panel) }
         panel.orderOut(nil)
+        retainedWhileShown = nil
     }
 }
 

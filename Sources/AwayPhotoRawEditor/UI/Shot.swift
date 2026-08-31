@@ -5,7 +5,7 @@ import AwayRawCore
 /// The window draws itself into a bitmap, so this needs no Screen Recording permission
 /// and works over SSH or in CI.
 ///
-///   AwayPhotoRawEditor --shot <folder> <out.png> [waitMs] [WxH]
+///   AwayPhotoRawEditor --shot <folder> <out.png> [waitMs] [WxH]      (AWPR_SHOT_TOOL=crop|gradient|heal)
 ///   AwayPhotoRawEditor --dlgshot <export|settings|presets|about|fonts|firstrun|progress> <out.png>
 enum Shot {
 
@@ -74,6 +74,19 @@ enum Shot {
         DispatchQueue.main.asyncAfter(deadline: .now() + Double(waitMs) / 1000.0) {
             controller.view.frame = NSRect(origin: .zero, size: size)
             controller.view.layoutSubtreeIfNeeded()
+            // AWPR_SHOT_TOOL=crop|gradient|heal photographs the viewer with that tool's
+            // overlay (a gradient is added so its handles show). The handle geometry is
+            // the part of the UI no headless assertion can judge.
+            if let tool = ProcessInfo.processInfo.environment["AWPR_SHOT_TOOL"] {
+                switch tool {
+                case "crop": controller.toolsPanel.selectTool(.crop)
+                case "gradient": controller.toolsPanel.selectTool(.gradient); controller.addGradient()
+                case "heal": controller.toolsPanel.selectTool(.heal)
+                default: break
+                }
+                controller.view.layoutSubtreeIfNeeded()
+                controller.viewer.needsDisplay = true
+            }
             let ok = capture(controller.view, to: out)
             // exit() rather than terminate(): background cache work can otherwise keep
             // the run alive long after the picture is written.

@@ -7,6 +7,13 @@ class DialogController: NSObject {
     let panel: NSPanel
     let content: FlippedView
     private weak var host: NSWindow?
+    /// Alive from show() to close(). Every caller creates the controller as a local and
+    /// lets it go after show(); the buttons' closures capture self weakly, so without
+    /// this the sheet stayed up with every button dead (the same fault the progress
+    /// window had, found by a user in the export dialog).
+    private var retainedWhileShown: DialogController?
+    /// Dialogs currently on screen (for --uitest).
+    private(set) static var shownCount = 0
 
     init(title: String, width: CGFloat, height: CGFloat) {
         panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: width, height: height),
@@ -28,6 +35,8 @@ class DialogController: NSObject {
 
     func show(over window: NSWindow?) {
         host = window
+        if retainedWhileShown == nil { Self.shownCount += 1 }
+        retainedWhileShown = self
         guard let window else { panel.makeKeyAndOrderFront(nil); return }
         window.beginSheet(panel)
     }
@@ -35,6 +44,8 @@ class DialogController: NSObject {
     func close() {
         if let host, panel.isSheet { host.endSheet(panel) }
         panel.orderOut(nil)
+        if retainedWhileShown != nil { Self.shownCount -= 1 }
+        retainedWhileShown = nil
     }
 
     // ---- small builders --------------------------------------------------

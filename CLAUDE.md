@@ -117,7 +117,7 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 | `awpr-cli render <img> <out.png> [--exposure N …]` | 單張套用調整後輸出 PNG |
 | `awpr-cli bench <img>` | 各階段 proxy / 全解析度耗時 |
 | `awpr-cli cmpbench <img> [--gpu] [--render-only]` | **與 C# mac 版對照用**：逐項照它的 `--decodetest`／`--rendertest`／`--enginetest` 條件（2400 px、同六組調整、單次冷跑）。結果與結論見 `Docs/Comparison-CSharp-vs-Swift-2026-08-30.md` |
-| `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖 |
+| `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖。`AWPR_SHOT_TOOL=crop\|gradient\|heal` 會選好工具（漸層會先新增一個）再拍，用來看手把幾何 |
 | `AwayPhotoRawEditor --dlgshot <export\|settings\|presets\|about\|fonts\|firstrun\|progress> <png>` | 對話框離屏截圖 |
 | `AwayPhotoRawEditor --uitest <folder> [report]` | **UI 流程測試**：把資料夾複製到暫存區，驅動真正的 `MainViewController` 跑 載入→編輯→復原／重做→切圖存檔→多選批次同步與批次復原→風格檔→重設→裁切比例→旋轉→虛擬副本→複製貼上→隱藏／顯示全部／還原→刪除副本→關閉存檔，逐項斷言（含磁碟上的 XML）。截圖測不到的邏輯都在這裡。JPEG 與 RAW 資料夾都要跑。|
 
@@ -172,6 +172,22 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   從「紀錄」重開同一個資料夾時第一張的 `loadedKey` 相同會讓載入變成 no-op（`current` 指向孤兒物件）。
 - **診斷啟動加 `-ApplePersistenceIgnoreState YES`**：app 曾當機過，macOS 下次啟動會跳「重新開啟視窗？」的 modal；
   `window.isRestorable = false` 已避免將來再存狀態，但舊的狀態檔還在時仍會問一次。
+- **⚠️ macOS 14 起 `NSView.clipsToBounds` 預設是 false**（2026-08-30 真人操作：100%／200% 縮放後整個畫面只剩右欄）：
+  viewer 在 `draw` 裡把放大的圖畫到自己的 bounds 外、蓋掉左欄與頂列。`centerColumn`／`viewer`／`strip` 現在明確 `clipsToBounds = true`；
+  **任何會畫到 bounds 外的自繪 view（捲動、縮放）都要設**。⚠️ 這個溢出**只有螢幕上的 compositor 看得到**：`cacheDisplay`（drawRect 遞迴）
+  與 `layer.render(in:)`（headless 視窗沒有 display cycle）都看不出來，實測關掉裁切兩者照樣「相同」。所以 `--uitest [2b]` 是契約式斷言
+  （三個 view 的 `clipsToBounds` 必須為 true），**真正的驗證要真人按 100%／200% 看**。
+- **⚠️ 所有對話框 controller 都要自己持有自己**（2026-08-30，真人操作：匯出視窗三個按鈕按了沒反應）：
+  `let dialog = ExportWindowController(...)`／`SettingsWindowController()`／`AboutWindowController()`… 全是區域變數，`show()` 一回來就釋放，
+  按鈕的 `[weak self]` 閉包全部變 nil——與進度視窗同一類 bug，只是進度視窗先被發現。現在 `DialogController` 基底與 `ExportWindowController`
+  都有 `retainedWhileShown`（`show`→`close`）。**新加對話框一律繼承 `DialogController`**。`--uitest [10]` 對每種對話框斷言「show 後仍存活、close 後釋放」。
+- **⚠️ `hitTest(_:)` 收到的點是「父 view 座標」**（2026-08-30 真人操作：工具的裁切／漸層／修護按了沒反應）：
+  `RibbonLockView` 的 `hitTest` 原本沒隱藏就一律回 `self`，把整個工具面板（含分頁列）的點擊全吃掉；要 `frame.contains(point)` 才回自己。
+  **uitest 直接呼叫 `tabs.click(index:)` 測不到這種事**——現在 `[5b]` 另外走真正的 `toolsPanel.hitTest`（分頁列點得到、參數區回鎖層）。
+  覆寫 `hitTest` 的 view 一律要加這種斷言。
+- **viewer 手把尺寸是真人調出來的（2026-08-30）**：裁切角落判定 18 pt（邊 10）、角把手是畫在框**內側**的 L 形（畫在外側會在框貼齊圖邊時被裁掉）；
+  漸層點半徑 10、白點 12、藍點距白點 256 pt、藍點內畫旋轉箭頭、命中半徑 14。C# 版是 5／6／64／10。改這些後用 `AWPR_SHOT_TOOL` 截圖看。
+- **⌘A 全選走主選單（`AppDelegate.selectAll`）**，`--uitest [3]` 用 `NSApp.mainMenu.performKeyEquivalent` 驗證；另外接了 **Ctrl+A**（Windows 習慣）。
 - **⚠️ `ProgressWindowController` 要自己持有自己（`show`→`close` 之間）**：呼叫端只在 completion 閉包裡抓著它，
   閉包一回傳 controller 就死了，而 `finish()` 排的 0.8 秒延遲關閉與「取消」按鈕都是 `[weak self]` →
   sheet 永遠留在畫面上、也按不掉。這是**第一次真人開資料夾就撞到的 bug**（2026-08-29），`--uitest` 全綠也沒抓到，
@@ -225,7 +241,9 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   6000 萬像素的陣列如果有 copy-on-write 會直接毀掉效能。
 - **`ImageAdjustments` 是 struct（值語意）**，與 C# 的 class 不同。
   因此面板改的是**自己那份複本**，owner 在 `onChanged` 時要**讀回來**（`self.adj = p.adjustments ?? self.adj`）。
-  漏了這一步的症狀是「拉滑桿沒反應」。
+  漏了這一步的症狀是「拉滑桿沒反應」。**反方向也一樣**（2026-08-30 真人操作：新增漸層後拉色溫，漸層消失）：
+  viewer／工具面板改了 `adj`，色彩面板那份複本還是舊的，下一次拉色溫就把舊複本寫回去。現在 `adj` 的 `didSet`
+  會把新值推給四個面板與 viewer，**任何改 `adj` 的路徑都自動同步**。`--uitest [2c]` 斷言。
 - **`pipelineVersion` / `activeGradientIndex` 不參與 `valueEquals`**：
   與 C# 版一樣，舊版照片沒動滑桿不能被當成「已編輯」，`resetAll()` 也不能偷偷升級版本
   （`resetAll` 會把 version 存起來再放回去）。
@@ -387,8 +405,10 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
   `awpr-cli info`（看 `libraw sizes` 有沒有裁切表、相機色彩資料讀不讀得到）→ `selftest` → `hashtest` 與 C# 版對照。
 - **網站上架 macOS 版**：「檢查更新」目前一定回 Windows 的 1.0.17（`downloads` 對 `platform=macos` 是空陣列），
   是網站資料的事，程式端已完成。
-- **真人操作**：viewer 上的滑鼠手勢（裁切拖框、漸層白／黃／藍手把、修護圈圈與右鍵刪除）、trackpad 縮放手感、
-  拖曳資料夾到視窗、第一次執行的語言選擇——邏輯都有 `--uitest` / 截圖覆蓋，但沒有真人摸過。
+- **真人操作**（2026-08-30/31 已摸過一輪，抓到 8 個 headless 測不到的 bug，全修：進度視窗關不掉、匯出等對話框按鈕全死、
+  100%↑ 畫面溢出、工具分頁點不到（hitTest）、工具不能取消、Ctrl+A、裁切角落難點、新增漸層被別的滑桿蓋掉——每一個都在
+  「踩過的坑」有記錄與 uitest 斷言）。**還沒真人驗過的**：修護圈圈與右鍵刪除、trackpad 縮放手感、拖曳資料夾到視窗、
+  第一次執行的語言選擇、漸層藍點 256 pt 距離的手感。
 
 ### 效能：與 C# mac 版比較（2026-08-30，`Docs/Comparison-CSharp-vs-Swift-2026-08-30.md`）
 後製 CPU 快 3×、GPU 快 5–10×、proxy 熱取快 3–5×、記憶體少 30–45%；解碼原本慢 1.4–2.2×（LibRaw 沒開 OpenMP），

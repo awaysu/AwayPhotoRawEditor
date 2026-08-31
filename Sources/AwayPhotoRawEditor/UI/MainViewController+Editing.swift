@@ -449,6 +449,8 @@ extension MainViewController {
             refreshFolder()
         case 42 where mods.isEmpty:
             toggleShowOriginal()                    // backslash
+        case 0 where mods == [.control]:            // ctrl+A: the Windows habit; ⌘A is the menu
+            strip.selectAll()
         default:
             // Number keys pick a tool, matching the ribbon order.
             switch event.charactersIgnoringModifiers {

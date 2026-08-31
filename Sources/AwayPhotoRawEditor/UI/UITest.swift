@@ -128,9 +128,52 @@ enum UITest {
     // ---- 3: batch sync + batch undo -------------------------------------
 
     private static func stepBatch(_ c: MainViewController) {
+        // zoom200() is a no-op until the first render has landed in the viewer.
+        waitUntil("viewer 收到算圖", { c.viewer.imageSize != .zero }) { stepZoomAndBatch(c) }
+    }
+
+    private static func stepZoomAndBatch(_ c: MainViewController) {
+        line("")
+        line("[2b] 縮放不溢出 viewer")
+        // Only the on-screen compositor shows the spill (cacheDisplay and layer.render
+        // both clip in a headless window), so this is a contract check: macOS 14
+        // defaults clipsToBounds to false and these three must override it.
+        c.viewer.zoom200()
+        check("viewer / strip / centerColumn 都裁切到 bounds",
+              c.viewer.clipsToBounds && c.strip.clipsToBounds && c.centerColumn.clipsToBounds,
+              "viewer=\(c.viewer.clipsToBounds) strip=\(c.strip.clipsToBounds) column=\(c.centerColumn.clipsToBounds)")
+        check("200% 後 zoomPercent", abs(c.viewer.zoomPercent - 200) < 0.5, "\(c.viewer.zoomPercent)")
+        c.viewer.zoomToFit()
+
+        line("")
+        line("[2c] 面板複本同步（viewer 編輯後拉別的滑桿不能蓋掉）")
+        c.addGradient()
+        check("新增漸層", c.adj.gradients.count == 1)
+        let temp = c.colorPanel.sliders[0]                  // 色溫（RAW 是 K、JPEG 是 ±100，所以只看有沒有變）
+        let tempBefore = c.adj.temperature
+        temp.onEditBegin?(); temp.value = temp.minValue + (temp.maxValue - temp.minValue) * 0.3
+        check("拉色溫後漸層仍在", c.adj.gradients.count == 1 && c.adj.temperature != tempBefore,
+              "gradients=\(c.adj.gradients.count) temp=\(tempBefore) → \(c.adj.temperature)")
+        let expo = c.basicPanel.sliders[0]                  // 曝光
+        expo.onEditBegin?(); expo.value = 0.3
+        check("拉曝光後漸層仍在", c.adj.gradients.count == 1 && c.adj.exposure == 0.3)
+        c.doUndo(); c.doUndo(); c.doUndo()
+        check("三次復原 → 無漸層、預設曝光", c.adj.gradients.isEmpty && c.adj.exposure == 0, "\(c.adj.gradients.count) \(c.adj.exposure)")
+
         line("")
         line("[3] 多選批次同步")
         let n = c.items.count
+        // ⌘A must reach the strip through the real main menu, not a direct call.
+        c.strip.deselectAll()
+        if let ev = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: .command,
+                                     timestamp: 0, windowNumber: c.view.window?.windowNumber ?? 0,
+                                     context: nil, characters: "a", charactersIgnoringModifiers: "a",
+                                     isARepeat: false, keyCode: 0) {
+            let handled = NSApp.mainMenu?.performKeyEquivalent(with: ev) ?? false
+            check("⌘A 由主選單處理", handled)
+        }
+        check("⌘A → 全選 \(n) 張", c.strip.selectedItems.count == n, "\(c.strip.selectedItems.count)")
+        c.strip.deselectAll()
         c.strip.selectAll()
         check("全選 \(n) 張", c.strip.selectedItems.count == n)
         check("目前仍是第二張", c.current?.key == c.items[1].key)
@@ -199,6 +242,16 @@ enum UITest {
         line("")
         line("[5b] 工具切換（再按一次取消）")
         check("啟動時無工具", c.toolsPanel.tool == .none && c.toolsPanel.tabs.selectedIndex == -1)
+        // Real hit-testing, not a direct call: with no tool the lock must cover the page
+        // controls but never the tab strip (it once answered every point in the panel).
+        let tabs = c.toolsPanel.tabs
+        let tabPoint = NSPoint(x: tabs.frame.midX, y: tabs.frame.midY)
+        check("分頁列可點到（hitTest）", c.toolsPanel.hitTest(c.toolsPanel.convert(tabPoint, to: c.toolsPanel.superview)) === tabs,
+              "\(String(describing: type(of: c.toolsPanel.hitTest(c.toolsPanel.convert(tabPoint, to: c.toolsPanel.superview)))))")
+        let pagePoint = NSPoint(x: tabs.frame.midX, y: tabs.frame.maxY + 40)
+        let hitPage = c.toolsPanel.hitTest(c.toolsPanel.convert(pagePoint, to: c.toolsPanel.superview))
+        check("無工具時參數區被鎖住（hitTest）", hitPage != nil && hitPage !== tabs && !(hitPage is AdjustmentSlider),
+              "\(String(describing: hitPage.map { type(of: $0) }))")
         c.toolsPanel.tabs.click(index: 0)
         check("按裁切 → 裁切", c.toolsPanel.tool == .crop && c.viewer.tool == .crop && c.toolsPanel.tabs.selectedIndex == 0)
         c.toolsPanel.tabs.click(index: 0)
@@ -302,6 +355,33 @@ enum UITest {
         let saved = AdjustmentXmlStore.load(imagePath: cur.sourcePath, copyIndex: cur.virtualCopyIndex)
         check("關閉時寫入未存編輯", saved?.exposure == -0.5, "\(saved?.exposure ?? 9)")
         check("編輯區清空", c.current == nil && c.items.isEmpty && c.folder.isEmpty)
+        stepDialogs(c)
+    }
+
+    // ---- 10: dialogs stay alive while shown; zoom stays inside the viewer ----
+
+    private static func stepDialogs(_ c: MainViewController) {
+        line("")
+        line("[10] 對話框生命週期")
+        // Each dialog is created as a local and dropped after show(); its buttons only
+        // work if the controller keeps itself alive until close().
+        var export: ExportWindowController? = ExportWindowController(settings: c.exportSettings, count: 1)
+        weak var exportRef = export
+        export?.show(over: nil); export = nil
+        check("匯出對話框 show 後仍存活", exportRef != nil)
+        exportRef?.close()
+        check("匯出對話框 close 後釋放", exportRef == nil)
+
+        for (name, make) in [("設定", { SettingsWindowController() as DialogController }),
+                             ("關於", { AboutWindowController() as DialogController }),
+                             ("字體大小", { FontSizeWindowController() as DialogController })] {
+            var d: DialogController? = make()
+            weak var ref = d
+            d?.show(over: nil); d = nil
+            check("\(name) show 後仍存活", ref != nil && DialogController.shownCount == 1)
+            ref?.close()
+            check("\(name) close 後釋放", ref == nil && DialogController.shownCount == 0)
+        }
         finish()
     }
 }

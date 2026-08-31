@@ -401,7 +401,11 @@ final class ToolsPanel: SectionPanel {
 /// Transparent view that eats mouse events, so the placeholder page cannot be edited
 /// while no tool is selected (the Windows build disables the ribbon host instead).
 private final class RibbonLockView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { isHidden ? nil : self }
+    // `point` is in the superview's coordinates; answering `self` for every point
+    // swallowed the tab strip above as well, so no tool could ever be picked.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        (!isHidden && frame.contains(point)) ? self : nil
+    }
     override func mouseDown(with event: NSEvent) {}
     override func mouseUp(with event: NSEvent) {}
     override func rightMouseDown(with event: NSEvent) {}
