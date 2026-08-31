@@ -350,17 +350,19 @@ final class ImageViewer: NSView {
             guard let ctx = NSGraphicsContext.current?.cgContext else { return false }
             ctx.translateBy(x: sz / 2, y: sz / 2)
             if flip { ctx.scaleBy(x: -1, y: 1) }
-            // A ↘︎↖︎ double arrow: shaft plus two heads, white with a black outline so
-            // it reads on any photo.
+            // A ↖︎↘︎ double arrow: shaft plus two heads, white with a black outline so
+            // it reads on any photo. The image context is NOT flipped (y grows upward),
+            // so top-left is (-a, +a) and bottom-right is (+a, -a) — drawing (-a,-a)→(a,a)
+            // here gives ↗︎↙︎, which is exactly the bug a human hit on 2026-08-31.
             let a: CGFloat = 8       // half shaft length
             let h: CGFloat = 5.5     // arrowhead size
             let path = CGMutablePath()
-            path.move(to: CGPoint(x: -a, y: -a)); path.addLine(to: CGPoint(x: a, y: a))
+            path.move(to: CGPoint(x: -a, y: a)); path.addLine(to: CGPoint(x: a, y: -a))
             for s in [CGFloat(1), -1] {
-                path.move(to: CGPoint(x: s * a, y: s * a))
-                path.addLine(to: CGPoint(x: s * (a - h), y: s * a))
-                path.move(to: CGPoint(x: s * a, y: s * a))
-                path.addLine(to: CGPoint(x: s * a, y: s * (a - h)))
+                path.move(to: CGPoint(x: s * a, y: -s * a))
+                path.addLine(to: CGPoint(x: s * (a - h), y: -s * a))
+                path.move(to: CGPoint(x: s * a, y: -s * a))
+                path.addLine(to: CGPoint(x: s * a, y: -s * (a - h)))
             }
             ctx.setLineCap(.round)
             ctx.setLineJoin(.round)

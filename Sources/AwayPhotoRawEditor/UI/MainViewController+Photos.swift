@@ -346,6 +346,11 @@ extension MainViewController {
         savePreviewList()
         folder = ""
         folderLabel.stringValue = ""
+        // The user closed the folder on purpose → the next launch stays closed instead of
+        // auto-reopening it (same as the Windows build's CloseFolder). A diagnostic run
+        // never touches the user's settings file.
+        settings.lastFolder = ""
+        if !Shot.headless { settings.save() }
         items = []
         strip.setItems([])
         clearEditor()
@@ -353,23 +358,38 @@ extension MainViewController {
         updateStatus()
     }
 
-    /// 關閉資料夾並刪除快取縮圖 — used after changing the RAW precision setting, since
-    /// existing caches do not regenerate on their own.
+    /// 關閉資料夾並刪除快取縮圖 — removes the folder's whole `RAW_TEMP` (thumbnails, proxies
+    /// **and** the adjustment XMLs / preview_list). Deliberately more than the Windows build,
+    /// which keeps the XMLs: the user wants the folder gone. It goes to the Trash so a slip
+    /// is recoverable; volumes without a Trash fall back to a plain delete.
     func closeFolderAndClearCache() {
         guard !folder.isEmpty else { return }
         let dir = AppPaths.rawTempDir(folder)
         let alert = NSAlert()
         alert.messageText = L.t("關閉資料夾並刪除快取縮圖")
-        alert.informativeText = L.f("將刪除 {0} 內的縮圖與預覽快取（調整設定會保留）。", dir)
-        alert.addButton(withTitle: L.t("確定"))
+        alert.informativeText = L.f("將刪除整個 {0} 資料夾，包含所有調整設定、隱藏狀態與虛擬副本。此操作無法在程式內復原。", dir)
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: L.t("刪除"))
         alert.addButton(withTitle: L.t("取消"))
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
-        let sources = Set(items.map(\.sourcePath))
         closeFolder()
-        DispatchQueue.global(qos: .utility).async {
-            for s in sources { CacheManager.deleteCacheFiles(s) }
+        let removed = Self.removeRawTempDir(dir)
+        statusLabel.stringValue = removed
+            ? L.f("已關閉資料夾並刪除 {0}", dir)
+            : L.f("無法刪除 {0}", dir)
+    }
+
+    /// Trash (or, failing that, delete) a RAW_TEMP directory. Returns true when it is gone.
+    @discardableResult
+    static func removeRawTempDir(_ dir: String, toTrash: Bool = true) -> Bool {
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: dir) else { return true }
+        let url = URL(fileURLWithPath: dir)
+        if !toTrash || (try? fm.trashItem(at: url, resultingItemURL: nil)) == nil {
+            try? fm.removeItem(at: url)
         }
+        return !fm.fileExists(atPath: dir)
     }
 
     func savePreviewList() {

@@ -108,7 +108,7 @@ public enum L {
 
     兩者的運算與輸出都一樣（float 運算、8-bit 輸出），差別只在 RAW 解碼保留多少資訊；對 JPG 等非 RAW 沒有影響。
 
-    變更後請用「關閉資料夾並刪除快取縮圖」重新產生預覽快取，舊快取不會自動更新。
+    變更後請用「關閉資料夾並刪除快取縮圖」重新產生預覽快取，舊快取不會自動更新（注意：macOS 版會連同調整設定一起刪除整個 RAW_TEMP）。
     """
 
     // MARK: - Translation table (ported entry-for-entry from the Windows build)
@@ -148,6 +148,9 @@ public enum L {
         ("刪除", Tr("Delete", "削除", "삭제", "删除", "Löschen", "Supprimer", "Eliminar")),
         ("此資料夾沒有支援的影像", Tr("This folder has no supported images", "このフォルダーに対応画像がありません", "이 폴더에 지원되는 이미지가 없습니다", "此文件夹没有支持的图像", "Dieser Ordner enthält keine unterstützten Bilder", "Ce dossier ne contient aucune image prise en charge", "Esta carpeta no contiene imágenes compatibles")),
         ("將刪除 {0} 內的縮圖與預覽快取（調整設定會保留）。", Tr("The thumbnail and preview cache in {0} will be deleted (adjustments are kept).", "{0} 内のサムネイルとプレビューキャッシュを削除します（調整は保持されます）。", "{0}의 썸네일과 미리보기 캐시를 삭제합니다 (조정은 유지됨).", "将删除 {0} 内的缩略图与预览缓存（调整设置会保留）。", "Der Miniatur- und Vorschau-Cache in {0} wird gelöscht (Anpassungen bleiben erhalten).", "Le cache des vignettes et aperçus de {0} sera supprimé (les réglages sont conservés).", "Se eliminará la caché de miniaturas y vistas previas de {0} (los ajustes se conservan).")),
+        ("將刪除整個 {0} 資料夾，包含所有調整設定、隱藏狀態與虛擬副本。此操作無法在程式內復原。", Tr("The entire {0} folder will be deleted, including all adjustments, hidden flags and virtual copies. This cannot be undone from within the app.", "{0} フォルダー全体を削除します。すべての調整、非表示状態、仮想コピーも含まれます。アプリ内では元に戻せません。", "{0} 폴더 전체를 삭제합니다. 모든 조정, 숨김 상태, 가상 복사본이 포함됩니다. 앱 내에서 되돌릴 수 없습니다.", "将删除整个 {0} 文件夹，包含所有调整设置、隐藏状态与虚拟副本。此操作无法在程序内撤销。", "Der gesamte Ordner {0} wird gelöscht, einschließlich aller Anpassungen, Ausblendungen und virtuellen Kopien. Dies kann in der App nicht rückgängig gemacht werden.", "Le dossier {0} entier sera supprimé, y compris tous les réglages, les photos masquées et les copies virtuelles. Cette action est irréversible dans l'application.", "Se eliminará la carpeta {0} completa, incluidos todos los ajustes, fotos ocultas y copias virtuales. No se puede deshacer desde la aplicación.")),
+        ("已關閉資料夾並刪除 {0}", Tr("Folder closed and {0} deleted", "フォルダーを閉じ、{0} を削除しました", "폴더를 닫고 {0}을(를) 삭제했습니다", "已关闭文件夹并删除 {0}", "Ordner geschlossen und {0} gelöscht", "Dossier fermé et {0} supprimé", "Carpeta cerrada y {0} eliminado")),
+        ("無法刪除 {0}", Tr("Could not delete {0}", "{0} を削除できません", "{0}을(를) 삭제할 수 없습니다", "无法删除 {0}", "{0} konnte nicht gelöscht werden", "Impossible de supprimer {0}", "No se pudo eliminar {0}")),
         ("還原備份", Tr("Restore backup", "バックアップを復元", "백업 복원", "还原备份", "Sicherung wiederherstellen", "Restaurer la sauvegarde", "Restaurar copia")),
         ("無法新增", Tr("Cannot add", "追加できません", "추가할 수 없음", "无法新增", "Hinzufügen nicht möglich", "Ajout impossible", "No se puede añadir")),
         ("「{0}」是保留名稱，請換一個。", Tr("\"{0}\" is a reserved name; please choose another.", "「{0}」は予約済みの名前です。別の名前を選んでください。", "\"{0}\"은(는) 예약된 이름입니다. 다른 이름을 선택하세요.", "“{0}”是保留名称，请换一个。", "„{0}“ ist ein reservierter Name; bitte einen anderen wählen.", "« {0} » est un nom réservé ; choisissez-en un autre.", "«{0}» es un nombre reservado; elige otro.")),

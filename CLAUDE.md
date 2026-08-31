@@ -61,6 +61,7 @@ xcrun notarytool store-credentials awpr-notary \
 | 高 DPI | `Ui.S()` 手動縮放全部版面 | **不需要** | macOS 以點為單位排版、Retina 由系統處理。字級仍可調（設定 → 字體大小） |
 | 版面過高 | `DarkScrollHost` + `AutoFitScale` | **NSScrollView（overlay scroller）** | 同一個問題：右欄內容約 900pt，1040 高的視窗放不下 → 左右欄可捲動 |
 | 語言/外觀切換 | `Application.Restart()` | **重新啟動 app** | 同樣的理由：字型與調色盤是開機時決定的快取靜態值 |
+| 關閉資料夾並刪除快取縮圖 | 只刪 `_thumb.jpg`／`.rawpipe.png`／`.f16`，**保留 XML** | **整個 `RAW_TEMP` 丟進垃圾桶**（含調整 XML、`preview_list.xml`） | 使用者要的是「資料夾消失」（2026-08-31）。對話框明講會丟調整設定；用 `trashItem` 才救得回來，沒有垃圾桶的磁碟區退回 `removeItem`。`--uitest [11]` 斷言 |
 
 ### 檔案格式**完全相容**（重要）
 
@@ -187,6 +188,8 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   覆寫 `hitTest` 的 view 一律要加這種斷言。
 - **裁切框有懸停游標（macOS 版增補，Windows 版沒有）**：滑過角落顯示自畫的斜向雙箭頭（AppKit 沒有公開的對角 resize 游標）、
   邊是 ↔↕、框內是手掌。區域判定與 `beginCropDrag` 共用同一個 `cropHitZone`，游標出現的地方就一定抓得到。`--uitest [2d]` 斷言四角。
+  ⚠️ **游標圖是在 `flipped: false`（y 向上）的 `NSImage` 裡畫的**：(-a,-a)→(a,a) 是 ↗↙ 不是 ↖↘，第一版就這樣畫反了（2026-08-31 真人發現）。
+  `[2d]` 現在另外驗像素（↖↘ 的左上角要有筆畫、右上角不能有）；`AWPR_UITEST_CURSOR_DUMP=<dir>` 會把兩個游標存成 PNG 給人看。
 - **viewer 手把尺寸是真人調出來的（2026-08-30）**：裁切角落判定 18 pt（邊 10）、角把手是畫在框**內側**的 L 形（畫在外側會在框貼齊圖邊時被裁掉）；
   漸層點半徑 10、白點 12、藍點距白點 256 pt、藍點內畫旋轉箭頭、命中半徑 14。C# 版是 5／6／64／10。改這些後用 `AWPR_SHOT_TOOL` 截圖看。
 - **⌘A 全選走主選單（`AppDelegate.selectAll`）**，`--uitest [3]` 用 `NSApp.mainMenu.performKeyEquivalent` 驗證；另外接了 **Ctrl+A**（Windows 習慣）。
@@ -208,6 +211,8 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 - **`MetalTarget` 的 scratch buffer 在 command buffer 完成前不回共用 pool**：各階段編在同一個 command buffer、到 `result()` 才 commit，
   原本 `release()` 立刻歸還 pool，另一個 target（縮圖算圖是並行的）借走後 CPU `update(from:)` 會寫進**尚未執行的 kernel 還要讀的記憶體**。
   現在 `release()` 進 target 自己的 `retired` 清單（同 target 後續階段可重用，Metal 會追蹤同一 command buffer 內的 hazard），`flush()` 之後才歸還。gputest 17/17 不變。
+- **`closeFolder()` 要把 `settings.lastFolder` 清空並存檔**（2026-08-31 真人操作：關閉資料夾並刪除快取後，重開程式又自動載入同一個資料夾）：
+  與 Windows 的 `CloseFolder` 相同——使用者主動關閉就該維持關閉狀態。只有「開啟資料夾」寫 LastFolder，結束程式不經過 `closeFolder`，所以自動重開不受影響。headless 只改記憶體不寫檔；`--uitest [9]` 斷言。
 - **刪除／隱藏前一定先 `saveCurrentIfDirty()`**——被刪的不一定是目前那張，目前那張的未存編輯不能跟著丟。
 
 - **⚠️ `install_name_tool` 會讓 dylib 的簽章失效，Apple Silicon 上未正確簽章的執行檔會被 SIGKILL**
@@ -417,6 +422,7 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 **同日補上 OpenMP 後追平或超過 C#**（見「踩過的坑」）。公證時 `Contents/Frameworks` 現在有 `libraw.25.dylib` 與 `libomp.dylib` 兩個。
 
 ### 刻意沒搬（macOS 不需要）
+☰ 選單的「匯出目前照片／匯出照片／匯出全部照片」與「還原已隱藏的照片」（2026-08-31 使用者要求移除：右下匯出按鈕與縮圖右鍵選單已涵蓋；`restoreHiddenPhotos()` 仍在、只拿掉入口）、
 介面大小百分比（系統處理 Retina）、顯示捲軸開關（左右欄本來就是 overlay scroller）、
 介面風格預覽卡（用下拉）、Mac App Store 沙盒（見 entitlements 註解）。
 

@@ -43,21 +43,13 @@ extension MainViewController {
         recentItem.submenu = recentMenu
         menu.addItem(recentItem)
 
-        menu.addItem(.separator())
-        add("匯出目前照片", #selector(menuExportCurrent), enabled: current != nil)
-        add("匯出照片", #selector(menuExportSelection), enabled: !strip.selectedItems.isEmpty)
-        add("匯出全部照片", #selector(menuExportAll), enabled: !items.isEmpty)
+        // 2026-08-31：☰ 不再放「匯出目前照片／匯出照片／匯出全部照片」——右下的匯出按鈕
+        // 與縮圖右鍵選單已涵蓋（使用者要求，與 Windows 版選單刻意不同）。
         menu.addItem(.separator())
         add("設定…", #selector(menuSettings))
         add("編輯風格檔…", #selector(menuPresetEditor))
-        menu.addItem(.separator())
-        let hiddenCount = previewList.hidden.count
-        let restore = NSMenuItem(
-            title: hiddenCount > 0 ? L.f("還原已隱藏的照片（{0} 張）", hiddenCount) : L.t("還原已隱藏的照片"),
-            action: #selector(menuRestoreHidden), keyEquivalent: "")
-        restore.target = self
-        restore.isEnabled = hiddenCount > 0
-        menu.addItem(restore)
+        // 2026-08-31：「還原已隱藏的照片」也移除（使用者要求）——縮圖右鍵的
+        // 顯示全部／取消隱藏已涵蓋。
         menu.addItem(.separator())
         add("支援RAW檔相機列表", #selector(menuCameraList))
         add("關於", #selector(menuAbout))
@@ -70,15 +62,12 @@ extension MainViewController {
     @objc func menuRefreshFolder() { refreshFolder() }
     @objc func menuCloseFolder() { closeFolder() }
     @objc func menuCloseAndClearCache() { closeFolderAndClearCache() }
-    @objc func menuExportCurrent() { exportCurrent() }
     @objc func menuExportSelection() { exportPhotos(strip.selectedItems) }
-    @objc func menuExportAll() { exportAll() }
     @objc func menuPresetEditor() { showPresetEditor() }
     @objc func menuSettings() { showSettings() }
     @objc func menuFontSize() { showFontSizeDialog() }
     @objc func menuAbout() { showAbout() }
 
-    @objc func menuRestoreHidden() { restoreHiddenPhotos() }
 
     @objc func menuOpenRecent(_ sender: NSMenuItem) {
         guard let path = sender.representedObject as? String else { return }

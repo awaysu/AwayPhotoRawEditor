@@ -170,6 +170,32 @@ enum UITest {
               && c.viewer.cropHitZone(NSPoint(x: box.minX, y: box.maxY)) == .cropBL
               && c.viewer.cropHitZone(NSPoint(x: box.maxX, y: box.maxY)) == .cropBR)
         check("框內回報移動、框外回報無", c.viewer.cropHitZone(NSPoint(x: box.midX, y: box.midY)) == .cropMove)
+        // The diagonal cursors are hand-drawn; a human found them mirrored (2026-08-31),
+        // so check the pixels: ↖︎↘︎ must paint its top-left corner and leave top-right empty.
+        func paints(_ cursor: NSCursor, topLeft: Bool) -> Bool {
+            let img = cursor.image
+            guard let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) else { return false }
+            let rep = NSBitmapImageRep(cgImage: cg)
+            let w = rep.pixelsWide, h = rep.pixelsHigh
+            // Sample a small block near the corner in top-down pixel coordinates.
+            let x = topLeft ? w / 6 : w - 1 - w / 6, y = h / 6
+            var hit = false
+            for dy in -1...1 { for dx in -1...1 {
+                let px = min(max(x + dx, 0), w - 1), py = min(max(y + dy, 0), h - 1)
+                if (rep.colorAt(x: px, y: py)?.alphaComponent ?? 0) > 0.5 { hit = true }
+            } }
+            return hit
+        }
+        check("↖︎↘︎ 游標畫在左上／右下", paints(ImageViewer.resizeNWSE, topLeft: true) && !paints(ImageViewer.resizeNWSE, topLeft: false))
+        check("↗︎↙︎ 游標畫在右上／左下", paints(ImageViewer.resizeNESW, topLeft: false) && !paints(ImageViewer.resizeNESW, topLeft: true))
+        if let dump = ProcessInfo.processInfo.environment["AWPR_UITEST_CURSOR_DUMP"] {
+            for (name, cur) in [("nwse", ImageViewer.resizeNWSE), ("nesw", ImageViewer.resizeNESW)] {
+                if let cg = cur.image.cgImage(forProposedRect: nil, context: nil, hints: nil),
+                   let data = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+                    try? data.write(to: URL(fileURLWithPath: "\(dump)/cursor_\(name).png"))
+                }
+            }
+        }
         c.toolsPanel.selectTool(.none)
 
         line("")
@@ -363,16 +389,21 @@ enum UITest {
         let slider = c.basicPanel.sliders[0]
         slider.onEditBegin?(); slider.value = -0.5
         let cur = c.current!
+        let folder = c.folder
+        // Headless runs never write LastFolder, so plant it to prove closeFolder clears it
+        // (otherwise the next launch would reopen a folder the user deliberately closed).
+        c.settings.lastFolder = folder
         c.closeFolder()
         let saved = AdjustmentXmlStore.load(imagePath: cur.sourcePath, copyIndex: cur.virtualCopyIndex)
         check("關閉時寫入未存編輯", saved?.exposure == -0.5, "\(saved?.exposure ?? 9)")
         check("編輯區清空", c.current == nil && c.items.isEmpty && c.folder.isEmpty)
-        stepDialogs(c)
+        check("關閉後不再自動開啟（LastFolder 清空）", c.settings.lastFolder.isEmpty)
+        stepDialogs(c, folder: folder)
     }
 
     // ---- 10: dialogs stay alive while shown; zoom stays inside the viewer ----
 
-    private static func stepDialogs(_ c: MainViewController) {
+    private static func stepDialogs(_ c: MainViewController, folder: String) {
         line("")
         line("[10] 對話框生命週期")
         // Each dialog is created as a local and dropped after show(); its buttons only
@@ -394,6 +425,19 @@ enum UITest {
             ref?.close()
             check("\(name) close 後釋放", ref == nil && DialogController.shownCount == 0)
         }
+        stepClearCache(folder)
         finish()
+    }
+
+    private static func stepClearCache(_ folder: String) {
+        line("")
+        line("[11] 關閉資料夾並刪除快取縮圖")
+        // The menu command removes the whole RAW_TEMP (adjustments included) — not just the
+        // regenerable files as on Windows. The dialog itself is modal, so exercise the helper
+        // on the folder [9] just closed.
+        let dir = AppPaths.rawTempDir(folder)
+        check("RAW_TEMP 存在（含 XML）", FileManager.default.fileExists(atPath: dir + "/preview_list.xml"), dir)
+        let removed = MainViewController.removeRawTempDir(dir, toTrash: false)
+        check("整個 RAW_TEMP 已刪除", removed && !FileManager.default.fileExists(atPath: dir))
     }
 }
