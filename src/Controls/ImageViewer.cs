@@ -46,7 +46,7 @@ public sealed class ImageViewer : Control
     // 以下都是「螢幕座標」的操作提示尺寸（手把、判定半徑、線寬），隨 DPI 縮放。
     // 影像幾何（_scale / _offset / rpx / rangePx）一律不縮放——100% 檢視必須是真實像素。
     private static int PanThreshold => Ui.S(4);   // px before a left-drag counts as a pan (vs a click)
-    private static float HandleHitRadius => Ui.S(12f);   // 漸層手把的點選判定半徑
+    private static float HandleHitRadius => Ui.S(24f);   // 漸層手把的點選判定半徑（2026-08-31 隨手把加倍 12→24）
 
     public ToolMode Tool { get; set; } = ToolMode.None;
     public HealMode HealMode { get; set; } = HealMode.Clone;
@@ -317,8 +317,9 @@ public sealed class ImageViewer : Control
         }
         if (_drag != Drag.None && _adj is not null) { UpdateDrag(e.Location); return; }
 
-        // cursor feedback
+        // cursor feedback（裁切工具依手把位置換游標，按下前就知道會抓到哪裡）
         Cursor = WhiteBalancePickerActive ? Cursors.Cross :
+                 Tool == ToolMode.Crop && _adj is not null && _image is not null ? CropCursor(e.Location) :
                  Tool == ToolMode.None ? Cursors.Hand : Cursors.Default;
         base.OnMouseMove(e);
     }
@@ -350,20 +351,44 @@ public sealed class ImageViewer : Control
         return RectangleF.FromLTRB(tl.X, tl.Y, br.X, br.Y);
     }
 
-    private bool BeginCropDrag(Point p)
+    /// <summary>Crop hit-test: corners first with a larger grab zone (they were hard to
+    /// hit), then edges, then inside (move). 也供游標回饋用。</summary>
+    private Drag CropHitTest(Point p)
     {
         var r = CropCtrlRect();
-        float h = Ui.S(10f);   // 邊 / 角的抓取判定範圍
+        float hc = Ui.S(20f);  // 角落抓取判定範圍（2026-08-31 加大且優先判定——原本 10 且跟邊搶，四角不好點到）
+        float h = Ui.S(10f);   // 邊的抓取判定範圍
+        bool cL = Math.Abs(p.X - r.Left) < hc, cR = Math.Abs(p.X - r.Right) < hc;
+        bool cT = Math.Abs(p.Y - r.Top) < hc, cB = Math.Abs(p.Y - r.Bottom) < hc;
+        if (cL && cT) return Drag.CropTL;
+        if (cR && cT) return Drag.CropTR;
+        if (cL && cB) return Drag.CropBL;
+        if (cR && cB) return Drag.CropBR;
         bool L = Math.Abs(p.X - r.Left) < h, R = Math.Abs(p.X - r.Right) < h;
         bool T = Math.Abs(p.Y - r.Top) < h, B = Math.Abs(p.Y - r.Bottom) < h;
         bool inX = p.X > r.Left - h && p.X < r.Right + h;
         bool inY = p.Y > r.Top - h && p.Y < r.Bottom + h;
-        Drag d = Drag.None;
-        if (L && T) d = Drag.CropTL; else if (R && T) d = Drag.CropTR;
-        else if (L && B) d = Drag.CropBL; else if (R && B) d = Drag.CropBR;
-        else if (L && inY) d = Drag.CropL; else if (R && inY) d = Drag.CropR;
-        else if (T && inX) d = Drag.CropT; else if (B && inX) d = Drag.CropB;
-        else if (r.Contains(p)) d = Drag.CropMove;
+        if (L && inY) return Drag.CropL;
+        if (R && inY) return Drag.CropR;
+        if (T && inX) return Drag.CropT;
+        if (B && inX) return Drag.CropB;
+        return r.Contains(p) ? Drag.CropMove : Drag.None;
+    }
+
+    /// <summary>游標回饋：讓使用者在按下前就知道會抓到哪個裁切手把。</summary>
+    private Cursor CropCursor(Point p) => CropHitTest(p) switch
+    {
+        Drag.CropTL or Drag.CropBR => Cursors.SizeNWSE,
+        Drag.CropTR or Drag.CropBL => Cursors.SizeNESW,
+        Drag.CropL or Drag.CropR => Cursors.SizeWE,
+        Drag.CropT or Drag.CropB => Cursors.SizeNS,
+        Drag.CropMove => Cursors.SizeAll,
+        _ => Cursors.Default,
+    };
+
+    private bool BeginCropDrag(Point p)
+    {
+        Drag d = CropHitTest(p);
         if (d == Drag.None) return false;
         _drag = d; _cropStart = new RectangleF((float)_adj!.CropX, (float)_adj.CropY, (float)_adj.CropWidth, (float)_adj.CropHeight);
         EditBegin?.Invoke(this, EventArgs.Empty);
@@ -531,7 +556,7 @@ public sealed class ImageViewer : Control
 
     // ---- gradient interaction -------------------------------------------
 
-    private static float RotHandleDist => Ui.S(64f);   // blue rotate handle: fixed screen offset, to the right of白點
+    private static float RotHandleDist => Ui.S(256f);   // blue rotate handle: fixed screen offset, to the right of白點（2026-08-31 依使用者要求 64→256，4 倍）
 
     private bool BeginGradientDrag(Point p)
     {
@@ -701,13 +726,16 @@ public sealed class ImageViewer : Control
             g.DrawLine(thin, x, r.Y, x, r.Bottom);
             g.DrawLine(thin, r.X, y, r.Right, y);
         }
-        // handles
+        // handles（2026-08-31 角落畫得比邊大，跟加大的角落判定範圍相稱）
         using var hb = new SolidBrush(Color.White);
+        float ch = Ui.S(5f);   // 角落手把半寬
         foreach (var pt in new[] { new PointF(r.Left, r.Top), new PointF(r.Right, r.Top),
-            new PointF(r.Left, r.Bottom), new PointF(r.Right, r.Bottom),
-            new PointF(r.X + r.Width / 2, r.Top), new PointF(r.X + r.Width / 2, r.Bottom),
+            new PointF(r.Left, r.Bottom), new PointF(r.Right, r.Bottom) })
+            g.FillRectangle(hb, pt.X - ch, pt.Y - ch, ch * 2, ch * 2);
+        float eh = Ui.S(3f);   // 邊中點手把半寬
+        foreach (var pt in new[] { new PointF(r.X + r.Width / 2, r.Top), new PointF(r.X + r.Width / 2, r.Bottom),
             new PointF(r.Left, r.Y + r.Height / 2), new PointF(r.Right, r.Y + r.Height / 2) })
-            g.FillRectangle(hb, pt.X - Ui.S(3f), pt.Y - Ui.S(3f), Ui.S(6f), Ui.S(6f));
+            g.FillRectangle(hb, pt.X - eh, pt.Y - eh, eh * 2, eh * 2);
     }
 
     private void DrawGradientOverlay(Graphics g)
@@ -731,7 +759,7 @@ public sealed class ImageViewer : Control
         using (var pen = new Pen(Color.FromArgb(isActive ? 230 : 100, 255, 220, 60), Ui.S(isActive ? 1.6f : 1.2f)))
             g.DrawLine(pen, P(-len), P(len));
 
-        float hr = Ui.S(5f), hd = Ui.S(10f);   // 手把半徑 / 直徑
+        float hr = Ui.S(10f), hd = Ui.S(20f);   // 手把半徑 / 直徑（2026-08-31 依使用者要求加倍 5→10）
         if (!isActive)
         {
             // A small white dot so an inactive gradient can be clicked to select it.
@@ -751,14 +779,41 @@ public sealed class ImageViewer : Control
             using var hb = new SolidBrush(Color.FromArgb(255, 255, 220, 60));
             g.FillEllipse(hb, c1.X - hr, c1.Y - hr, hd, hd);
         }
-        // Blue rotate handle, to the right of白點.
+        // Blue rotate handle, to the right of白點（2026-08-31 由純藍圓點改成「旋轉」icon）.
         var rot = RotateHandlePos(center, gr);
         using (var pen = new Pen(Color.FromArgb(200, 120, 200, 255), Ui.SMin(1))) g.DrawLine(pen, center, rot);
-        using (var hb = new SolidBrush(Color.FromArgb(255, 120, 200, 255))) g.FillEllipse(hb, rot.X - hr, rot.Y - hr, hd, hd);
+        DrawRotateIcon(g, rot, hr);
         // White position handle on top.
-        float wr = Ui.S(6f), wd = Ui.S(12f);
+        float wr = Ui.S(12f), wd = Ui.S(24f);   // 2026-08-31 依使用者要求加倍 6→12
         using (var hb = new SolidBrush(Color.White))
             g.FillEllipse(hb, center.X - wr, center.Y - wr, wd, wd);
+    }
+
+    /// <summary>藍色旋轉手把的「旋轉」icon：深色圓底 + 藍色圓弧箭頭。<paramref name="r"/> 是外圓半徑。</summary>
+    private static void DrawRotateIcon(Graphics g, PointF c, float r)
+    {
+        var blue = Color.FromArgb(255, 120, 200, 255);
+        using (var bg = new SolidBrush(Color.FromArgb(200, 25, 35, 50)))
+            g.FillEllipse(bg, c.X - r, c.Y - r, r * 2, r * 2);
+        using (var ring = new Pen(blue, Ui.SMin(1)))
+            g.DrawEllipse(ring, c.X - r, c.Y - r, r * 2, r * 2);
+
+        float ar = r * 0.55f;   // 圓弧半徑
+        using (var pen = new Pen(blue, Ui.S(2f)) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+            g.DrawArc(pen, c.X - ar, c.Y - ar, ar * 2, ar * 2, 60, 250);
+        // 箭頭畫在圓弧終點（60°+250°=310°），指向順時針切線方向
+        double th = 310 * Math.PI / 180;
+        var end = new PointF(c.X + ar * (float)Math.Cos(th), c.Y + ar * (float)Math.Sin(th));
+        var t = new PointF((float)-Math.Sin(th), (float)Math.Cos(th));   // 順時針切線
+        var n = new PointF(-t.Y, t.X);
+        float s = r * 0.35f;
+        using var fb = new SolidBrush(blue);
+        g.FillPolygon(fb, new[]
+        {
+            new PointF(end.X + t.X * s * 1.8f, end.Y + t.Y * s * 1.8f),   // 尖端
+            new PointF(end.X + n.X * s, end.Y + n.Y * s),
+            new PointF(end.X - n.X * s, end.Y - n.Y * s),
+        });
     }
 
     private void DrawHealOverlay(Graphics g)
