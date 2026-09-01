@@ -337,18 +337,25 @@ GPU 不再有優勢，而且工作集逼近實體記憶體時會崩掉
 上限遠高於任何 proxy（2560 長邊約 4.4 MP），所以**互動編輯一定走 GPU**，
 而全解析度匯出安靜地走 CPU —— 那裡 CPU 本來就有競爭力且可預測。
 
-## 更新檢查（2026-08-29）
+## 更新檢查（2026-08-29；2026-09-01 上架後改指獨立條目）
 
-`App/UpdateCheck.swift`，「關於」視窗的「檢查更新」。與 Windows 版同一支 API，
-只有 `platform=macos` 不同（實測伺服器認得，會原樣回傳）。
+`App/UpdateCheck.swift`，「關於」視窗的「檢查更新」。與 Windows 版同一支 API。
 
+- **⚠️ Windows 與 macOS 在網站上是兩個獨立的 app 條目、GitHub 也是兩個 repo，各自維護**：
+  | | 網站 slug | GitHub |
+  |---|---|---|
+  | Windows（C#） | `awayphotoraweditor` | `awaysu/AwayPhotoRawEditor` |
+  | macOS（本專案） | `awayphotoraweditor_mac` | `awaysu/AwayPhotoRawEditor_Swift` |
+  版本號、changelog、下載檔都分開管理（目前兩邊同為 1.0.18，是巧合對齊、不是綁定）。
+  `UpdateCheck.appSlug`／`pageUrl` 與「關於」的 Source Code 連結都指 macOS 這邊——
+  **上架 2026-09-01 曾誤傳 DMG 到 Windows 條目**，就是因為當時 slug 還指著 `awayphotoraweditor`。
 - **版本比較交給伺服器的 `update_available`**，不自己實作（規則是 PHP `version_compare`）。
 - **更新說明只用 `action=changelog&version=`，絕不退回 `release_notes`**（見 Windows CLAUDE.md）。
 - 任何失敗一律回 nil、靜默略過。
 - 測試：`awpr-cli updatecheck`（走與 UI 完全相同的程式碼路徑）。
-- ⚠️ **`latest_version` 目前是 1.0.17（Windows 的版本）**，而 macOS 版是 1.0.0，
-  所以現在一定會說「有新版」。網站的 `downloads` 對 `platform=macos` 是空陣列 ——
-  要等 macOS 版上架後，這個提示才有意義。
+- **發佈用的上傳 API**（`action=upload`，spec 在 private repo `awaysu/software-web` 的
+  `readme_for_program.txt`）：帶 `app=awayphotoraweditor_mac`、`platform=macos`、`version`、
+  `sha256`（伺服器會比對）與檔案；同 app 同平台同副檔名會自動取代，重跑同一指令即可。
 
 ## 實機 RAW 驗證（2026-08-28，`/tmp/raw_test` 16 檔）
 
@@ -412,8 +419,11 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
   憑證 **2031-09-01 到期**。
 - **Fujifilm RAF**：沒有樣本（Windows 版是用 X-T30 測的）。X-Trans 去馬賽克與 Bayer 路徑不同，拿到後跑
   `awpr-cli info`（看 `libraw sizes` 有沒有裁切表、相機色彩資料讀不讀得到）→ `selftest` → `hashtest` 與 C# 版對照。
-- **網站上架 macOS 版**：「檢查更新」目前一定回 Windows 的 1.0.17（`downloads` 對 `platform=macos` 是空陣列），
-  是網站資料的事，程式端已完成。
+- ~~**網站上架 macOS 版**~~ ✅ 完成（2026-09-01）：v1.0.18 DMG（公證＋staple）已上傳到獨立條目
+  `awayphotoraweditor_mac`（見「更新檢查」的對照表），下載回傳 SHA256 逐位元驗證過、
+  `awpr-cli updatecheck` 回「已是最新」。SHA256：`44b053198aa09f9a1c6d606b9e73a2c842f5418508c84c132700b2b3bdb63a1d`。
+  尚待使用者：在網站管理頁把誤傳到 Windows 條目（`awayphotoraweditor`）的 macOS DMG 下載項目刪除，
+  並補 `_mac` 條目的顯示名稱／副標／changelog（目前還是 slug 佔位字）。
 - **真人操作**（2026-08-30/31 已摸過一輪，抓到 8 個 headless 測不到的 bug，全修：進度視窗關不掉、匯出等對話框按鈕全死、
   100%↑ 畫面溢出、工具分頁點不到（hitTest）、工具不能取消、Ctrl+A、裁切角落難點、新增漸層被別的滑桿蓋掉——每一個都在
   「踩過的坑」有記錄與 uitest 斷言）。**還沒真人驗過的**：修護圈圈與右鍵刪除、trackpad 縮放手感、拖曳資料夾到視窗、
