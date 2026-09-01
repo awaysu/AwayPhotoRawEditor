@@ -162,12 +162,13 @@ done
 # an ad-hoc signature, which is enough to run locally; Scripts/sign_and_notarize.sh
 # re-signs with a Developer ID for distribution.
 IDENTITY=${SIGN_IDENTITY:--}
+. "$ROOT/Scripts/signing_keychain.sh"     # headless-session keychain; defines cs()
 echo "==> Signing (identity: $IDENTITY)"
 for lib in "$FW"/*.dylib; do
-    codesign --force --timestamp=none --sign "$IDENTITY" "$lib"
+    cs --force --timestamp=none --sign "$IDENTITY" "$lib"
 done
-codesign --force --timestamp=none --sign "$IDENTITY" "$APP/Contents/MacOS/awpr-cli"
-codesign --force --timestamp=none --sign "$IDENTITY" "$APP/Contents/MacOS/AwayPhotoRawEditor"
+cs --force --timestamp=none --sign "$IDENTITY" "$APP/Contents/MacOS/awpr-cli"
+cs --force --timestamp=none --sign "$IDENTITY" "$APP/Contents/MacOS/AwayPhotoRawEditor"
 
 # ---- icon ------------------------------------------------------------------
 if [ -f "$ROOT/Resources/AppIcon.icns" ]; then
@@ -179,7 +180,7 @@ elif [ -f "$ROOT/Resources/icon.png" ]; then
 fi
 
 echo "==> Sealing bundle"
-codesign --force --timestamp=none --sign "$IDENTITY" "$APP"
+cs --force --timestamp=none --sign "$IDENTITY" "$APP"
 codesign --verify --deep --strict "$APP" && echo "    signature OK"
 
 echo "==> Built $APP  (version $VERSION build $BUILD_NUMBER)"

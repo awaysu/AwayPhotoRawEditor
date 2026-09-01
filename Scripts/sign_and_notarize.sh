@@ -18,6 +18,8 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 ROOT=$(pwd)
+# Dedicated signing keychain (headless / SSH sessions) — defines cs() and nt().
+. "$ROOT/Scripts/signing_keychain.sh"
 IDENTITY=${1:-}
 PROFILE=${2:-awpr-notary}
 APP="$ROOT/build/AwayPhotoRawEditor.app"
@@ -44,13 +46,13 @@ echo "==> 2/6  Re-signing with hardened runtime + timestamp"
 # signing the bundle seals what is inside it, so a later change to a nested dylib
 # invalidates the outer signature.
 for lib in "$APP"/Contents/Frameworks/*.dylib; do
-    codesign --force --options runtime --timestamp --sign "$IDENTITY" "$lib"
+    cs --force --options runtime --timestamp --sign "$IDENTITY" "$lib"
 done
-codesign --force --options runtime --timestamp \
+cs --force --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP/Contents/MacOS/awpr-cli"
-codesign --force --options runtime --timestamp \
+cs --force --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP/Contents/MacOS/AwayPhotoRawEditor"
-codesign --force --options runtime --timestamp \
+cs --force --options runtime --timestamp \
     --entitlements "$ENTITLEMENTS" --sign "$IDENTITY" "$APP"
 
 echo "==> 3/6  Verifying the signature"
@@ -65,7 +67,7 @@ rm -f "$ZIP"
 # ditto, not zip: it preserves the extended attributes and symlinks in the bundle.
 ditto -c -k --keepParent "$APP" "$ZIP"
 
-if ! xcrun notarytool submit "$ZIP" --keychain-profile "$PROFILE" --wait; then
+if ! nt submit "$ZIP" --keychain-profile "$PROFILE" --wait; then
     echo >&2
     echo "!! Notarization failed. To see why:" >&2
     echo "   xcrun notarytool history --keychain-profile $PROFILE" >&2
@@ -90,8 +92,8 @@ rm -rf "$STAGE"
 
 # The DMG is signed and notarized in its own right, so the download itself is trusted
 # rather than only the app inside it.
-codesign --force --timestamp --sign "$IDENTITY" "$DMG"
-xcrun notarytool submit "$DMG" --keychain-profile "$PROFILE" --wait
+cs --force --timestamp --sign "$IDENTITY" "$DMG"
+nt submit "$DMG" --keychain-profile "$PROFILE" --wait
 xcrun stapler staple "$DMG"
 
 echo
