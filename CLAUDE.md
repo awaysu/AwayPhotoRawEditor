@@ -30,10 +30,31 @@ open build/AwayPhotoRawEditor.app
 
 ### 發佈 / 簽章 / 公證
 
+發佈流程（每版照做，2026-09-02 起）：
+
+0. **先在 `CHANGELOG.md` 最上方加這一版的大要**（每版一段、最新在上，對使用者描述、不寫內部細節）——網站的版本歷史就是這段文字。
+1. **改版本號**：只有一處 `AppVersionInfo.version`（`App/UpdateCheck.swift`），`build_app.sh` 讀它寫進 Info.plist，關於視窗與檢查更新都用它。
+2. commit、push 到 `awaysu/AwayPhotoRawEditor_Swift`。
+3. 簽章＋公證＋DMG：
+
 ```bash
 # 一次做完：重建 → hardened runtime 簽章 → 公證 → stapler → DMG → DMG 也公證
-Scripts/sign_and_notarize.sh "Developer ID Application: Chih-Wei Su (TEAMID)" awpr-notary
+Scripts/sign_and_notarize.sh "Developer ID Application: Chih-Wei Su (BNH8YS88T9)" awpr-notary
+# → build/AwayPhotoRawEditor-<版本>.dmg，最後印的 SHA256 才是要公布的
 ```
+
+4. 上傳網站（同 app／平台／副檔名會自動取代，重跑同一指令即可；`changelog` 帶這一版的大要，伺服器自動加 `v<版本> (日期)` 標題並放到歷史最上面，同版本不會重複）：
+
+```bash
+# 密碼在 ~/workspace1/web_info.txt（後台登入密碼）——絕不能進 repo；用 header 帶，不要寫進指令歷史
+DMG=build/AwayPhotoRawEditor-<版本>.dmg
+curl -H "X-Api-Password: $AWAYSU_API_PASSWORD" -F app=awayphotoraweditor_mac -F platform=macos \
+     -F version=<版本> -F "changelog=<release-notes.txt" -F sha256=$(shasum -a 256 $DMG | cut -d' ' -f1) \
+     -F "file=@$DMG" "https://www.awaysu.cc/software/api.php?action=upload"
+```
+
+5. 驗證：`awpr-cli updatecheck` 回「已是最新」、`api.php?action=changelog&app=awayphotoraweditor_mac&version=<版本>` 有內容。
+   只補歷史不上傳檔用 `action=set_changelog`（可帶 `date`），只改版本用 `action=set_version`。
 
 事前只需做一次（app-specific password 在 appleid.apple.com 產生，**不是** Apple ID 密碼）：
 
@@ -360,7 +381,7 @@ GPU 不再有優勢，而且工作集逼近實體記憶體時會崩掉
   |---|---|---|
   | Windows（C#） | `awayphotoraweditor` | `awaysu/AwayPhotoRawEditor` |
   | macOS（本專案） | `awayphotoraweditor_mac` | `awaysu/AwayPhotoRawEditor_Swift` |
-  版本號、changelog、下載檔都分開管理（目前兩邊同為 1.0.18，是巧合對齊、不是綁定）。
+  版本號、changelog、下載檔都分開管理（macOS 1.0.19 起與 Windows 的 1.0.18 分開走，不是綁定）。
   `UpdateCheck.appSlug`／`pageUrl` 與「關於」的 Source Code 連結都指 macOS 這邊——
   **上架 2026-09-01 曾誤傳 DMG 到 Windows 條目**，就是因為當時 slug 還指著 `awayphotoraweditor`。
 - **版本比較交給伺服器的 `update_available`**，不自己實作（規則是 PHP `version_compare`）。

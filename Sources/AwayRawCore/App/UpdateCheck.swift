@@ -120,5 +120,5 @@ public enum UpdateCheck {
 
 /// The running version, shared between the About window and the update check.
 public enum AppVersionInfo {
-    public static let version = "1.0.18"
+    public static let version = "1.0.19"
 }
