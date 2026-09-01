@@ -184,7 +184,11 @@ case "selftest":
     let proxyMs = elapsed { _ = loader.ensureProxyCache(path: path) }
     check("proxy 快取", FileManager.default.fileExists(atPath: AppPaths.proxyPath(path)),
           "\(Int(proxyMs)) ms")
-    let thumbMs = elapsed { _ = loader.ensureThumbnailCache(path: path, maxW: 240, maxH: 160) }
+    if AppPaths.isRaw(path) {
+        check("proxy 縮圖（縮圖與編輯同底圖）",
+              FileManager.default.fileExists(atPath: AppPaths.proxyThumbnailPath(path)))
+    }
+    let thumbMs = elapsed { _ = loader.ensureThumbnailCache(path: path, maxW: RawLoader.thumbnailMaxW, maxH: RawLoader.thumbnailMaxH) }
     check("縮圖快取", FileManager.default.fileExists(atPath: AppPaths.thumbnailPath(path)),
           "\(Int(thumbMs)) ms")
     let proxy = loader.loadProxyFloat(path: path)

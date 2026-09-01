@@ -206,6 +206,43 @@ public final class RawLoader: @unchecked Sendable {
         return CacheManager.load(cachePath)
     }
 
+    /// Strip thumbnail size (points; the strip cell is 240×160).
+    public static let thumbnailMaxW = 240
+    public static let thumbnailMaxH = 160
+
+    /// The base image a strip thumbnail is rendered from.
+    ///
+    /// For a RAW file the first thumbnail is the camera's embedded preview — instant, but
+    /// it is the *camera's* rendering (its tone curve, picture style, white balance), not
+    /// what the editor shows, so with edits applied the two drift apart visibly
+    /// (2026-09-01: "縮圖和實際編輯的結果不一樣"). As soon as the proxy exists a thumbnail
+    /// is cut from it instead (`AppPaths.proxyThumbnailPath`), so the strip and the editor
+    /// start from the same pixels; `proxySource` then says what those pixels are balanced
+    /// to, exactly as `proxyDecodeSource` does for the editor. `proxySource == nil` means
+    /// the camera preview (or a non-RAW file, whose `_thumb.jpg` already matches the proxy).
+    public struct ThumbnailBase {
+        public let buffer: FloatImageBuffer
+        public let proxySource: DecodeSource?
+    }
+
+    public func loadThumbnailBase(path: String) -> ThumbnailBase? {
+        if AppPaths.isRaw(path) {
+            let p = AppPaths.proxyThumbnailPath(path)
+            if FileManager.default.fileExists(atPath: p), let b = CacheManager.load(p) {
+                return ThumbnailBase(buffer: b, proxySource: proxyDecodeSource(path: path))
+            }
+        }
+        guard let b = loadThumbnailCache(path: path) else { return nil }
+        return ThumbnailBase(buffer: b, proxySource: nil)
+    }
+
+    /// Written alongside a freshly generated RAW proxy, from the same scaled pixels.
+    private func writeProxyThumbnail(path: String, _ proxy: FloatImageBuffer) {
+        guard AppPaths.isRaw(path) else { return }
+        let thumb = CacheManager.resizeToFit(proxy, maxW: Self.thumbnailMaxW, maxH: Self.thumbnailMaxH)
+        CacheManager.saveJpeg(thumb, to: AppPaths.proxyThumbnailPath(path))
+    }
+
     /// LibRaw's `sizes.flip` (3 = 180°, 5 = ccw 90°, 6 = cw 90°) as a rotation of the
     /// decoded preview.
     func applyFlip(_ buf: FloatImageBuffer, _ flip: Int) -> FloatImageBuffer {
@@ -288,12 +325,14 @@ public final class RawLoader: @unchecked Sendable {
             CacheManager.savePng(scaled, to: proxyPath)
             CacheManager.saveHalf(scaled, to: Self.proxyFloatPath(path))
             writeProxySource(path: path, source)
+            writeProxyThumbnail(path: path, scaled)
             return true
         } else {
             guard let (full, source) = decodeFullWithSource(path: path) else { return false }
             let scaled = CacheManager.resizeToMaxDim(full, maxDim: maxDim)
             CacheManager.savePng(scaled, to: proxyPath)
             writeProxySource(path: path, source)
+            writeProxyThumbnail(path: path, scaled)
             return true
         }
     }

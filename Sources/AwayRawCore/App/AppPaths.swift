@@ -80,10 +80,17 @@ public enum AppPaths {
 
     /// Every cache artefact belonging to one photo — used when a photo is removed or its
     /// cache invalidated.
+    /// Strip thumbnail cut from the proxy (RAW only; macOS-only cache file). Once it
+    /// exists the strip shows the same pixels the editor works on instead of the camera's
+    /// embedded preview — see `RawLoader.loadThumbnailBase`.
+    public static func proxyThumbnailPath(_ imagePath: String) -> String {
+        proxyPath(imagePath) + ".thumb.jpg"
+    }
+
     public static func cacheFiles(_ imagePath: String) -> [String] {
         [thumbnailPath(imagePath), proxyPath(imagePath),
          proxyPath(imagePath) + ".f16", proxyPath(imagePath) + ".f32",
-         proxyPath(imagePath) + ".src"]
+         proxyPath(imagePath) + ".src", proxyThumbnailPath(imagePath)]
     }
 
     // ---- Application data / settings ------------------------------------

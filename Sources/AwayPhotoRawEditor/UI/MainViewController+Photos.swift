@@ -103,7 +103,7 @@ extension MainViewController {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             for it in snapshot {
                 guard let self else { return }
-                guard let buf = self.loader.loadThumbnailCache(path: it.sourcePath) else { continue }
+                guard let buf = self.loader.loadThumbnailBase(path: it.sourcePath) else { continue }
                 let rendered = self.renderThumbnail(base: buf, for: it)
                 guard let img = ImageIOCodec.toCGImage(rendered) else { continue }
                 DispatchQueue.main.async { self.strip.setImage(img, forKey: it.key) }
@@ -133,8 +133,9 @@ extension MainViewController {
                 DispatchQueue.global(qos: .userInitiated).async {
                     defer { limit.signal(); group.leave() }
                     guard !progress.cancelled else { return }
-                    _ = self.loader.ensureThumbnailCache(path: it.sourcePath, maxW: 240, maxH: 160)
-                    _ = self.loader.ensureProxyCache(path: it.sourcePath)
+                    _ = self.loader.ensureThumbnailCache(path: it.sourcePath,
+                                                         maxW: RawLoader.thumbnailMaxW, maxH: RawLoader.thumbnailMaxH)
+                    _ = self.loader.ensureProxyCache(path: it.sourcePath)   // also writes the proxy-cut thumbnail
 
                     // Seed the adjustment XML so as-shot white balance is set once, here,
                     // rather than on first selection.
@@ -142,7 +143,7 @@ extension MainViewController {
                     _ = self.loader.enrichCameraColor(path: it.sourcePath, exif: &e)
                     _ = AdjustmentXmlStore.ensureDefault(imagePath: it.sourcePath, exif: e)
 
-                    if let buf = self.loader.loadThumbnailCache(path: it.sourcePath) {
+                    if let buf = self.loader.loadThumbnailBase(path: it.sourcePath) {
                         for target in list where target.sourcePath == it.sourcePath {
                             let rendered = self.renderThumbnail(base: buf, for: target)
                             if let img = ImageIOCodec.toCGImage(rendered) {
@@ -166,24 +167,28 @@ extension MainViewController {
 
     /// Render one strip thumbnail with its photo's adjustments applied.
     ///
-    /// The base is the cached `_thumb.jpg`, which for a RAW file came from the camera's
-    /// embedded preview — so the camera's white balance is *already baked in*. The main
-    /// preview's proxy goes through LibRaw with `use_camera_wb` unset, which is why the
-    /// temperature slider is the only white balance there. Applying `adj.temperature`
-    /// verbatim to a thumbnail would therefore apply white balance twice (a 3200 K
-    /// tungsten shot would come out solidly blue). Instead the *offset from as-shot* is
-    /// re-based onto the neutral, and only for RAW files that have an as-shot reading.
-    func renderThumbnail(base: FloatImageBuffer, for item: PhotoItem,
+    /// Once the proxy exists the base is cut from it (`RawLoader.loadThumbnailBase`), so
+    /// the thumbnail is the editor's own pixels at 240×160 and gets the same white-balance
+    /// reference the editor uses — the two then agree by construction.
+    ///
+    /// Before that (folder just opened, proxy still generating) the base is the camera's
+    /// embedded preview, which has the camera's white balance *already baked in*, while the
+    /// proxy goes through LibRaw with `use_camera_wb` unset. Applying `adj.temperature`
+    /// verbatim there would apply white balance twice (a 3200 K tungsten shot would come out
+    /// solidly blue), so the *offset from as-shot* is re-based onto the neutral instead.
+    func renderThumbnail(base: RawLoader.ThumbnailBase, for item: PhotoItem,
                          overrideAdjustments: ImageAdjustments? = nil) -> FloatImageBuffer {
         let (stored, exif, _) = AdjustmentXmlStore.loadAll(imagePath: item.sourcePath,
                                                            copyIndex: item.virtualCopyIndex)
         var a = overrideAdjustments ?? stored ?? ImageAdjustments()
-        guard !a.isDefault else { return base }
+        guard !a.isDefault else { return base.buffer }
 
         let ctx = ProcessContext()
         ctx.camera = exif?.camera
-        if AppPaths.isRaw(item.sourcePath) {
-            // The thumbnail is the camera's own rendering, so it is balanced to cam_mul.
+        if let src = base.proxySource {
+            ctx.whiteBalanceReference = src.whiteBalanceReference
+        } else if AppPaths.isRaw(item.sourcePath) {
+            // The camera's own rendering: balanced to cam_mul.
             ctx.whiteBalanceReference = .asShot
             if let e = exif, e.hasAsShotWhiteBalance, ctx.camera == nil {
                 a.temperature = 5200 + (a.temperature - e.colorTemperature)
@@ -191,13 +196,13 @@ extension MainViewController {
         }
         // No watermark: at 240×160 it is only noise.
         ctx.watermark = nil
-        return (try? ImageProcessor.applyToFloat(base, a, ctx)) ?? base
+        return (try? ImageProcessor.applyToFloat(base.buffer, a, ctx)) ?? base.buffer
     }
 
     func refreshThumbnail(for item: PhotoItem, adjustments: ImageAdjustments? = nil) {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self,
-                  let base = self.loader.loadThumbnailCache(path: item.sourcePath) else { return }
+                  let base = self.loader.loadThumbnailBase(path: item.sourcePath) else { return }
             let rendered = self.renderThumbnail(base: base, for: item,
                                                 overrideAdjustments: adjustments)
             guard let img = ImageIOCodec.toCGImage(rendered) else { return }
@@ -219,7 +224,7 @@ extension MainViewController {
             let version = self.thumbLiveVersion
             let snapshot = self.adj
             DispatchQueue.global(qos: .utility).async {
-                guard let base = self.loader.loadThumbnailCache(path: item.sourcePath) else { return }
+                guard let base = self.loader.loadThumbnailBase(path: item.sourcePath) else { return }
                 let rendered = self.renderThumbnail(base: base, for: item,
                                                     overrideAdjustments: snapshot)
                 guard let img = ImageIOCodec.toCGImage(rendered) else { return }
@@ -300,6 +305,9 @@ extension MainViewController {
         viewer.setImage(nil, resetView: true)
         scheduler.schedule(immediate: true)
         updateStatus()
+        // The load may just have (re)generated the proxy — and with it the proxy-cut
+        // thumbnail — so redraw the strip cell from that instead of the camera preview.
+        refreshThumbnail(for: item, adjustments: adjustments)
     }
 
     func rebindAll() {
@@ -523,8 +531,9 @@ extension MainViewController {
     private func regenerateThumbnail(for item: PhotoItem) {
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self else { return }
-            _ = self.loader.ensureThumbnailCache(path: item.sourcePath, maxW: 240, maxH: 160)
-            guard let buf = self.loader.loadThumbnailCache(path: item.sourcePath) else { return }
+            _ = self.loader.ensureThumbnailCache(path: item.sourcePath,
+                                                 maxW: RawLoader.thumbnailMaxW, maxH: RawLoader.thumbnailMaxH)
+            guard let buf = self.loader.loadThumbnailBase(path: item.sourcePath) else { return }
             let rendered = self.renderThumbnail(base: buf, for: item)
             guard let img = ImageIOCodec.toCGImage(rendered) else { return }
             DispatchQueue.main.async { self.strip.setImage(img, forKey: item.key) }

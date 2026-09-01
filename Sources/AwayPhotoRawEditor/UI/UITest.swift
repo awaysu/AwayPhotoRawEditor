@@ -84,6 +84,15 @@ enum UITest {
             // because nothing retained its controller past the completion closure.
             waitUntil("快取進度視窗自動關閉", timeout: 5, { ProgressWindowController.shownCount == 0 }) {
                 check("快取進度視窗已關閉", ProgressWindowController.shownCount == 0)
+                // RAW: once the proxy exists the strip thumbnail is cut from it, so the
+                // strip and the editor start from the same pixels.
+                let p0 = c.items[0].sourcePath
+                if AppPaths.isRaw(p0) {
+                    check("proxy 縮圖已產生", FileManager.default.fileExists(atPath: AppPaths.proxyThumbnailPath(p0)))
+                    check("縮圖底圖來自 proxy", c.loader.loadThumbnailBase(path: p0)?.proxySource != nil)
+                } else {
+                    check("非 RAW 不產生 proxy 縮圖", !FileManager.default.fileExists(atPath: AppPaths.proxyThumbnailPath(p0)))
+                }
                 stepEdit(c)
             }
         }

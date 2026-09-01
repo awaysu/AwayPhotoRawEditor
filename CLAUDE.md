@@ -63,6 +63,7 @@ xcrun notarytool store-credentials awpr-notary \
 | 語言/外觀切換 | `Application.Restart()` | **重新啟動 app** | 同樣的理由：字型與調色盤是開機時決定的快取靜態值 |
 | 關閉資料夾並刪除快取縮圖 | 只刪 `_thumb.jpg`／`.rawpipe.png`／`.f16`，**保留 XML** | **整個 `RAW_TEMP` 丟進垃圾桶**（含調整 XML、`preview_list.xml`） | 使用者要的是「資料夾消失」（2026-08-31）。對話框明講會丟調整設定；用 `trashItem` 才救得回來，沒有垃圾桶的磁碟區退回 `removeItem`。`--uitest [11]` 斷言 |
 | Delete 鍵 | Del = 隱藏且不輸出、Shift+Del = 刪除檔案 | **不綁**（2026-09-01 使用者要求：誤按一下照片就不見）；漸層工具下 ⌫ = 刪除選取的漸層 | 隱藏／刪除只從縮圖右鍵選單進 |
+| RAW 縮圖的底圖 | 永遠是相機內嵌預覽（`_thumb.jpg`） | **proxy 一產生就改從 proxy 裁 240×160**（`{file}.rawpipe.png.thumb.jpg`，macOS 專用快取檔）；內嵌預覽只當 proxy 還沒好之前的佔位 | 使用者反映「縮圖和實際編輯的結果不一樣」（2026-09-01）：相機 JPEG 是相機自己的色調曲線／風格／白平衡，套上編輯後和 LibRaw 解的 proxy 越差越遠。同底圖＋同白平衡參考（`proxyDecodeSource`）→ 兩邊由構造保證一致。`selftest [3]`、`--uitest [1]` 斷言 |
 | 隱藏／刪除的復原 | 無 | **恢復上一步（⌘Z）可還原隱藏與刪除**：`UndoStep` 是 enum（`edit`／`hide`／`remove`），切換照片只清 `edit`，`hide`／`remove` 留著（隱藏目前這張本來就會切到鄰近一張）。刪除實體檔時記下 `trashItem` 回傳的位置、非佔位的 sidecar、`preview_list` 條目，復原時搬回、重寫、重建縮圖。`--uitest [7]／[8]／[8b]` 斷言 | 使用者要求（2026-09-01） |
 
 ### 檔案格式**完全相容**（重要）
@@ -263,15 +264,18 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
   （`resetAll` 會把 version 存起來再放回去）。
 - **多選批次同步的目標要在「編輯手勢開始」時擷取**（`pushUndo`），不能在提交時抓——
   單擊縮圖會先把選取變成單張才觸發載入，提交當下 `selectedItems` 已經不是原本的多選。
-- **縮圖的白平衡要 rebase**：RAW 縮圖底圖是相機內嵌預覽、**相機白平衡已經烤在裡面**，
-  所以 `renderThumbnail` 走 `whiteBalanceReference = .asShot`；沒有相機色彩資料時才用
-  `5200 + (adj.temperature - exif.colorTemperature)` 的偏移法。照原值算會把白平衡套第二次。
+- **縮圖的底圖**（`RawLoader.loadThumbnailBase`）：RAW 優先用 proxy 裁出來的 `.rawpipe.png.thumb.jpg`（`ensureProxyCache` 順手寫，
+  `applyLoaded` 後會重畫該格，所以 proxy 一好縮圖就換過去），白平衡參考與編輯區同一個 `proxyDecodeSource`。
+  **還沒有 proxy 時才退回相機內嵌預覽 `_thumb.jpg`**——那張**相機白平衡已經烤在裡面**，所以走 `whiteBalanceReference = .asShot`；
+  沒有相機色彩資料時用 `5200 + (adj.temperature - exif.colorTemperature)` 的偏移法。照原值算會把白平衡套第二次。
+  非 RAW 的 `_thumb.jpg` 與 proxy 同樣來自 ImageIO，本來就一致，不另外產生。
 - **刪除照片走垃圾桶（`trashItem`）**，不是 `removeItem`。
 - **`CancelToken` 是協作式的**：背景算圖被新的取代時只是設旗標，管線在階段邊界檢查。
 
 ## 快取檔（各資料夾 `RAW_TEMP/`）
 
-`{file}_thumb.jpg`（縮圖）、`{file}.rawpipe.png`(+`.f16`)（proxy）、
+`{file}_thumb.jpg`（縮圖：相機內嵌預覽）、`{file}.rawpipe.png`(+`.f16`、`.src`)（proxy）、
+**`{file}.rawpipe.png.thumb.jpg`（RAW 專用、從 proxy 裁的縮圖底圖，macOS 才有；Windows 版不認得、也不會刪，無害）**、
 `{file}.rawpipe.xml` / `{file}.copyN.rawpipe.xml`（調整）、`preview_list.xml`（隱藏 + 虛擬副本）。
 
 `.f16` 是 16-bit 整數（`AP16` magic），與 Windows 版同一個格式。舊的 `.f32` 裝的是 8-bit 量化值，
