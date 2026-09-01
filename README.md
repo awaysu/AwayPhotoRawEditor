@@ -76,7 +76,7 @@ Scripts/sign_and_notarize.sh "Developer ID Application: Your Name (TEAMID)" awpr
 
 ## 作者
 
-Chih-Wei Su (Awaysu) — awaysu@gmail.com
+Chih-Wei Su (Awaysu) — awaysu (at) gmail.com
 
 歡迎自由修改成你自己的版本，只希望你能在「關於」視窗中提及來源是這裡
 （AwayPhotoRawEditor / Awaysu）。

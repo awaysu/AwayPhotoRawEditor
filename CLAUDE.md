@@ -39,7 +39,7 @@ Scripts/sign_and_notarize.sh "Developer ID Application: Chih-Wei Su (TEAMID)" aw
 
 ```bash
 xcrun notarytool store-credentials awpr-notary \
-    --apple-id awaysu@gmail.com --team-id <TEAMID> --password <app-specific-password>
+    --apple-id <apple-id> --team-id <TEAMID> --password <app-specific-password>
 ```
 
 - **⚠️ 順序不能顛倒**：內層 dylib 先簽 → .app 再簽 → 放進 DMG → DMG 再簽。
