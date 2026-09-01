@@ -19,6 +19,17 @@ AWPR_KEYCHAIN_ARGS=()
 if [ -f "$AWPR_KEYCHAIN" ] && [ -f "$AWPR_KEYCHAIN_PASS_FILE" ]; then
     if security unlock-keychain -p "$(cat "$AWPR_KEYCHAIN_PASS_FILE")" "$AWPR_KEYCHAIN"; then
         AWPR_KEYCHAIN_ARGS=(--keychain "$AWPR_KEYCHAIN")
+        # codesign finds the private key through the search list *in order* and ignores
+        # --keychain for that step; if the login keychain comes first its locked copy of
+        # the key wins and signing fails. Keep ours first (idempotent).
+        if [ "$(security list-keychains -d user | head -1 | tr -d ' "')" != "$AWPR_KEYCHAIN" ]; then
+            _awpr_rest=()
+            while IFS= read -r _l; do
+                _l=${_l#"${_l%%[!$' \t']*}"}; _l=${_l%\"}; _l=${_l#\"}
+                [ -n "$_l" ] && [ "$_l" != "$AWPR_KEYCHAIN" ] && _awpr_rest+=("$_l")
+            done < <(security list-keychains -d user)
+            security list-keychains -d user -s "$AWPR_KEYCHAIN" ${_awpr_rest[@]+"${_awpr_rest[@]}"}
+        fi
     else
         echo "!! could not unlock $AWPR_KEYCHAIN — falling back to the default keychains" >&2
     fi

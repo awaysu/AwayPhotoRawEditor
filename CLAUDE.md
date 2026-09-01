@@ -69,6 +69,10 @@ Scripts/setup_signing_keychain.sh
   從登入鑰匙圈匯出 Developer ID 身分再匯入、`set-key-partition-list` 放行 codesign、設成永不自動上鎖、把 `awpr-notary` 公證憑據存進同一個鑰匙圈。
   `Scripts/signing_keychain.sh` 被 `build_app.sh`／`sign_and_notarize.sh` source：有這個鑰匙圈就先用密碼檔解鎖並對 codesign／notarytool 加 `--keychain`，
   沒有就退回原本行為。**之後簽章／公證全部可以從 SSH 這邊跑。**
+  - **⚠️ 專用鑰匙圈必須排在搜尋清單「第一個」**（實測）：`--keychain`、partition list、ACL 全對，`security cms -S` 用同一把鑰匙也簽得出來，
+    codesign 卻仍 `errSecInternalComponent`——因為 codesign 找私鑰是照 `security list-keychains` 的順序、不理 `--keychain`，
+    登入鑰匙圈在前就撞到它鎖著的那份同一把鑰匙。排到第一個立刻成功。`signing_keychain.sh` 每次會自動確保順序（idempotent）；
+    對 GUI 沒影響：查不到會往後找登入鑰匙圈，新項目仍寫進「預設」鑰匙圈（登入）。
 
 - **⚠️ 順序不能顛倒**：內層 dylib 先簽 → .app 再簽 → 放進 DMG → DMG 再簽。
   簽章會改變檔案內容，所以**要公布的 SHA256 一定是全部簽完之後才算**（與 Windows 版同一條規則）。

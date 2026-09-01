@@ -56,14 +56,20 @@ rm -f "$P12"
 # "allow all applications" click does not cover.
 security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$PW" "$KC" > /dev/null
 
-echo "==> 4/6  Adding it to the keychain search list"
+echo "==> 4/6  Putting it FIRST in the keychain search list"
+# First, not last: codesign resolves the private key through the search list in order
+# and ignores --keychain for that step, so with the login keychain ahead of ours it hits
+# the locked login copy of the same key and fails with errSecInternalComponent
+# (2026-09-02, measured: last → fails, first → signs). Lookups that miss here fall
+# through to the login keychain, and new items still go to the *default* keychain
+# (login), so putting ours first changes nothing for GUI apps.
 existing=()
 while IFS= read -r line; do
     line=${line#"${line%%[!$' \t']*}"}     # trim leading blanks
     line=${line%\"}; line=${line#\"}
     [ -n "$line" ] && [ "$line" != "$KC" ] && existing+=("$line")
 done < <(security list-keychains -d user)
-security list-keychains -d user -s ${existing[@]+"${existing[@]}"} "$KC"
+security list-keychains -d user -s "$KC" ${existing[@]+"${existing[@]}"}
 
 echo "==> 5/6  notarytool profile '$PROFILE' in the signing keychain"
 read -r -s -p "    Apple app-specific password for $APPLE_ID: " AP; echo
