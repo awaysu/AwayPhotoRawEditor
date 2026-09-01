@@ -62,6 +62,8 @@ xcrun notarytool store-credentials awpr-notary \
 | 版面過高 | `DarkScrollHost` + `AutoFitScale` | **NSScrollView（overlay scroller）** | 同一個問題：右欄內容約 900pt，1040 高的視窗放不下 → 左右欄可捲動 |
 | 語言/外觀切換 | `Application.Restart()` | **重新啟動 app** | 同樣的理由：字型與調色盤是開機時決定的快取靜態值 |
 | 關閉資料夾並刪除快取縮圖 | 只刪 `_thumb.jpg`／`.rawpipe.png`／`.f16`，**保留 XML** | **整個 `RAW_TEMP` 丟進垃圾桶**（含調整 XML、`preview_list.xml`） | 使用者要的是「資料夾消失」（2026-08-31）。對話框明講會丟調整設定；用 `trashItem` 才救得回來，沒有垃圾桶的磁碟區退回 `removeItem`。`--uitest [11]` 斷言 |
+| Delete 鍵 | Del = 隱藏且不輸出、Shift+Del = 刪除檔案 | **不綁**（2026-09-01 使用者要求：誤按一下照片就不見）；漸層工具下 ⌫ = 刪除選取的漸層 | 隱藏／刪除只從縮圖右鍵選單進 |
+| 隱藏／刪除的復原 | 無 | **恢復上一步（⌘Z）可還原隱藏與刪除**：`UndoStep` 是 enum（`edit`／`hide`／`remove`），切換照片只清 `edit`，`hide`／`remove` 留著（隱藏目前這張本來就會切到鄰近一張）。刪除實體檔時記下 `trashItem` 回傳的位置、非佔位的 sidecar、`preview_list` 條目，復原時搬回、重寫、重建縮圖。`--uitest [7]／[8]／[8b]` 斷言 | 使用者要求（2026-09-01） |
 
 ### 檔案格式**完全相容**（重要）
 
@@ -115,7 +117,7 @@ Windows 版有 `--selftest` / `--shot` / `--dlgshot`；這裡拆成兩個執行�
 | `awpr-cli info <img>` | LibRaw 可用性與 `libraw sizes`、EXIF、相機色彩資料 |
 | `awpr-cli selftest <img> [report]` | 引擎端到端：解碼→EXIF→快取→管線（含逐階段）→histogram→XML 往返→風格檔 |
 | `awpr-cli exporttest <img> <outDir> [report]` | 匯出全流程（含同名去重、EXIF 保留）。`AWPR_TEST_WATERMARK=文字` 開浮水印（`_SIZE`／`_POS=TopLeft…` 可調），匯出後直接開圖看 |
-| `awpr-cli render <img> <out.png> [--exposure N …]` | 單張套用調整後輸出 PNG |
+| `awpr-cli render <img> <out.png> [--exposure N …] [--grad-exposure N]` | 單張套用調整後輸出 PNG，並印出來源／輸出的通道均值與「任一通道 ≥0.999」的像素比例。`--grad-exposure` 是一個蓋滿整張（m=1）的漸層，用來把漸層曝光和全域曝光放在同一把尺上比 |
 | `awpr-cli bench <img>` | 各階段 proxy / 全解析度耗時 |
 | `awpr-cli cmpbench <img> [--gpu] [--render-only]` | **與 C# mac 版對照用**：逐項照它的 `--decodetest`／`--rendertest`／`--enginetest` 條件（2400 px、同六組調整、單次冷跑）。結果與結論見 `Docs/Comparison-CSharp-vs-Swift-2026-08-30.md` |
 | `AwayPhotoRawEditor --shot <folder> <png> [waitMs] [WxH]` | 主畫面離屏截圖。`AWPR_SHOT_TOOL=crop\|gradient\|heal` 會選好工具（漸層會先新增一個）再拍，用來看手把幾何 |
@@ -132,7 +134,7 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 
 - **重做**（Windows Ctrl+Y → macOS ⌘⇧Z）：`redoStack`，新編輯清空 redo；只重播單張、不重播批次同步（同 Windows）。undo 上限 80。
 - **紀錄**（☰ → 紀錄 ▸ 最近 20 個資料夾，`清除紀錄`）：存 settings.xml 的 `<RecentFolders><string>…`，與 Windows 同格式。資料夾不存在時提示。
-- **快捷鍵**：⌫ = 隱藏且不輸出、⇧⌫ = 刪除檔案、F5 = 重新整理、Esc、←→、`\`。
+- **快捷鍵**：F5 = 重新整理、Esc、←→、`\`。**⌫／⇧⌫ 刻意不綁隱藏／刪除**（見差異表）。
 - **縮圖右鍵選單**照 Windows 順序：全選／反向選擇／取消全選、套用風格檔 ▸、複製／貼上照片設定、升級處理版本、建立副本、隱藏且不輸出／取消隱藏、刪除檔案、不顯示隱藏／顯示全部（勾選）、匯出照片。
 - **工具分頁再按一次取消**（2026-08-30 真人操作發現漏搬）：Windows 的 `TopTab.AllowDeselect`——啟動時**沒有選工具**（裁切頁灰掉當佔位、鎖住），
   按選中的分頁 → `ToolMode.None`（viewer 顯示最終裁切結果、左鍵可平移／循環縮放），Esc 與 c/g/h 一律走 `toolsPanel.selectTool`，分頁外觀才會跟著變。
@@ -214,6 +216,11 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 - **`closeFolder()` 要把 `settings.lastFolder` 清空並存檔**（2026-08-31 真人操作：關閉資料夾並刪除快取後，重開程式又自動載入同一個資料夾）：
   與 Windows 的 `CloseFolder` 相同——使用者主動關閉就該維持關閉狀態。只有「開啟資料夾」寫 LastFolder，結束程式不經過 `closeFolder`，所以自動重開不受影響。headless 只改記憶體不寫檔；`--uitest [9]` 斷言。
 - **刪除／隱藏前一定先 `saveCurrentIfDirty()`**——被刪的不一定是目前那張，目前那張的未存編輯不能跟著丟。
+- **漸層的曝光是在亮部已經裁掉之後才乘上去的（與 Windows 版相同；2026-09-01 使用者問「用漸層拉暗，亮部為什麼還是過曝」）**：
+  管線順序是 第 1+2 步白平衡＋曝光（線性域，`encode` 時夾到 1.0）→ 第 3 步色調 LUT → **第 7 步漸層**。實測 ARW `render --exposure 1` 有 36.8% 像素任一通道已在 1.0，
+  再加 `--grad-exposure -1` 後裁切像素 0%、均值回到與曝光 0 相近——數字上「有拉暗」，但那 36.8% 只是被統一乘成 encode(0.5)≈0.71 的一片平灰，
+  細節在漸層之前就沒了，看起來就是「灰掉的過曝」。要像 Lightroom 那樣把亮部救回來，漸層曝光得搬進第 1+2 步、在 encode 之前於線性域相乘
+  （CPU、Metal kernel、C# 版三處一起改；會改變所有含漸層曝光照片的輸出、hashtest 與 Windows 版分岔），**尚未決定要不要做**。
 
 - **⚠️ `install_name_tool` 會讓 dylib 的簽章失效，Apple Silicon 上未正確簽章的執行檔會被 SIGKILL**
   （crash report 寫 `Code Signature Invalid`）。所以 `build_app.sh` 改完 install name **一定要重簽**

@@ -632,10 +632,18 @@ final class ImageViewer: NSView {
         NSMenu.popUpContextMenu(menu, with: event, for: self)
     }
 
-    @objc private func deleteGradient(_ sender: NSMenuItem) {
-        guard var adj = adjustments, sender.tag >= 0, sender.tag < adj.gradients.count else { return }
+    @objc private func deleteGradient(_ sender: NSMenuItem) { removeGradient(at: sender.tag) }
+
+    /// ⌫ in the gradient tool: remove the selected gradient (same as its context menu).
+    func deleteActiveGradient() {
+        guard let adj = adjustments else { return }
+        removeGradient(at: adj.resolvedGradientIndex)
+    }
+
+    private func removeGradient(at index: Int) {
+        guard var adj = adjustments, index >= 0, index < adj.gradients.count else { return }
         onEditBegin?()
-        adj.gradients.remove(at: sender.tag)
+        adj.gradients.remove(at: index)
         adj.activeGradientIndex = adj.gradients.count - 1
         adjustments = adj
         onGradientSelectionChanged?()

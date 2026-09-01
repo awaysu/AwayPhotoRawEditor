@@ -244,10 +244,12 @@ extension MainViewController {
         current = item
         isLoading = true
         proxy = nil               // nothing to render, pick or crop against until it lands
-        // Selecting a different photo ends the undo history, matching Windows: a batch
+        // Selecting a different photo ends the *edit* history, matching Windows: a batch
         // undo is only valid until you move on. The redo branch goes too — replaying it
-        // would paste the previous photo's edits onto this one.
-        undoStack.removeAll()
+        // would paste the previous photo's edits onto this one. Hide / delete steps stay:
+        // hiding the current photo is exactly what causes this load, and undoing it must
+        // still be possible afterwards.
+        undoStack.removeAll { $0.isEdit }
         redoStack.removeAll()
         showOriginal = false
         compareButton.isPrimary = false
@@ -319,7 +321,7 @@ extension MainViewController {
         exif = nil
         adj = ImageAdjustments()
         dirty = false
-        undoStack.removeAll()
+        undoStack.removeAll { $0.isEdit }   // list steps survive an emptied strip (hide the last photo → undo)
         redoStack.removeAll()
         viewer.setImage(nil, resetView: true)
         viewer.adjustments = nil
@@ -354,6 +356,7 @@ extension MainViewController {
         items = []
         strip.setItems([])
         clearEditor()
+        undoStack.removeAll()             // nothing to bring back once the folder is closed
         setEditorEnabled(false)
         updateStatus()
     }
@@ -434,6 +437,10 @@ extension MainViewController {
         guard !targets.isEmpty else { return }
         // The current photo's edits must survive it leaving the strip.
         saveCurrentIfDirty()
+        // One undo step brings them all back — it outlives the photo change that hiding
+        // the current photo causes (see loadPhoto).
+        redoStack.removeAll()
+        pushUndoStep(.hide(keys: targets.map(\.key), selected: current?.key))
         for t in targets where !previewList.hidden.contains(t.key) {
             previewList.hidden.append(t.key)
             t.isHidden = true
@@ -453,6 +460,75 @@ extension MainViewController {
         savePreviewList()
         strip.refreshBadges()
         statusLabel.stringValue = L.t("已取消隱藏")
+    }
+
+    // ---- undo of hide / delete ------------------------------------------
+
+    /// Undo a 隱藏且不輸出 step: the keys leave the hidden list and the photo that was
+    /// current at the time becomes the selection again.
+    func undoHide(keys: [String], select: String?) {
+        guard !folder.isEmpty else { return }
+        saveCurrentIfDirty()
+        redoStack.removeAll()
+        let set = Set(keys)
+        previewList.hidden.removeAll { set.contains($0) }
+        for it in items where set.contains(it.key) { it.isHidden = false }
+        savePreviewList()
+        refreshStripKeepSelection()
+        selectRestored(key: select ?? keys.first)
+        statusLabel.stringValue = L.t("已取消隱藏")
+    }
+
+    /// Undo a delete: a trashed file moves back to where it was, the sidecars and the
+    /// preview_list entries are rewritten, and the photo is selected again. Its caches were
+    /// hard-deleted, so the thumbnail is regenerated here; the proxy comes back on load.
+    func undoRemoval(_ r: PhotoRemoval) {
+        guard !folder.isEmpty else { return }
+        saveCurrentIfDirty()
+        redoStack.removeAll()
+        if let trashed = r.trashedURL {
+            do {
+                try FileManager.default.moveItem(at: trashed, to: URL(fileURLWithPath: r.sourcePath))
+            } catch {
+                let a = NSAlert()
+                a.alertStyle = .critical
+                a.messageText = "AwayPhotoRawEditor"
+                a.informativeText = L.t("無法還原照片：") + error.localizedDescription
+                a.runModal()
+                return
+            }
+        }
+        for (idx, a, e) in r.sidecars {
+            AdjustmentXmlStore.save(imagePath: r.sourcePath, adjustments: a, copyIndex: idx, exif: e)
+        }
+        for e in r.virtualCopies where !previewList.virtualCopies.contains(e) {
+            previewList.virtualCopies.append(e)
+        }
+        for k in r.hidden where !previewList.hidden.contains(k) { previewList.hidden.append(k) }
+        savePreviewList()
+        refreshStripKeepSelection()
+        selectRestored(key: PhotoItem(sourcePath: r.sourcePath, virtualCopyIndex: r.copyIndex).key)
+        if r.trashedURL != nil {
+            for it in items where it.sourcePath == r.sourcePath { regenerateThumbnail(for: it) }
+        }
+        statusLabel.stringValue = L.t("已還原照片")
+    }
+
+    private func selectRestored(key: String?) {
+        guard let key, let i = strip.index(forKey: key) else { return }
+        strip.select(index: i)
+    }
+
+    /// Build the thumbnail cache for one photo (it was deleted with the file) and show it.
+    private func regenerateThumbnail(for item: PhotoItem) {
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            guard let self else { return }
+            _ = self.loader.ensureThumbnailCache(path: item.sourcePath, maxW: 240, maxH: 160)
+            guard let buf = self.loader.loadThumbnailCache(path: item.sourcePath) else { return }
+            let rendered = self.renderThumbnail(base: buf, for: item)
+            guard let img = ImageIOCodec.toCGImage(rendered) else { return }
+            DispatchQueue.main.async { self.strip.setImage(img, forKey: item.key) }
+        }
     }
 
     /// Switch 不顯示隱藏 / 顯示全部, rebuilding the strip and keeping the selection where

@@ -3,9 +3,36 @@ import AwayRawCore
 
 /// One undoable gesture. A batch edit snapshots every affected photo, so undo restores
 /// them together and cancels any sync that has not been flushed yet.
-struct UndoStep {
-    var current: ImageAdjustments
-    var others: [String: ImageAdjustments] = [:]
+/// One entry of the 恢復上一步 stack.
+///
+/// `edit` steps belong to the photo being shown and die when the selection moves on
+/// (matching Windows). The list steps — 隱藏且不輸出 and 刪除 — survive a photo change:
+/// undoing them brings a photo back no matter which one is showing, and the photo that
+/// vanished is usually the one the user was looking at, so a neighbour has already been
+/// loaded by the time they reach for undo.
+enum UndoStep {
+    case edit(current: ImageAdjustments, others: [String: ImageAdjustments])
+    /// 隱藏且不輸出 of `keys`; `selected` was the current photo at the time, if any.
+    case hide(keys: [String], selected: String?)
+    /// A photo that left the list — a virtual copy, or a real file moved to the Trash —
+    /// with everything needed to put it back.
+    case remove(PhotoRemoval)
+
+    var isEdit: Bool { if case .edit = self { return true } else { return false } }
+}
+
+/// What `deletePhotoFile` took away, captured before it did so.
+struct PhotoRemoval {
+    var sourcePath: String
+    /// Where the file went (`trashItem`'s resulting URL); nil for a virtual copy.
+    var trashedURL: URL?
+    /// The copy that was removed (0 = the file itself).
+    var copyIndex: Int
+    /// Sidecars to rewrite: (copy index, adjustments, exif).
+    var sidecars: [(Int, ImageAdjustments, ExifData?)]
+    /// preview_list entries that were dropped along with it.
+    var virtualCopies: [VirtualCopyEntry]
+    var hidden: [String]
 }
 
 /// The main editor screen. Layout mirrors the Windows build: a top bar, the preview

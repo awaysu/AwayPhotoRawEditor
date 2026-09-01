@@ -30,7 +30,7 @@ extension MainViewController {
     func pushUndo() {
         guard !isLoading else { return }
         redoStack.removeAll()          // a fresh edit invalidates the redo branch
-        var step = UndoStep(current: adj)
+        var others: [String: ImageAdjustments] = [:]
 
         let selected = strip.selectedItems.filter { $0.key != current?.key }
         if !selected.isEmpty {
@@ -41,27 +41,41 @@ extension MainViewController {
             // The first gesture of a batch snapshots every affected photo so undo can
             // restore them together.
             for t in syncTargets {
-                if step.others[t.key] == nil {
-                    step.others[t.key] = AdjustmentXmlStore.load(imagePath: t.sourcePath,
-                                                                 copyIndex: t.virtualCopyIndex)
-                                         ?? ImageAdjustments()
-                }
+                others[t.key] = AdjustmentXmlStore.load(imagePath: t.sourcePath,
+                                                        copyIndex: t.virtualCopyIndex)
+                                ?? ImageAdjustments()
             }
         }
+        pushUndoStep(.edit(current: adj, others: others))
+    }
+
+    /// Append to the undo stack, keeping it bounded (80, as on Windows).
+    func pushUndoStep(_ step: UndoStep) {
         undoStack.append(step)
         if undoStack.count > 80 { undoStack.removeFirst() }
     }
 
     func doUndo() {
         guard let step = undoStack.popLast() else { return }
+        switch step {
+        case .edit(let current, let others):
+            undoEdit(current: current, others: others)
+        case .hide(let keys, let selected):
+            undoHide(keys: keys, select: selected)
+        case .remove(let removal):
+            undoRemoval(removal)
+        }
+    }
+
+    private func undoEdit(current: ImageAdjustments, others: [String: ImageAdjustments]) {
         redoStack.append(adj)          // so ⌘⇧Z can come back
-        adj = step.current
+        adj = current
         dirty = true
         rebindAll()
 
-        if !step.others.isEmpty {
+        if !others.isEmpty {
             // Restore the other photos and cancel any sync that has not been flushed.
-            for (key, a) in step.others {
+            for (key, a) in others {
                 let (path, idx) = PhotoItem.parseKey(key)
                 AdjustmentXmlStore.save(imagePath: path, adjustments: a, copyIndex: idx)
                 if let item = items.first(where: { $0.key == key }) {
@@ -81,7 +95,7 @@ extension MainViewController {
     /// no new batch session is opened for it.
     func doRedo() {
         guard let next = redoStack.popLast() else { return }
-        undoStack.append(UndoStep(current: adj))
+        pushUndoStep(.edit(current: adj, others: [:]))
         adj = next
         dirty = true
         rebindAll()
@@ -442,9 +456,11 @@ extension MainViewController {
         case 124:                                   // right
             stepSelection(1)
         case 51, 117:                               // delete / forward delete
-            // ⇧⌫ deletes the file; ⌫ alone is 隱藏且不輸出 — the same split as Windows.
-            if mods.contains(.shift) { if let c = current { deletePhotoFile(c) } }
-            else { hideSelected() }
+            // Deliberately *not* the Windows binding (⌫ = 隱藏且不輸出, ⇧⌫ = 刪除檔案):
+            // a stray keypress made the photo vanish with no confirmation (2026-09-01).
+            // Hide / delete live in the thumbnail context menu only. In the gradient tool
+            // the key removes the selected gradient, which is what people reach for it for.
+            if viewer.tool == .gradient { viewer.deleteActiveGradient() }
         case 96:                                    // F5
             refreshFolder()
         case 42 where mods.isEmpty:

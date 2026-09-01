@@ -409,6 +409,8 @@ public enum L {
         ("已還原 {0} 張隱藏的照片", Tr("Restored {0} hidden photos", "非表示の写真を{0}枚復元しました", "숨긴 사진 {0}장을 복원했습니다", "已恢复 {0} 张隐藏的照片", "{0} ausgeblendete Fotos wiederhergestellt", "{0} photos masquées restaurées", "{0} fotos ocultas restauradas")),
         ("已刪除檔案", Tr("File deleted", "ファイルを削除しました", "파일을 삭제했습니다", "已删除文件", "Datei gelöscht", "Fichier supprimé", "Archivo eliminado")),
         ("刪除失敗：", Tr("Delete failed: ", "削除失敗：", "삭제 실패: ", "删除失败：", "Löschen fehlgeschlagen: ", "Échec de la suppression : ", "Error al eliminar: ")),
+        ("已還原照片", Tr("Photo restored", "写真を元に戻しました", "사진을 복원했습니다", "已还原照片", "Foto wiederhergestellt", "Photo restaurée", "Foto restaurada")),
+        ("無法還原照片：", Tr("Could not restore photo: ", "写真を元に戻せません：", "사진을 복원할 수 없습니다: ", "无法还原照片：", "Foto konnte nicht wiederhergestellt werden: ", "Impossible de restaurer la photo : ", "No se pudo restaurar la foto: ")),
         ("已套用風格檔：{0}", Tr("Preset applied: {0}", "プリセットを適用：{0}", "프리셋 적용: {0}", "已应用预设：{0}", "Vorgabe angewendet: {0}", "Préréglage appliqué : {0}", "Preajuste aplicado: {0}")),
         ("已重新整理資料夾", Tr("Folder refreshed", "フォルダーを更新しました", "폴더를 새로 고쳤습니다", "已刷新文件夹", "Ordner aktualisiert", "Dossier actualisé", "Carpeta actualizada")),
         ("目前沒有可匯出的照片。", Tr("There is no current photo to export.", "書き出す写真がありません。", "내보낼 현재 사진이 없습니다.", "当前没有可导出的照片。", "Kein aktuelles Foto zum Exportieren.", "Aucune photo actuelle à exporter.", "No hay foto actual para exportar.")),

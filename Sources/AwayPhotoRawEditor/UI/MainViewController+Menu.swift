@@ -242,34 +242,55 @@ extension MainViewController {
     /// Delete one photo. A virtual copy has no file of its own, so it simply leaves the
     /// list (with its sidecar) without asking; a real file goes to the Trash after
     /// confirmation, and its caches are hard-deleted because they regenerate.
-    func deletePhotoFile(_ item: PhotoItem) {
+    ///
+    /// Both are undoable (恢復上一步 / ⌘Z): what is needed to put the photo back — the Trash
+    /// location, the sidecars, the preview_list entries — is captured here first.
+    /// `confirm: false` skips the dialog; only the headless UI test uses it.
+    func deletePhotoFile(_ item: PhotoItem, confirm: Bool = true) {
         // Whatever is being edited must be written before the list is rebuilt — even
         // when it is not the photo being deleted.
         saveCurrentIfDirty()
 
         if item.isVirtualCopy {
-            previewList.virtualCopies.removeAll {
-                $0.path == item.sourcePath && $0.index == item.virtualCopyIndex
-            }
+            let entry = VirtualCopyEntry(path: item.sourcePath, index: item.virtualCopyIndex)
+            let removal = PhotoRemoval(sourcePath: item.sourcePath, trashedURL: nil,
+                                       copyIndex: item.virtualCopyIndex,
+                                       sidecars: Self.sidecarsToRestore(item.sourcePath, [item.virtualCopyIndex]),
+                                       virtualCopies: [entry],
+                                       hidden: previewList.hidden.filter { $0 == item.key })
+            previewList.virtualCopies.removeAll { $0 == entry }
             previewList.hidden.removeAll { $0 == item.key }
             savePreviewList()
             AdjustmentXmlStore.delete(imagePath: item.sourcePath, copyIndex: item.virtualCopyIndex)
+            redoStack.removeAll()
+            pushUndoStep(.remove(removal))
             if item.key == current?.key { loadedKey = nil; current = nil }
             refreshStripKeepSelection()
             return
         }
 
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = L.t("刪除照片檔案")
-        alert.informativeText = L.f("確定刪除檔案？（會移到資源回收桶）\n{0}", item.fileName)
-        alert.addButton(withTitle: L.t("刪除檔案"))
-        alert.addButton(withTitle: L.t("取消"))
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        if confirm {
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = L.t("刪除照片檔案")
+            alert.informativeText = L.f("確定刪除檔案？（會移到資源回收桶）\n{0}", item.fileName)
+            alert.addButton(withTitle: L.t("刪除檔案"))
+            alert.addButton(withTitle: L.t("取消"))
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+        }
 
+        // Captured before the caches and sidecars go: the file's own sidecar, those of its
+        // virtual copies, and every preview_list entry that mentions it.
+        let copies = previewList.virtualCopies.filter { $0.path == item.sourcePath }
+        var removal = PhotoRemoval(sourcePath: item.sourcePath, trashedURL: nil, copyIndex: 0,
+                                   sidecars: Self.sidecarsToRestore(item.sourcePath, [0] + copies.map(\.index)),
+                                   virtualCopies: copies,
+                                   hidden: previewList.hidden.filter { PhotoItem.parseKey($0).path == item.sourcePath })
+
+        var trashed: NSURL?
         do {
             try FileManager.default.trashItem(at: URL(fileURLWithPath: item.sourcePath),
-                                             resultingItemURL: nil)
+                                             resultingItemURL: &trashed)
         } catch {
             let a = NSAlert()
             a.alertStyle = .critical
@@ -284,9 +305,23 @@ extension MainViewController {
         previewList.virtualCopies.removeAll { $0.path == item.sourcePath }
         previewList.hidden.removeAll { PhotoItem.parseKey($0).path == item.sourcePath }
         savePreviewList()
+        removal.trashedURL = trashed as URL?
+        redoStack.removeAll()
+        pushUndoStep(.remove(removal))
         if current?.sourcePath == item.sourcePath { loadedKey = nil; current = nil }
         refreshStripKeepSelection()
         statusLabel.stringValue = L.t("已刪除檔案")
+    }
+
+    /// The sidecars worth writing back after an undo. Default placeholders are skipped:
+    /// `loadPhoto` seeds those again (as-shot white balance) exactly as it did the first time.
+    private static func sidecarsToRestore(_ path: String, _ copyIndices: [Int])
+        -> [(Int, ImageAdjustments, ExifData?)] {
+        copyIndices.compactMap { idx in
+            let (a, e, placeholder) = AdjustmentXmlStore.loadAll(imagePath: path, copyIndex: idx)
+            guard let a, !placeholder else { return nil }
+            return (idx, a, e)
+        }
     }
 
     @objc func menuUpgradePipeline(_ sender: NSMenuItem) { upgradeSelectedPipeline() }

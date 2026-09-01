@@ -350,14 +350,29 @@ enum UITest {
             let reload = PreviewListStore.load(imageFolder: c.folder)
             check("寫入磁碟", reload.hidden.contains(hidden.key))
 
-            c.setShowHiddenMode(true)
-            check("顯示全部 → 回到 \(total) 張", c.items.count == total, "\(c.items.count)")
-            check("隱藏標記保留", c.items.first { $0.key == hidden.key }?.isHidden == true)
-            c.restoreHiddenPhotos()
-            check("還原 → 無隱藏", c.previewList.hidden.isEmpty)
-            c.setShowHiddenMode(false)
-            after(0.3) { stepDelete(c) }
+            // 恢復上一步 brings it back — the hide step must survive the photo change
+            // that hiding the current photo just caused.
+            check("隱藏步驟在 undo 堆疊上", c.undoStack.count == 1 && !(c.undoStack.last?.isEdit ?? true))
+            c.doUndo()
+            check("復原 → 回到 \(total) 張", c.items.count == total, "\(c.items.count)")
+            check("復原 → preview_list 無隱藏", c.previewList.hidden.isEmpty)
+            check("復原 → 磁碟無隱藏", PreviewListStore.load(imageFolder: c.folder).hidden.isEmpty)
+            waitUntil("復原後選回該張", { c.current?.key == hidden.key && !c.isLoading }) {
+                c.hideSelected()
+                check("再次隱藏", c.items.count == total - 1 && c.previewList.hidden.contains(hidden.key))
+                stepHideShowAll(c, total: total, hidden: hidden)
+            }
         }
+    }
+
+    private static func stepHideShowAll(_ c: MainViewController, total: Int, hidden: PhotoItem) {
+        c.setShowHiddenMode(true)
+        check("顯示全部 → 回到 \(total) 張", c.items.count == total, "\(c.items.count)")
+        check("隱藏標記保留", c.items.first { $0.key == hidden.key }?.isHidden == true)
+        c.restoreHiddenPhotos()
+        check("還原 → 無隱藏", c.previewList.hidden.isEmpty)
+        c.setShowHiddenMode(false)
+        after(0.3) { stepDelete(c) }
     }
 
     // ---- 8: delete the virtual copy --------------------------------------
@@ -370,15 +385,54 @@ enum UITest {
         }
         let total = c.items.count
         let src = copy.sourcePath
+        let idx = copy.virtualCopyIndex
+        let before = AdjustmentXmlStore.load(imagePath: src, copyIndex: idx)
         c.deletePhotoFile(copy)
         check("清單少一張", c.items.count == total - 1, "\(c.items.count)")
-        check("副本 XML 已刪", !AdjustmentXmlStore.exists(imagePath: src, copyIndex: copy.virtualCopyIndex))
+        check("副本 XML 已刪", !AdjustmentXmlStore.exists(imagePath: src, copyIndex: idx))
         check("preview_list 無副本", c.previewList.virtualCopies.isEmpty)
         check("原檔仍在", FileManager.default.fileExists(atPath: src))
         check("仍有目前照片", c.current != nil)
-        // Deleting re-selects a neighbour, which reloads it; an edit made while
-        // `isLoading` is dropped by design, so wait for the load rather than a fixed delay.
-        waitUntil("刪除後重新載入完成", { c.current != nil && !c.isLoading && c.proxy != nil }) { stepClose(c) }
+
+        // Undo brings the copy back, sidecar included.
+        c.doUndo()
+        check("復原副本 → 清單回到 \(total) 張", c.items.count == total, "\(c.items.count)")
+        check("復原副本 → preview_list 有副本", c.previewList.virtualCopies.count == 1)
+        check("復原副本 → XML 內容相同", AdjustmentXmlStore.load(imagePath: src, copyIndex: idx) == before)
+        waitUntil("復原後選回副本", { c.current?.key == copy.key && !c.isLoading }) {
+            c.deletePhotoFile(copy)
+            check("再次刪除副本", c.items.count == total - 1 && c.previewList.virtualCopies.isEmpty)
+            // Deleting re-selects a neighbour, which reloads it; an edit made while
+            // `isLoading` is dropped by design, so wait for the load rather than a fixed delay.
+            waitUntil("刪除後重新載入完成", { c.current != nil && !c.isLoading && c.proxy != nil }) { stepDeleteFile(c) }
+        }
+    }
+
+    // ---- 8b: delete a real file (to the Trash) and undo it ------------------
+
+    private static func stepDeleteFile(_ c: MainViewController) {
+        line("")
+        line("[8b] 刪除檔案 / 復原")
+        guard let cur = c.current, !cur.isVirtualCopy else { check("目前是實體檔案", false); finish(); return }
+        let total = c.items.count
+        let path = cur.sourcePath
+        let before = AdjustmentXmlStore.load(imagePath: path)
+        // Same code path as the menu, minus the modal confirmation a headless run cannot answer.
+        c.deletePhotoFile(cur, confirm: false)
+        check("檔案已不在原處", !FileManager.default.fileExists(atPath: path))
+        check("清單少一張", c.items.count == total - 1, "\(c.items.count)")
+        check("XML 已刪", !AdjustmentXmlStore.exists(imagePath: path))
+        check("目前照片換成鄰近一張", c.current != nil && c.current?.key != cur.key)
+
+        c.doUndo()
+        check("復原 → 檔案回到原處", FileManager.default.fileExists(atPath: path))
+        check("復原 → 清單回到 \(total) 張", c.items.count == total, "\(c.items.count)")
+        check("復原 → XML 內容相同", AdjustmentXmlStore.load(imagePath: path) == before)
+        // The proxy cache went with the file; selecting it again regenerates it.
+        waitUntil("復原後選回並重新載入", { c.current?.key == cur.key && !c.isLoading && c.proxy != nil }) {
+            check("縮圖快取重建", FileManager.default.fileExists(atPath: AppPaths.thumbnailPath(path)))
+            stepClose(c)
+        }
     }
 
     // ---- 9: close ----------------------------------------------------------

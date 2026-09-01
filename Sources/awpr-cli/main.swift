@@ -328,6 +328,14 @@ case "render":
         case "--distortion": adj.distortion = d
         case "--rotate":     adj.rotation = Rotation(rawValue: Int(d)) ?? .r0
         case "--preset":     _ = PresetStore.apply(name: value, to: &adj)
+        case "--grad-exposure":
+            // A gradient at full strength over the whole frame: centre far above the top,
+            // so every pixel sits on the m = 1 side. Isolates the gradient's exposure
+            // from its geometry (why does -N EV here not look like global -N EV?).
+            var g = LinearGradient()
+            g.centerX = 0.5; g.centerY = -10; g.angle = 0; g.range = 0.01
+            g.exposure = d
+            adj.gradients.append(g)
         default:
             print("未知參數: \(flag)")
             usage()
@@ -353,6 +361,19 @@ case "render":
         exit(1)
     }
     print("已寫入 \(outPath) — \(out.width)x\(out.height)，\(Int(ms)) ms")
+    // Channel means and the share of pixels with any channel at the top of the range —
+    // "clipped" for the purpose of judging highlight handling.
+    func stats(_ b: FloatImageBuffer) -> String {
+        let m = ImageStats.meanColor(b)
+        var clipped = 0
+        let n = b.width * b.height
+        let d = b.data
+        for i in 0..<n where max(d[i * 4], max(d[i * 4 + 1], d[i * 4 + 2])) >= 0.999 { clipped += 1 }
+        return String(format: "均值 %.4f %.4f %.4f，任一通道 ≥0.999 的像素 %.2f%%",
+                      m.r, m.g, m.b, Double(clipped) / Double(n) * 100)
+    }
+    print("來源：\(stats(src))")
+    print("輸出：\(stats(out))")
 
 case "exporttest":
     guard args.count >= 3 else { usage() }
