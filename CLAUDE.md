@@ -406,8 +406,10 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 ## 尚未完成 / 後續（2026-08-29 盤點）
 
 ### 需要使用者才能做的
-- **Developer ID 簽章＋公證**：憑證申請中。`Scripts/sign_and_notarize.sh` 已寫好，憑證到手後
-  `xcrun notarytool store-credentials awpr-notary …` 一次，之後一行指令跑完（簽 dylib → 簽 .app → 公證 → staple → DMG → DMG 公證）。
+- ~~**Developer ID 簽章＋公證**~~ ✅ 完成（2026-09-01）：憑證 `Developer ID Application: Chih-Wei Su (BNH8YS88T9)`，
+  notarytool profile `awpr-notary` 已存鑰匙圈，`sign_and_notarize.sh` 跑通、spctl 回 `Notarized Developer ID`。
+  私鑰備份與新機器還原步驟（含 `errSecInternalComponent` 的解法）在 private repo `awaysu/codesign-backup` 的 README。
+  憑證 **2031-09-01 到期**。
 - **Fujifilm RAF**：沒有樣本（Windows 版是用 X-T30 測的）。X-Trans 去馬賽克與 Bayer 路徑不同，拿到後跑
   `awpr-cli info`（看 `libraw sizes` 有沒有裁切表、相機色彩資料讀不讀得到）→ `selftest` → `hashtest` 與 C# 版對照。
 - **網站上架 macOS 版**：「檢查更新」目前一定回 Windows 的 1.0.17（`downloads` 對 `platform=macos` 是空陣列），
