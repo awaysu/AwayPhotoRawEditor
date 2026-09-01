@@ -31,11 +31,13 @@ if [ -z "$IDENTITY" ]; then
     exit 1
 fi
 
-VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
-DMG="$ROOT/build/AwayPhotoRawEditor-$VERSION.dmg"
-
 echo "==> 1/6  Rebuilding with the Developer ID identity"
 SIGN_IDENTITY="$IDENTITY" ./Scripts/build_app.sh > /dev/null
+
+# Read the version AFTER the rebuild — reading the old bundle first once produced a
+# freshly-notarized 1.0.18 app inside a DMG named 1.0.0 (2026-09-01).
+VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP/Contents/Info.plist")
+DMG="$ROOT/build/AwayPhotoRawEditor-$VERSION.dmg"
 
 echo "==> 2/6  Re-signing with hardened runtime + timestamp"
 # --options runtime is what notarization requires. Inner code first, bundle last:

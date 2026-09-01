@@ -324,7 +324,7 @@ final class AboutWindowController: DialogController {
             (L.t("編譯時間："), build, nil),
             (L.t("作者:"), " Chih-Wei Su (Awaysu)  awaysu@gmail.com", nil),
             (L.t("下載:"), " " + UpdateCheck.pageUrl, UpdateCheck.pageUrl),
-            ("Source Code:", " https://github.com/awaysu/AwayPhotoRawEditor", "https://github.com/awaysu/AwayPhotoRawEditor"),
+            ("Source Code:", " https://github.com/awaysu/AwayPhotoRawEditor_Swift", "https://github.com/awaysu/AwayPhotoRawEditor_Swift"),
             (L.t("第三方元件:"), " LibRaw \(LibRawBridge.available ? LibRawBridge.version : "—") (LGPL 2.1) · Apple ImageIO / Core Graphics / Metal", nil),
             (L.t("授權："), "BSD 3-Clause　© 2026 Chih-Wei Su (Awaysu)", nil),
         ]
