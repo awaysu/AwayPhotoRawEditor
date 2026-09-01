@@ -28,8 +28,10 @@ public struct UpdateInfo: Sendable {
 public enum UpdateCheck {
 
     private static let apiUrl = "https://www.awaysu.cc/software/api.php"
-    private static let appSlug = "awayphotoraweditor"
-    public static let pageUrl = "https://www.awaysu.cc/software/awayphotoraweditor"
+    // macOS 版在網站上是獨立的 app 條目（awayphotoraweditor_mac），與 Windows 版
+    // （awayphotoraweditor）分開管理版本與下載檔。
+    private static let appSlug = "awayphotoraweditor_mac"
+    public static let pageUrl = "https://www.awaysu.cc/software/awayphotoraweditor_mac"
 
     /// Long notes would blow a dialog up to fill the screen; cut the tail.
     private static let maxNotesChars = 900
