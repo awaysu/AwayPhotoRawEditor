@@ -468,6 +468,9 @@ ImageIO 解出來的 RAW **已經把相機白平衡烤進去了**（等同 `cam_
 - ~~**網站上架 macOS 版**~~ ✅ 完成（2026-09-01）：v1.0.18 DMG（公證＋staple）已上傳到獨立條目
   `awayphotoraweditor_mac`（見「更新檢查」的對照表），下載回傳 SHA256 逐位元驗證過、
   `awpr-cli updatecheck` 回「已是最新」。SHA256：`44b053198aa09f9a1c6d606b9e73a2c842f5418508c84c132700b2b3bdb63a1d`。
+  **v1.0.19（2026-09-02）已上架**，整條流程第一次完全從 SSH 的 Claude Code 跑完（專用簽章鑰匙圈）：
+  DMG `AwayPhotoRawEditor-1.0.19.dmg` 4,602,043 bytes，SHA256 `dbba8ea56267e5bd4c27b058af4357ae974771c1a1a138e68f15aed82c8954f1`，
+  下載回傳逐位元相同、stapler validate 通過；網站歷史有 v1.0.18／v1.0.19 兩筆，1.0.18 的 `check_update` 回 `update_available=true` 並帶 1.0.19 說明。
   尚待使用者：在網站管理頁把誤傳到 Windows 條目（`awayphotoraweditor`）的 macOS DMG 下載項目刪除，
   並補 `_mac` 條目的顯示名稱／副標／changelog（目前還是 slug 佔位字）。
 - **真人操作**（2026-08-30/31 已摸過一輪，抓到 8 個 headless 測不到的 bug，全修：進度視窗關不掉、匯出等對話框按鈕全死、
