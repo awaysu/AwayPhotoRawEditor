@@ -317,7 +317,17 @@ public final class RawLoader: @unchecked Sendable {
         let needPng = !FileManager.default.fileExists(atPath: proxyPath)
         let needFloat = useHighPrecisionRawPipeline &&
                         !FileManager.default.fileExists(atPath: Self.proxyFloatPath(path))
-        if !needPng && !needFloat { return true }
+        if !needPng && !needFloat {
+            // A proxy from before the proxy-cut thumbnail existed (or a thumbnail that was
+            // lost): cut it from the cached proxy now, so an existing folder catches up on
+            // open instead of needing its caches deleted (which would take the edits too).
+            if AppPaths.isRaw(path),
+               !FileManager.default.fileExists(atPath: AppPaths.proxyThumbnailPath(path)),
+               let cached = CacheManager.load(proxyPath) {
+                writeProxyThumbnail(path: path, cached)
+            }
+            return true
+        }
 
         if useHighPrecisionRawPipeline {
             guard let (full, source) = decodeFullFloatWithSource(path: path) else { return false }

@@ -265,7 +265,10 @@ SSH 或 CI 裡都能跑。**尺寸是設 view 的 frame 而不是視窗**：macO
 - **多選批次同步的目標要在「編輯手勢開始」時擷取**（`pushUndo`），不能在提交時抓——
   單擊縮圖會先把選取變成單張才觸發載入，提交當下 `selectedItems` 已經不是原本的多選。
 - **縮圖的底圖**（`RawLoader.loadThumbnailBase`）：RAW 優先用 proxy 裁出來的 `.rawpipe.png.thumb.jpg`（`ensureProxyCache` 順手寫，
+  **proxy 已存在但這張缺少時也會從現成 proxy 補一張**——舊資料夾開啟時自動追上，不必刪快取；
   `applyLoaded` 後會重畫該格，所以 proxy 一好縮圖就換過去），白平衡參考與編輯區同一個 `proxyDecodeSource`。
+  ⚠️ **測行為前先確認跑的是哪個 .app**：2026-09-01 使用者回報「還是有差距」，其實是在跑早上建的 `build/AwayPhotoRawEditor.app`；
+  `swift build` 只更新 `.build/debug/`，**要 `Scripts/build_app.sh` 重建、再重開 app** 才會吃到修改（`ps aux | grep AwayPhotoRawEditor` 看路徑，`關於` 看 build 時間）。
   **還沒有 proxy 時才退回相機內嵌預覽 `_thumb.jpg`**——那張**相機白平衡已經烤在裡面**，所以走 `whiteBalanceReference = .asShot`；
   沒有相機色彩資料時用 `5200 + (adj.temperature - exif.colorTemperature)` 的偏移法。照原值算會把白平衡套第二次。
   非 RAW 的 `_thumb.jpg` 與 proxy 同樣來自 ImageIO，本來就一致，不另外產生。
