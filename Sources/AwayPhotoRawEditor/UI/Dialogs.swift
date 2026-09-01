@@ -311,6 +311,19 @@ final class AboutWindowController: DialogController {
     private let updateStatus = NSTextField(labelWithString: "")
     private var checkButton: FlatButton!
 
+    /// 位址以 Base64 存放、執行期才解碼並畫進 NSImage —— email regex 掃
+    /// 原始碼或執行檔都找不到。畫在 block-based NSImage 裡，Retina 下重繪不失真。
+    private static func authorEmailImage(font: NSFont, color: NSColor) -> NSImage {
+        let addr = String(data: Data(base64Encoded: "YXdheXN1QGdtYWlsLmNvbQ==")!,
+                          encoding: .utf8)!
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
+        let size = (addr as NSString).size(withAttributes: attrs)
+        return NSImage(size: size, flipped: false) { _ in
+            (addr as NSString).draw(at: .zero, withAttributes: attrs)
+            return true
+        }
+    }
+
     init() {
         super.init(title: "關於", width: 600, height: 100)
         var y: CGFloat = 24
@@ -322,7 +335,7 @@ final class AboutWindowController: DialogController {
         let rows: [(String, String, String?)] = [
             (L.t("版本："), AppVersion.version, nil),
             (L.t("編譯時間："), build, nil),
-            (L.t("作者:"), " Chih-Wei Su (Awaysu)  awaysu@gmail.com", nil),
+            (L.t("作者:"), " Chih-Wei Su (Awaysu)  ", nil),
             (L.t("下載:"), " " + UpdateCheck.pageUrl, UpdateCheck.pageUrl),
             ("Source Code:", " https://github.com/awaysu/AwayPhotoRawEditor_Swift", "https://github.com/awaysu/AwayPhotoRawEditor_Swift"),
             (L.t("第三方元件:"), " LibRaw \(LibRawBridge.available ? LibRawBridge.version : "—") (LGPL 2.1) · Apple ImageIO / Core Graphics / Metal", nil),
@@ -338,6 +351,17 @@ final class AboutWindowController: DialogController {
                 let click = NSClickGestureRecognizer(target: self, action: #selector(openLink(_:)))
                 l.addGestureRecognizer(click)
                 l.identifier = NSUserInterfaceItemIdentifier(link)
+            }
+            if cap == L.t("作者:") {
+                // Email 畫成圖片接在作者名後面：原始碼與畫面都不含可掃描的
+                // 明文位址（repo 是 public；Windows 版用同一招）。
+                let img = Self.authorEmailImage(font: Theme.aboutBody, color: Theme.text)
+                let textW = ceil((l.stringValue as NSString)
+                    .size(withAttributes: [.font: Theme.aboutBody]).width)
+                let iv = NSImageView(image: img)
+                iv.frame = NSRect(x: 30 + textW, y: y + (20 - img.size.height) / 2,
+                                  width: img.size.width, height: img.size.height)
+                content.addSubview(iv)
             }
             y += 22
         }
