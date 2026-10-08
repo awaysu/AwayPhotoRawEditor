@@ -12,7 +12,10 @@
 | 4 | TASK-005 | 設定視窗（介面大小、字體大小 12 級、RAW 精度、GPU 開關、捲軸、恢復預設）、8 種語言（移植 `Localization.cs`）、第一次執行語言選擇、關於／檢查更新／支援相機列表 | i18n 完整性測試（每個 key 八語） | 完成 2026-10-09 |
 | 5 | TASK-006 | 打包與 CI：Windows（Inno Setup + 簽章，照 legacy CLAUDE.md）、macOS（universal DMG + Developer ID + 公證）、Linux（.deb/.rpm）；GitHub Actions 三平台跑 `cargo test` + hashtest；awaysu.cc 上傳腳本 | CI 綠燈 | 完成 2026-10-09 |
 | 6 | TASK-007 | 色彩管線升級＝處理版本 3：LibRaw 輸出線性寬色域（Rec.2020）f32、高光復原（lightcraft highlight.rs）、HSL（OkLCh）、曲線、XMP 匯出/匯入（lightcraft xmp.rs） | gputest3 18 組三平台通過；舊版照片 hashtest 逐位元組不變 | 完成 2026-10-09（5247bdf、044f7e4） |
-| 7 | TASK-008 | 放射狀／筆刷遮罩；HEIC（libheif）評估 | | 未開始 |
+| 7 | TASK-008 | 放射狀／筆刷遮罩（僅處理版本 3，CPU 點陣化權重＋GPU 套用）；HEIC 評估 `docs/HEIC-EVAL.md` | gputest3 20 組三平台通過；exporttest 差 0 | 完成 2026-10-09（f7fcb80、aec9c3c） |
+| 8 | TASK-009 | HEIC：macOS ImageIO、Windows WIC（缺延伸模組要提示）、Linux 執行時載入系統 libheif；不內嵌 libheif／libde265 | 三平台各一張 iPhone HEIC 解碼、方向、EXIF 正確 | 進行中 |
+| 9 | TASK-010 | 收尾：>16 MP 匯出分段走 GPU、遮罩權重留在 GPU、遮罩面板在 1080p／1600×1000 可完整操作、DE/FR/ES 縮短、CI 首次實跑 | 三平台 cargo test＋hashtest＋gputest3 | 未開始 |
+| 10 | — | 版本改 2.0.0、三平台重新打包、使用者驗收、依 docs/RELEASE.md 發佈（使用者決定） | | 未開始 |
 
 每步完成：更新本表「狀態」、`CLAUDE.md` 目前狀態、`CHANGELOG.md`，commit 到 main。
 
@@ -21,6 +24,10 @@
 - 高光復原預設 0（新照片與升級後都是 0，樣子最接近版本 2）；要不要給新照片預設值，使用者可改。
 - `rawpipe.xml` 不另存 `.v3.xml`：PM 用 .NET 9 ＋ legacy/windows 的模型類別實測，C# 1.x 讀版本 3 的 XML 不丟例外、`PipelineVersion=2` 保留；但 1.x 重存會丟掉 HSL／曲線／高光復原欄位（接受）。
 - 版本 3 的線性代理快取是 16-bit PNG（`RAW_TEMP/{file}.rawpipe.v3.png`，約 20–25 MB／張），建快取分兩階段（044f7e4）：先建版本 2 快取（速度與舊版相同，可立即操作），整個資料夾做完後背景逐張補線性代理；選取沒有代理的照片會插隊，等待期間用 8-bit 來源以版本 3 算式顯示、代理完成後自動換源。不採用 2×2 合併的代理（預覽與匯出必須同一來源）。
+
+## 遮罩與 HEIC 的決定（2026-10-09，PM）
+- 遮罩的調整項與漸層相同（曝光、對比、亮部、暗部、飽和度），不加色溫／色調／清晰度；批次同步不複製遮罩（與漸層同規則）。
+- HEIC 用各平台系統解碼器（Swift 版本來就是 ImageIO），不隨附 libheif／libde265，避開 LGPL 靜態連結與 HEVC 專利問題；Windows 使用者需要 HEIF／HEVC 延伸模組，缺時明確提示。
 
 ## 已知差異（相對 C# 版，刻意保留或待日後處理）
 - 滴管取樣位置：照片有裁切／旋轉時，取樣點與點擊位置不一致（C# 本來就如此）。要修需做幾何逆變換。
