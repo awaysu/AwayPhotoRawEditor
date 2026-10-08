@@ -14,8 +14,8 @@
 | 6 | TASK-007 | 色彩管線升級＝處理版本 3：LibRaw 輸出線性寬色域（Rec.2020）f32、高光復原（lightcraft highlight.rs）、HSL（OkLCh）、曲線、XMP 匯出/匯入（lightcraft xmp.rs） | gputest3 18 組三平台通過；舊版照片 hashtest 逐位元組不變 | 完成 2026-10-09（5247bdf、044f7e4） |
 | 7 | TASK-008 | 放射狀／筆刷遮罩（僅處理版本 3，CPU 點陣化權重＋GPU 套用）；HEIC 評估 `docs/HEIC-EVAL.md` | gputest3 20 組三平台通過；exporttest 差 0 | 完成 2026-10-09（f7fcb80、aec9c3c） |
 | 8 | TASK-009 | HEIC：macOS ImageIO、Windows WIC（缺延伸模組要提示）、Linux 執行時載入系統 libheif；不內嵌 libheif／libde265 | Linux／mac 實解（含 irot＋EXIF 6 直式、10-bit、P3）正確；Windows 只驗到缺 HEVC 延伸模組的提示路徑 | 完成 2026-10-09（14a7649） |
-| 9 | TASK-010 | 收尾：>16 MP 匯出分段走 GPU、遮罩權重留在 GPU、遮罩面板在 1080p／1600×1000 可完整操作、DE/FR/ES 縮短、CI 首次實跑 | 三平台 cargo test＋hashtest＋gputest3 | 進行中 |
-| 10 | — | 版本改 2.0.0、三平台重新打包、使用者驗收、依 docs/RELEASE.md 發佈（使用者決定） | | 未開始 |
+| 9 | TASK-010 | 收尾：>16 MP 匯出分段走 GPU、遮罩權重留在 GPU、遮罩面板在 1080p／1600×1000 可完整操作、DE/FR/ES 縮短、CI 首次實跑 | 三平台 cargo test 73、hashtest IDENTICAL、gputest／gputest3 全過、tiletest 8-bit 差 ≤1 | 完成 2026-10-09（fe5ddca、1dec452） |
+| 10 | TASK-011 | 版本改 2.0.0、CHANGELOG 整理成發佈說明、三平台重新打包（mac 簽章由 PM 跑）、使用者驗收、依 docs/RELEASE.md 發佈（使用者決定） | 三平台安裝檔 sha256 | 進行中 |
 
 每步完成：更新本表「狀態」、`CLAUDE.md` 目前狀態、`CHANGELOG.md`，commit 到 main。
 
@@ -37,7 +37,8 @@
 - TIFF 匯出只寫基本標籤（Make／Model／DateTime／Software），沒有 EXIF 子 IFD；JPEG／PNG 有完整 EXIF。
 - 浮水印位置維持 C# 的四角（export.xml 相容）。
 - Windows 的 WIC HEIC 實際解碼與方向未驗證（建置機沒有付費的 HEVC 延伸模組）；請有裝的使用者跑 `awpr heictest <iPhone 直式照片>` 確認四角方向。
-- 全解析度匯出超過 16 MP 走 CPU（C# 有分段 GPU BandedTarget）：列為第 6 步之後的效能項目。
+- 超過 16 MP 的匯出已改為 GPU 分條帶（fe5ddca），結果與 CPU 8-bit 差 ≤1；速度與 CPU 互有勝負（版本 3 快 15–40%，版本 2 與 Mac 61 MP 慢 10–30%，卡在搬運與 CPU 尾段）。PM 決定維持 GPU 優先，條帶管線化留作日後效能項目。
+- 「顯示捲軸」設定只管左欄；右欄需要時一定顯示（開工具時照片資訊收成一行）。設定保留以維持 settings.xml 互通。
 - 編輯風格檔視窗多一顆「刪除這個自訂風格檔」（C# 只能恢復預設一次刪光）。
 - 刪除照片時一併移除其虛擬副本與 XML（C# 會留下指向不存在檔案的副本，視為 C# 疏漏）。
 - 語言／介面大小／字級即時套用不重啟（C# 重啟）。第一次執行判定：settings.rust.xml 與 settings.xml 都不存在才跳語言選擇。
