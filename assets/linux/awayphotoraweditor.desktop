@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=AwayPhotoRawEditor
+GenericName=RAW Photo Editor
+GenericName[zh_TW]=RAW 相片編輯器
+GenericName[zh_CN]=RAW 照片编辑器
+GenericName[ja]=RAW 写真エディター
+Comment=Non-destructive RAW photo editor
+Exec=AwayPhotoRawEditor
+Icon=awayphotoraweditor
+Terminal=false
+Categories=Graphics;Photography;RasterGraphics;
+Keywords=RAW;photo;image;editor;
+StartupWMClass=AwayPhotoRawEditor

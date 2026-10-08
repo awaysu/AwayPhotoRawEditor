@@ -1,4 +1,7 @@
-//! Records the build time for the 關於 window (UTC, no extra dependencies).
+//! Records the build time for the 關於 window (UTC, no extra dependencies) and, on
+//! Windows, embeds the icon and the version resource (Product / Company / Description /
+//! Copyright — the C# csproj fields; missing ones count against the exe with antivirus
+//! heuristics).
 
 fn main() {
     let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
@@ -15,4 +18,27 @@ fn main() {
     let y = yoe + era * 400 + i64::from(m <= 2);
     println!("cargo:rustc-env=AWPR_BUILD_TIME={y:04}-{m:02}-{d:02} {:02}:{:02} UTC", rem / 3600, rem % 3600 / 60);
     println!("cargo:rerun-if-changed=src");
+    println!("cargo:rerun-if-changed=../../assets/icon.ico");
+    #[cfg(windows)]
+    windows_resource();
+}
+
+#[cfg(windows)]
+fn windows_resource() {
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
+    let mut res = winresource::WindowsResource::new();
+    res.set_icon("../../assets/icon.ico")
+        .set("ProductName", "AwayPhotoRawEditor")
+        .set("FileDescription", "AwayPhotoRawEditor")
+        .set("CompanyName", "Awaysu")
+        .set("LegalCopyright", "Copyright (c) 2026 Chih-Wei Su (Awaysu)")
+        .set("OriginalFilename", "AwayPhotoRawEditor.exe")
+        .set("InternalName", "AwayPhotoRawEditor")
+        .set("ProductVersion", env!("CARGO_PKG_VERSION"));
+    if let Err(e) = res.compile() {
+        // No resource compiler (rc.exe / windres): build anyway, just without them.
+        println!("cargo:warning=Windows resources not embedded: {e}");
+    }
 }

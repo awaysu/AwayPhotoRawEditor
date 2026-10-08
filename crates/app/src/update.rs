@@ -113,6 +113,21 @@ mod tests {
         assert_eq!(encode("a b"), "a%20b");
     }
 
+    /// The version has one source, the workspace Cargo.toml: the packaging scripts read it,
+    /// the installer gets it passed in, and CHANGELOG.md must describe it.
+    #[test]
+    fn version_has_one_source() {
+        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let read = |p: &str| std::fs::read_to_string(root.join(p)).unwrap_or_else(|e| panic!("{p}: {e}"));
+        let v = env!("CARGO_PKG_VERSION");
+        assert!(read("CHANGELOG.md").lines().any(|l| l.starts_with(&format!("## {v}"))), "CHANGELOG.md has no '## {v}' section");
+        let iss = read("installer/AwayPhotoRawEditor.iss");
+        assert!(iss.contains("#ifndef MyAppVersion") && !iss.contains("#define MyAppVersion"), "the .iss must not hard-code the version");
+        for script in ["scripts/package-windows.ps1", "scripts/package-macos.sh", "scripts/package-linux.sh"] {
+            assert!(read(script).contains("workspace"), "{script} must read the workspace version");
+        }
+    }
+
     /// The real server (network): `cargo test -p awpr-app live_update_check -- --ignored --nocapture`.
     #[test]
     #[ignore]

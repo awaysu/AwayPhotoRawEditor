@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!--
+      The hardened runtime is required for notarization. Nothing here loosens it:
+      the bundled LibRaw is signed with the same identity, so library validation stays
+      on, and the app neither JITs nor writes executable memory.
+
+      Not sandboxed: the app edits photos in whatever folder the user points it at and
+      writes its RAW_TEMP cache beside them. Under App Sandbox that needs security-scoped
+      bookmarks for every folder; Developer ID distribution does not require the sandbox,
+      so this stays out of the way. Switching to the Mac App Store later would mean
+      adding com.apple.security.app-sandbox plus user-selected.read-write and persisting
+      bookmarks for reopened folders.
+    -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+</dict>
+</plist>

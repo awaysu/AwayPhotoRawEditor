@@ -118,6 +118,7 @@ fn main() -> eframe::Result {
     }
     let mut viewport = egui::ViewportBuilder::default()
         .with_title("AwayPhotoRawEditor")
+        .with_icon(eframe::icon_data::from_png_bytes(include_bytes!("../../../assets/linux/awayphotoraweditor.png")).unwrap_or_default())
         .with_inner_size(size)
         .with_min_inner_size(egui::vec2(1100.0, 700.0));
     if shot.is_none() {

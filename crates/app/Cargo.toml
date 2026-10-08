@@ -4,6 +4,7 @@ description = "AwayPhotoRawEditor desktop editor (egui + wgpu)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+homepage = "https://www.awaysu.cc/software/awayphotoraweditor"
 
 [[bin]]
 name = "AwayPhotoRawEditor"
@@ -26,3 +27,47 @@ sys-locale = "0.3"
 ureq = "3"
 serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }
+
+# ---- Linux packages (scripts/package-linux.sh): .deb via cargo-deb, .rpm via cargo-generate-rpm.
+# Paths are relative to this crate; target/release is the workspace's.
+[package.metadata.deb]
+name = "awayphotoraweditor"
+maintainer = "Chih-Wei Su (Awaysu) <awaysu@gmail.com>"
+copyright = "2026, Chih-Wei Su (Awaysu)"
+license-file = ["../../LICENSE", "0"]
+extended-description = "AwayPhotoRawEditor: a non-destructive RAW photo editor (LibRaw decoding, GPU rendering through wgpu). Edits are kept beside the photos in RAW_TEMP and are shared with the Windows and macOS builds."
+section = "graphics"
+priority = "optional"
+# winit / wgpu open these at run time, so dpkg-shlibdeps cannot see them.
+depends = "$auto, libxkbcommon0, libvulkan1"
+assets = [
+    ["target/release/AwayPhotoRawEditor", "usr/bin/AwayPhotoRawEditor", "755"],
+    ["../../assets/linux/awayphotoraweditor.desktop", "usr/share/applications/awayphotoraweditor.desktop", "644"],
+    ["../../assets/linux/awayphotoraweditor.png", "usr/share/icons/hicolor/256x256/apps/awayphotoraweditor.png", "644"],
+    ["../../THIRD-PARTY-NOTICES.md", "usr/share/doc/awayphotoraweditor/THIRD-PARTY-NOTICES.md", "644"],
+    ["../../LICENSE", "usr/share/doc/awayphotoraweditor/LICENSE", "644"],
+    ["../../crates/libraw-sys/vendor/LibRaw-0.22.2/LICENSE.CDDL", "usr/share/doc/awayphotoraweditor/LibRaw-LICENSE.CDDL", "644"],
+    ["../../CHANGELOG.md", "usr/share/doc/awayphotoraweditor/CHANGELOG.md", "644"],
+]
+
+[package.metadata.generate-rpm]
+name = "awayphotoraweditor"
+summary = "Non-destructive RAW photo editor"
+license = "BSD-3-Clause AND CDDL-1.0"
+url = "https://www.awaysu.cc/software/awayphotoraweditor"
+assets = [
+    { source = "../../target/release/AwayPhotoRawEditor", dest = "/usr/bin/AwayPhotoRawEditor", mode = "755" },
+    { source = "../../assets/linux/awayphotoraweditor.desktop", dest = "/usr/share/applications/awayphotoraweditor.desktop", mode = "644" },
+    { source = "../../assets/linux/awayphotoraweditor.png", dest = "/usr/share/icons/hicolor/256x256/apps/awayphotoraweditor.png", mode = "644" },
+    { source = "../../THIRD-PARTY-NOTICES.md", dest = "/usr/share/doc/awayphotoraweditor/THIRD-PARTY-NOTICES.md", mode = "644", doc = true },
+    { source = "../../LICENSE", dest = "/usr/share/doc/awayphotoraweditor/LICENSE", mode = "644", doc = true },
+    { source = "../../crates/libraw-sys/vendor/LibRaw-0.22.2/LICENSE.CDDL", dest = "/usr/share/doc/awayphotoraweditor/LibRaw-LICENSE.CDDL", mode = "644", doc = true },
+    { source = "../../CHANGELOG.md", dest = "/usr/share/doc/awayphotoraweditor/CHANGELOG.md", mode = "644", doc = true },
+]
+
+[package.metadata.generate-rpm.requires]
+libxkbcommon = "*"
+vulkan-loader = "*"
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"

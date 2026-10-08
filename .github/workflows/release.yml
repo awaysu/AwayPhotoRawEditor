@@ -1,0 +1,73 @@
+# On a v* tag, build the three platforms' installers UNSIGNED and keep them as workflow
+# artifacts. Code signing (Windows Authenticode, macOS Developer ID + notarization) stays
+# on the release machines, where the certificates are: see docs/RELEASE.md. Nothing here
+# publishes anything.
+name: Release packages (unsigned)
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Inno Setup 6
+        run: choco install innosetup -y --no-progress
+      - name: package (unsigned)
+        run: powershell -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -NoSign
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-unsigned
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: package (universal, ad-hoc signed, LibRaw without OpenMP)
+        env:
+          AWPR_LIBRAW_OPENMP: "0"
+        run: scripts/package-macos.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-unsigned
+          path: |
+            dist/*.dmg
+            dist/SHA256SUMS-macos.txt
+
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config dpkg-dev libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev zstd cpio p7zip-full
+      - name: package (.deb + .rpm)
+        run: scripts/package-linux.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux
+          path: |
+            dist/*.deb
+            dist/*.rpm
+            dist/SHA256SUMS-linux.txt

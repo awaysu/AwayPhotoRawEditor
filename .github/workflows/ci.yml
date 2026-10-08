@@ -1,0 +1,83 @@
+# Build and test on the three platforms for every push and pull request.
+#
+# LibRaw is compiled from the vendored source, so nothing beyond a C/C++ toolchain is
+# needed; Linux only adds the X11 / Wayland development headers egui's window layer
+# builds against. macOS builds LibRaw without OpenMP here (no universal libomp on the
+# runner): the pixels are identical, decoding is slower.
+#
+# hashtest needs the four sample RAWs, which are not in the repository. Set the
+# AWPR_SAMPLES_URL secret to a .zip holding canon_eosr.CR3, leica_m10.DNG, pana_s5.RW2 and
+# sony_a7m3.ARW to have every job compare its reports with tests/results/<platform>/;
+# without it the step is skipped and says so.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            results: windows-x86_64
+          - os: macos-latest
+            results: macos-arm64
+          - os: ubuntu-latest
+            results: linux-x86_64
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rust toolchain (>= 1.95)
+        uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux build dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libxkbcommon-dev libwayland-dev \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev
+
+      - name: cargo build --release
+        run: cargo build --release --workspace
+
+      - name: cargo test --workspace
+        run: cargo test --workspace
+
+      - name: hashtest (needs the AWPR_SAMPLES_URL secret)
+        shell: bash
+        env:
+          AWPR_SAMPLES_URL: ${{ secrets.AWPR_SAMPLES_URL }}
+        run: |
+          if [ -z "$AWPR_SAMPLES_URL" ]; then
+            echo "::notice title=hashtest skipped::AWPR_SAMPLES_URL is not set, so the sample RAWs are not available"
+            exit 0
+          fi
+          mkdir -p samples out
+          curl -fsSL "$AWPR_SAMPLES_URL" -o samples.zip
+          unzip -q -j samples.zip -d samples
+          BIN=target/release/awpr
+          [ -f "$BIN.exe" ] && BIN="$BIN.exe"
+          fail=0
+          for f in canon_eosr.CR3 leica_m10.DNG pana_s5.RW2 sony_a7m3.ARW; do
+            "$BIN" hashtest "samples/$f" "out/$f.txt" > /dev/null
+            # The reference files are stored byte for byte (.gitattributes -text).
+            if cmp -s "out/$f.txt" "tests/results/${{ matrix.results }}/$f.txt"; then
+              echo "$f: identical"
+            else
+              echo "::error title=hashtest::$f differs from tests/results/${{ matrix.results }}/$f.txt"
+              diff "tests/results/${{ matrix.results }}/$f.txt" "out/$f.txt" | head -20 || true
+              fail=1
+            fi
+          done
+          exit $fail
