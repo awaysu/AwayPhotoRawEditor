@@ -141,6 +141,8 @@ impl App {
             ClearRecent,
             Settings,
             Presets,
+            ExportXmp,
+            ImportXmp,
             Cameras,
             About,
             Quit,
@@ -174,6 +176,9 @@ impl App {
                 ui.separator();
                 item(ui, t("設定…"), true, Act::Settings);
                 item(ui, t("編輯風格檔…"), true, Act::Presets);
+                let photo = self.has_photo();
+                item(ui, t("匯出 XMP"), photo, Act::ExportXmp);
+                item(ui, t("匯入 XMP"), photo, Act::ImportXmp);
                 ui.separator();
                 item(ui, t("支援RAW檔相機列表"), true, Act::Cameras);
                 item(ui, t("關於"), true, Act::About);
@@ -213,6 +218,8 @@ impl App {
             }
             Act::Settings => self.open_settings(),
             Act::Presets => self.preset_editor = Some(crate::presets_ui::PresetEditor::new(&self.presets)),
+            Act::ExportXmp => self.export_xmp_selected(),
+            Act::ImportXmp => self.import_xmp_selected(),
             Act::Cameras => self.cameras = Some((String::new(), awpr_core::libraw::camera_list())),
             Act::About => self.about = Some(UpdateState::Idle),
             Act::Quit => ctx.send_viewport_cmd(egui::ViewportCommand::Close),

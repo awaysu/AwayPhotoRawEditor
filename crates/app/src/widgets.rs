@@ -199,6 +199,111 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     out
 }
 
+// ---- point curve editor (處理版本 3 曲線) -------------------------------------------------
+
+/// The 曲線 editor: a square with the curve through its points. Click empty space to add a
+/// point (and drag it), drag a point to move it, double-click or right-click a point to
+/// remove it (the two end points stay). Points are kept in x order, 0..1 × 0..1; an
+/// untouched curve is an empty list (identity).
+pub fn curve_editor(ui: &mut egui::Ui, id: egui::Id, points: &mut Vec<(f64, f64)>, color: Color32, enabled: bool, drag: &mut Option<usize>) -> SliderResponse {
+    let mut out = SliderResponse::default();
+    let side = ui.available_width().min(260.0);
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(side, side), if enabled { Sense::click_and_drag() } else { Sense::hover() });
+    let _ = id;
+    let painter = ui.painter_at(rect.expand(6.0));
+    painter.rect_filled(rect, 3.0, theme::VIEWER);
+    let grid = Stroke::new(1.0, Color32::from_white_alpha(18));
+    for i in 1..4 {
+        let f = i as f32 / 4.0;
+        painter.line_segment([Pos2::new(rect.min.x + f * rect.width(), rect.min.y), Pos2::new(rect.min.x + f * rect.width(), rect.max.y)], grid);
+        painter.line_segment([Pos2::new(rect.min.x, rect.min.y + f * rect.height()), Pos2::new(rect.max.x, rect.min.y + f * rect.height())], grid);
+    }
+    painter.line_segment([rect.left_bottom(), rect.right_top()], Stroke::new(1.0, Color32::from_white_alpha(30)));
+    let to_screen = |(x, y): (f64, f64)| Pos2::new(rect.min.x + x as f32 * rect.width(), rect.max.y - y as f32 * rect.height());
+    let to_norm = |p: Pos2| (((p.x - rect.min.x) / rect.width()).clamp(0.0, 1.0) as f64, ((rect.max.y - p.y) / rect.height()).clamp(0.0, 1.0) as f64);
+
+    let shown: Vec<(f64, f64)> = if points.len() >= 2 { points.clone() } else { vec![(0.0, 0.0), (1.0, 1.0)] };
+    let curve = awpr_core::v3::MonotoneCurve::new(&shown);
+    let line: Vec<Pos2> = (0..=128).map(|i| {
+        let x = i as f64 / 128.0;
+        to_screen((x, curve.eval(x)))
+    }).collect();
+    let col = if enabled { color } else { theme::TEXT_FAINT };
+    painter.add(egui::Shape::line(line, Stroke::new(2.0, col)));
+    for (i, &p) in shown.iter().enumerate() {
+        let active = *drag == Some(i);
+        painter.circle(to_screen(p), if active { 5.5 } else { 4.5 }, if active { Color32::WHITE } else { col }, Stroke::new(1.0, Color32::from_black_alpha(160)));
+    }
+    if !enabled {
+        return out;
+    }
+
+    let hit = |pos: Pos2, pts: &[(f64, f64)]| pts.iter().enumerate().map(|(i, &p)| (i, to_screen(p).distance(pos))).filter(|(_, d)| *d <= 9.0).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(i, _)| i);
+    let remove = |pts: &mut Vec<(f64, f64)>, i: usize| -> bool {
+        if pts.len() >= 2 && i > 0 && i + 1 < pts.len() {
+            pts.remove(i);
+            true
+        } else {
+            false
+        }
+    };
+    if resp.double_clicked() || resp.secondary_clicked() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            let mut pts = shown.clone();
+            if let Some(i) = hit(pos, &pts) {
+                out.began = true;
+                if remove(&mut pts, i) {
+                    *points = pts;
+                    out.changed = true;
+                }
+            }
+        }
+        *drag = None;
+        return out;
+    }
+    if resp.drag_started() || resp.clicked() {
+        if let Some(pos) = resp.interact_pointer_pos() {
+            out.began = true;
+            let mut pts = shown.clone();
+            let i = match hit(pos, &pts) {
+                Some(i) => i,
+                None => {
+                    let (x, y) = to_norm(pos);
+                    let at = pts.iter().position(|p| p.0 > x).unwrap_or(pts.len());
+                    // Too close to a neighbour: no new point.
+                    if (at > 0 && x - pts[at - 1].0 < 0.02) || (at < pts.len() && pts[at].0 - x < 0.02) {
+                        return out;
+                    }
+                    pts.insert(at, (x, y));
+                    out.changed = true;
+                    at
+                }
+            };
+            *points = pts;
+            *drag = if resp.clicked() { None } else { Some(i) };
+        }
+    } else if resp.dragged() {
+        if let (Some(i), Some(pos)) = (*drag, resp.interact_pointer_pos()) {
+            let mut pts = shown.clone();
+            if i < pts.len() {
+                let (mut x, y) = to_norm(pos);
+                let lo = if i == 0 { 0.0 } else { pts[i - 1].0 + 0.01 };
+                let hi = if i + 1 == pts.len() { 1.0 } else { pts[i + 1].0 - 0.01 };
+                x = x.clamp(lo, hi.max(lo));
+                if pts[i] != (x, y) {
+                    pts[i] = (x, y);
+                    *points = pts;
+                    out.changed = true;
+                }
+            }
+        }
+    }
+    if resp.drag_stopped() {
+        *drag = None;
+    }
+    out
+}
+
 /// A button of exactly `size` whose text is cut with "…" when it does not fit: words go into
 /// the fixed box instead of widening the column (the C# rule for long translations). The
 /// full text shows on hover.

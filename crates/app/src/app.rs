@@ -9,7 +9,7 @@ use crate::tools::{self, Drag, HealMode, ToolMode, View, P};
 use crate::viewer::{self, DisplayPipeline, Placement, ViewerState, ZoomMode};
 use crate::widgets::{self, Gradient, Histogram, SliderSpec};
 use crate::worker::{self, Item, Msg, Worker};
-use awpr_core::pipeline::ProcessContext;
+use awpr_core::pipeline::{ProcessContext, SourceKind};
 use awpr_core::{color, FloatImage, ImageAdjustments, LinearGradient, Rotation};
 use awpr_gpu::{GpuFrame, GpuPipeline, HistogramJob};
 use awpr_photo::export::{ExportItem, ExportSettings};
@@ -39,6 +39,17 @@ enum Display {
     /// The CPU fallback's result as a texture.
     Cpu { tex: egui::TextureHandle, size: Vec2 },
 }
+
+/// The 色彩 section's pages.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ColorTab {
+    Basic,
+    Hsl,
+    Curves,
+}
+
+/// HSL band names, in `ImageAdjustments::hsl_*` order.
+const HSL_BANDS: [&str; 8] = ["紅", "橙", "黃", "綠", "青", "藍", "紫", "洋紅"];
 
 /// `--shot`: open a folder, wait for the photo, save a screenshot, quit. For checking the
 /// UI on machines nobody is sitting at; never writes settings or edits.
@@ -82,6 +93,8 @@ pub struct App {
     saved_adj: ImageAdjustments,
     exif: Option<ExifData>,
     source: DecodeSource,
+    /// The open photo's source: LibRaw's linear camera RGB (處理版本 3 RAW) or encoded.
+    source_kind: SourceKind,
     proxy: Option<Arc<FloatImage>>,
     proxy_gpu: Option<GpuFrame<'static>>,
     display: Display,
@@ -116,6 +129,14 @@ pub struct App {
     crop_custom: Option<(u32, u32)>,
     /// The gradient a right-click landed on (its 刪除 menu).
     grad_menu: Option<usize>,
+
+    // ---- 色彩 section pages (處理版本 3) ----
+    color_tab: ColorTab,
+    /// HSL page: 0 色相, 1 飽和度, 2 明度.
+    hsl_tab: usize,
+    /// 曲線 page: 0 RGB, 1 紅, 2 綠, 3 藍; the point being dragged.
+    curve_channel: usize,
+    curve_drag: Option<usize>,
 
     // ---- export ----
     export_settings: ExportSettings,
@@ -224,6 +245,7 @@ impl App {
             saved_adj: ImageAdjustments::default(),
             exif: None,
             source: DecodeSource::LibRaw,
+            source_kind: SourceKind::Encoded,
             proxy: None,
             proxy_gpu: None,
             display: Display::None,
@@ -250,6 +272,10 @@ impl App {
             wb_picker: false,
             crop_custom: None,
             grad_menu: None,
+            color_tab: ColorTab::Basic,
+            hsl_tab: 0,
+            curve_channel: 0,
+            curve_drag: None,
             export_settings: ExportSettings::load(),
             export_dlg: None,
             export_job: None,
@@ -419,7 +445,29 @@ impl App {
         self.load_version += 1;
         let item = self.items[index].clone();
         self.status = format!("{}{}", t("載入中… "), item.name());
-        self.worker.load_photo(item, self.load_version, self.settings.loader_options());
+        self.worker.load_photo(item, self.load_version, self.settings.loader_options(), None);
+    }
+
+    /// The open photo's source no longer fits its adjustments' version: a 處理版本 3 RAW
+    /// still on the encoded proxy (upgraded, pasted, imported, redone), or an older version
+    /// on the linear one (pasted, undone).
+    pub(crate) fn needs_source_reload(&self) -> bool {
+        let Some(i) = self.current else { return false };
+        match self.source_kind {
+            SourceKind::Encoded => {
+                self.adj.is_v3() && awpr_photo::loader::linear_capable(&self.items[i].path, self.exif.as_ref().and_then(|e| e.camera.as_ref()), self.settings.loader_options())
+            }
+            SourceKind::LinearCamera { .. } => !self.adj.is_v3(),
+        }
+    }
+
+    /// Load the open photo's source again for the adjustments in memory.
+    pub(crate) fn reload_source(&mut self) {
+        let Some(i) = self.current else { return };
+        self.loading = true;
+        self.load_version += 1;
+        self.status = format!("{}{}", t("載入中… "), self.items[i].name());
+        self.worker.load_photo(self.items[i].clone(), self.load_version, self.settings.loader_options(), Some(self.adj.clone()));
     }
 
     fn clear_photo(&mut self) {
@@ -457,11 +505,18 @@ impl App {
             return; // superseded by a later selection
         }
         self.loading = false;
-        self.adj = l.adjustments;
-        self.saved_adj = self.adj.clone();
+        // A reload changes only the source: the adjustments in memory (perhaps edited while it
+        // loaded), the undo history and the saved state stay. If their version moved again
+        // meanwhile, `render` reloads once more.
+        if !l.reload {
+            self.adj = l.adjustments;
+            self.saved_adj = self.adj.clone();
+            self.viewer.reset_fit();
+        }
         self.exif = Some(l.exif);
         self.source = l.source;
-        self.viewer.reset_fit();
+        self.source_kind = l.source_kind;
+        self.proxy_gpu = None;
         let Some(proxy) = l.proxy else {
             self.status = t("無法讀取這張照片").into();
             return;
@@ -477,9 +532,23 @@ impl App {
         self.status = f("{0} · {1} x {2} · 載入 {3} ms", &[&self.items[self.current.unwrap_or(0)].name(), &proxy.width, &proxy.height, &l.millis]);
         self.proxy = Some(Arc::new(proxy));
         self.needs_render = true;
+        if l.reload {
+            return;
+        }
         if let Some(s) = &self.shot {
             if let Some(spec) = s.adjust.clone() {
                 apply_adjust_spec(&mut self.adj, &spec);
+            }
+            match std::env::var("AWPR_SHOT_COLOR_TAB").as_deref() {
+                Ok("hsl") => self.color_tab = ColorTab::Hsl,
+                Ok("curves") => self.color_tab = ColorTab::Curves,
+                _ => {}
+            }
+            if let Ok(v) = std::env::var("AWPR_SHOT_HSL_TAB") {
+                self.hsl_tab = v.parse::<usize>().unwrap_or(0).min(2);
+            }
+            if let Ok(v) = std::env::var("AWPR_SHOT_CURVE_CHANNEL") {
+                self.curve_channel = v.parse::<usize>().unwrap_or(0).min(3);
             }
             match std::env::var("AWPR_SHOT_ZOOM").as_deref() {
                 Ok("100") => self.viewer.set_mode(ZoomMode::Actual100),
@@ -514,6 +583,10 @@ impl App {
                 Ok("menu") => self.app_menu = Some((egui::pos2(8.0, 46.0), true)),
                 _ => {}
             }
+        }
+        // Shot spec switched the photo to 處理版本 3: it needs the linear source.
+        if self.needs_source_reload() {
+            self.reload_source();
         }
         // The load may just have generated the proxy (and its strip thumbnail).
         if let Some(i) = self.current {
@@ -691,7 +764,16 @@ impl App {
         let y = ((ny * p.height as f64) as i64).clamp(0, p.height as i64 - 1) as usize;
         let i = p.index(x, y);
         let camera = self.exif.as_ref().and_then(|e| e.camera.as_ref());
-        let (t, tint) = tools::estimate_white_balance(p.data[i], p.data[i + 1], p.data[i + 2], self.adj.is_legacy_pipeline(), camera);
+        let (t, tint) = match (self.source_kind, camera) {
+            // Linear camera RGB: the multipliers that neutralise the patch, directly.
+            (SourceKind::LinearCamera { .. }, Some(cam)) => {
+                match awpr_core::v3::neutralizing_mul(p.data[i], p.data[i + 1], p.data[i + 2]).and_then(|m| color::cam_mul_to_kelvin_tint(cam, &m)) {
+                    Some(v) => v,
+                    None => return,
+                }
+            }
+            _ => tools::estimate_white_balance(p.data[i], p.data[i + 1], p.data[i + 2], self.adj.is_legacy_pipeline(), camera),
+        };
         self.edit_begin();
         self.adj.temperature = tools::clamp_temp_for_current(t, self.is_raw());
         self.adj.tint = tint;
@@ -894,6 +976,7 @@ impl App {
             skip_crop_rect: self.tool == ToolMode::Crop,
             camera: self.exif.as_ref().and_then(|e| e.camera.clone()),
             white_balance_reference: self.source.white_balance_reference(),
+            source_kind: self.source_kind,
             ..Default::default()
         }
     }
@@ -920,6 +1003,13 @@ impl App {
     }
 
     fn render(&mut self) {
+        // Never render one version's maths from the other version's source.
+        if self.needs_source_reload() {
+            if !self.loading {
+                self.reload_source();
+            }
+            return;
+        }
         self.needs_render = false;
         let adj = self.render_adjustments();
         let ctx = self.process_context();
@@ -1178,9 +1268,133 @@ impl App {
             self.slider(ui, SliderSpec::pm100(t("暗部")), |a| &mut a.shadows);
             self.slider(ui, SliderSpec::pm100(t("白色")), |a| &mut a.whites);
             self.slider(ui, SliderSpec::pm100(t("黑色")), |a| &mut a.blacks);
+            // 處理版本 3 RAWs only: rebuilds clipped channels and rolls white off softly.
+            if self.adj.is_v3() && matches!(self.source_kind, SourceKind::LinearCamera { .. }) {
+                let spec = SliderSpec { min: 0.0, bipolar: false, ..SliderSpec::pm100(t("高光復原")) };
+                self.slider(ui, spec, |a| &mut a.highlight_recovery);
+            }
         });
         ui.add_space(4.0);
         theme::section(ui, t("色彩"), |ui| {
+            ui.horizontal(|ui| {
+                for (tab, name) in [(ColorTab::Basic, t("基本")), (ColorTab::Hsl, "HSL"), (ColorTab::Curves, t("曲線"))] {
+                    if ui.selectable_label(self.color_tab == tab, name).clicked() {
+                        self.color_tab = tab;
+                    }
+                }
+            });
+            ui.add_space(2.0);
+            match self.color_tab {
+                ColorTab::Basic => self.color_basic(ui),
+                ColorTab::Hsl => self.color_hsl(ui),
+                ColorTab::Curves => self.color_curves(ui),
+            }
+        });
+        ui.add_space(4.0);
+        theme::section(ui, t("細節"), |ui| {
+            self.slider(ui, SliderSpec::pm100(t("銳利度")), |a| &mut a.sharpening);
+            self.slider(ui, SliderSpec::pm100(t("暗角")), |a| &mut a.vignette);
+            let nr = SliderSpec { min: 0.0, bipolar: false, ..SliderSpec::pm100(t("降噪")) };
+            self.slider(ui, nr, |a| &mut a.noise_reduction);
+        });
+        ui.add_space(8.0);
+        if ui.add_enabled(self.has_photo(), egui::Button::new(t("基本／色彩／細節 重設")).min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
+            self.reset_basic_color_detail();
+        }
+        ui.add_space(8.0);
+        self.preset_panel(ui);
+    }
+
+    /// 處理版本 3 tools on an older photo: say how to get them. True when they can be used.
+    fn v3_notice(&self, ui: &mut egui::Ui) -> bool {
+        if self.adj.is_v3() || !self.has_photo() {
+            return self.has_photo();
+        }
+        ui.add(egui::Label::new(RichText::new(t("需要處理版本 3：在縮圖上按右鍵 →「升級處理版本」")).color(theme::TEXT_DIM).size(theme::scaled(12.0))).wrap());
+        false
+    }
+
+    /// HSL: 8 bands × 色相／飽和度／明度 (OkLCh), one quantity per page.
+    fn color_hsl(&mut self, ui: &mut egui::Ui) {
+        let enabled = self.v3_notice(ui);
+        ui.horizontal(|ui| {
+            for (i, name) in [t("色相"), t("飽和度"), t("明度")].into_iter().enumerate() {
+                if ui.selectable_label(self.hsl_tab == i, name).clicked() {
+                    self.hsl_tab = i;
+                }
+            }
+        });
+        let tab = self.hsl_tab;
+        for b in 0..8 {
+            let spec = SliderSpec::pm100(t(HSL_BANDS[b]));
+            let get = move |a: &ImageAdjustments| match tab {
+                0 => a.hsl_hue[b],
+                1 => a.hsl_saturation[b],
+                _ => a.hsl_luminance[b],
+            };
+            let set = move |a: &mut ImageAdjustments, v: f64| match tab {
+                0 => a.hsl_hue[b] = v,
+                1 => a.hsl_saturation[b] = v,
+                _ => a.hsl_luminance[b] = v,
+            };
+            ui.push_id(("hsl", tab, b), |ui| {
+                self.slider_with(ui, spec, enabled, get, set);
+            });
+        }
+    }
+
+    /// 曲線: RGB plus R / G / B point curves.
+    fn color_curves(&mut self, ui: &mut egui::Ui) {
+        let enabled = self.v3_notice(ui);
+        ui.horizontal(|ui| {
+            for (i, name) in ["RGB", t("紅"), t("綠"), t("藍")].into_iter().enumerate() {
+                if ui.selectable_label(self.curve_channel == i, name).clicked() {
+                    self.curve_channel = i;
+                    self.curve_drag = None;
+                }
+            }
+        });
+        let ch = self.curve_channel;
+        let color = [Color32::from_gray(220), Color32::from_rgb(235, 80, 80), Color32::from_rgb(80, 200, 100), Color32::from_rgb(90, 140, 255)][ch];
+        let mut pts = match ch {
+            0 => self.adj.curve_rgb.clone(),
+            1 => self.adj.curve_red.clone(),
+            2 => self.adj.curve_green.clone(),
+            _ => self.adj.curve_blue.clone(),
+        };
+        let r = widgets::curve_editor(ui, ui.id().with(("curve", ch)), &mut pts, color, enabled, &mut self.curve_drag);
+        if r.began {
+            self.edit_begin();
+        }
+        if r.changed {
+            self.set_curve(ch, pts);
+        }
+        ui.horizontal(|ui| {
+            ui.label(RichText::new(t("點兩下或按右鍵刪除控制點")).color(theme::TEXT_FAINT).size(theme::scaled(11.0)));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add_enabled(enabled, egui::Button::new(t("重設曲線"))).clicked() {
+                    self.edit_begin();
+                    self.set_curve(ch, Vec::new());
+                }
+            });
+        });
+    }
+
+    fn set_curve(&mut self, ch: usize, pts: Vec<(f64, f64)>) {
+        // A curve back on the diagonal is stored as "no curve".
+        let pts = if awpr_core::v3::curve_is_identity(&pts) { Vec::new() } else { pts };
+        match ch {
+            0 => self.adj.curve_rgb = pts,
+            1 => self.adj.curve_red = pts,
+            2 => self.adj.curve_green = pts,
+            _ => self.adj.curve_blue = pts,
+        }
+        self.edited();
+    }
+
+    /// The 色彩 page every version has: white balance, vibrance, saturation.
+    fn color_basic(&mut self, ui: &mut egui::Ui) {
+        {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(t("白平衡")).color(theme::TEXT_DIM));
                 let picker = egui::Button::new(t("滴管")).selected(self.wb_picker);
@@ -1219,20 +1433,7 @@ impl App {
             self.slider(ui, SliderSpec::pm100(t("色調")).gradient(Gradient::Tint), |a| &mut a.tint);
             self.slider(ui, SliderSpec::pm100(t("鮮豔度")).gradient(Gradient::Saturation), |a| &mut a.vibrance);
             self.slider(ui, SliderSpec::pm100(t("飽和度")).gradient(Gradient::Saturation), |a| &mut a.saturation);
-        });
-        ui.add_space(4.0);
-        theme::section(ui, t("細節"), |ui| {
-            self.slider(ui, SliderSpec::pm100(t("銳利度")), |a| &mut a.sharpening);
-            self.slider(ui, SliderSpec::pm100(t("暗角")), |a| &mut a.vignette);
-            let nr = SliderSpec { min: 0.0, bipolar: false, ..SliderSpec::pm100(t("降噪")) };
-            self.slider(ui, nr, |a| &mut a.noise_reduction);
-        });
-        ui.add_space(8.0);
-        if ui.add_enabled(self.has_photo(), egui::Button::new(t("基本／色彩／細節 重設")).min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
-            self.reset_basic_color_detail();
         }
-        ui.add_space(8.0);
-        self.preset_panel(ui);
     }
 
     fn right_column(&mut self, ui: &mut egui::Ui) {
@@ -1268,9 +1469,10 @@ impl App {
                         ui.end_row();
                     }
                 });
-                if self.adj.is_legacy_pipeline() {
-                    ui.label(RichText::new(format!("· {}", t("舊版處理"))).size(theme::scaled(12.0)).color(theme::EDITED));
-                }
+                // 處理版本 1 / 2 / 3 = pipeline_version 0 / 1 / 2; older than current is marked.
+                let old = self.adj.pipeline_version < ImageAdjustments::CURRENT_PIPELINE_VERSION;
+                let color = if old { theme::EDITED } else { theme::TEXT_FAINT };
+                ui.label(RichText::new(format!("· {}", f("處理版本 {0}", &[&(self.adj.pipeline_version + 1)]))).size(theme::scaled(12.0)).color(color));
             }
         });
         ui.add_space(4.0);
@@ -1759,12 +1961,35 @@ fn paint_rotate_icon(painter: &egui::Painter, c: egui::Pos2, r: f32) {
     painter.add(egui::Shape::convex_polygon(vec![end + t * s * 1.8, end + n * s, end - n * s], blue, egui::Stroke::NONE));
 }
 
-/// "exposure=0.5,contrast=20" → the adjustments (shot mode only).
+/// "exposure=0.5,contrast=20" → the adjustments (shot mode only). 處理版本 3:
+/// `version=3`, `hlr=` (高光復原), `hue0..7=` / `sat0..7=` / `lum0..7=` (HSL bands 紅…洋紅),
+/// `curve=1` (an S curve on RGB plus warm red / cool blue curves).
 fn apply_adjust_spec(a: &mut ImageAdjustments, spec: &str) {
     for part in spec.split(',') {
         let Some((k, v)) = part.split_once('=') else { continue };
         let Ok(v) = v.trim().parse::<f64>() else { continue };
-        match k.trim() {
+        let k = k.trim();
+        let band = |p: &str| k.strip_prefix(p).and_then(|n| n.parse::<usize>().ok()).filter(|&n| n < 8);
+        if let Some(b) = band("hue") {
+            a.hsl_hue[b] = v;
+            continue;
+        }
+        if let Some(b) = band("sat") {
+            a.hsl_saturation[b] = v;
+            continue;
+        }
+        if let Some(b) = band("lum") {
+            a.hsl_luminance[b] = v;
+            continue;
+        }
+        match k {
+            "version" => a.pipeline_version = (v as i32 - 1).clamp(0, ImageAdjustments::CURRENT_PIPELINE_VERSION),
+            "hlr" => a.highlight_recovery = v,
+            "curve" if v != 0.0 => {
+                a.curve_rgb = vec![(0.0, 0.0), (0.25, 0.18), (0.75, 0.84), (1.0, 1.0)];
+                a.curve_red = vec![(0.0, 0.0), (0.5, 0.55), (1.0, 1.0)];
+                a.curve_blue = vec![(0.0, 0.03), (0.5, 0.46), (1.0, 1.0)];
+            }
             "exposure" => a.exposure = v,
             "contrast" => a.contrast = v,
             "highlights" => a.highlights = v,

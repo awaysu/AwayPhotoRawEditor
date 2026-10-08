@@ -1,7 +1,7 @@
 //! Background work. Everything slow — LibRaw decodes, cache files, thumbnail renders —
 //! runs here and reports back over a channel; the UI thread only ever draws.
 
-use awpr_core::pipeline::{apply_to_float, ProcessContext};
+use awpr_core::pipeline::{apply_to_float, ProcessContext, SourceKind};
 use awpr_core::{color::WhiteBalanceReference, libraw, FloatImage, ImageAdjustments};
 use awpr_photo::loader::{self, DecodeSource, LoaderOptions, ThumbnailBase};
 use awpr_photo::{codec, exif, paths, store, ExifData};
@@ -24,6 +24,11 @@ pub struct Loaded {
     pub exif: ExifData,
     pub proxy: Option<FloatImage>,
     pub source: DecodeSource,
+    /// The linear camera proxy (處理版本 3 RAW) or the usual encoded one.
+    pub source_kind: SourceKind,
+    /// A source reload for the photo already open (after 升級處理版本): keep its undo
+    /// state and its saved values.
+    pub reload: bool,
     pub millis: u128,
 }
 
@@ -148,7 +153,13 @@ impl Worker {
                     // Seed the XML so the as-shot white balance is set once, here.
                     let mut e = exif::read(&path);
                     enrich_camera_color(&path, &mut e, opt);
-                    store::ensure_default(&path, Some(&e), 0);
+                    let adj = store::ensure_default(&path, Some(&e), 0);
+                    // 處理版本 3 RAWs edit from the linear camera proxy: build it now too.
+                    if adj.is_v3() && loader::linear_capable(&path, e.camera.as_ref(), opt) {
+                        if let Some(c) = e.camera.as_ref() {
+                            loader::ensure_proxy_v3(&path, c);
+                        }
+                    }
                     for it in items.iter().filter(|i| i.path == path) {
                         w.thumbnail(it, None, 0);
                     }
@@ -161,7 +172,9 @@ impl Worker {
 
     // ---- photo loading ------------------------------------------------------------
 
-    pub fn load_photo(&self, item: Item, version: u64, opt: LoaderOptions) {
+    /// Load a photo. `keep` = a reload of the photo already open with these (in-memory)
+    /// adjustments: only the source changes.
+    pub fn load_photo(&self, item: Item, version: u64, opt: LoaderOptions, keep: Option<ImageAdjustments>) {
         let w = self.clone();
         std::thread::Builder::new()
             .name("load".into())
@@ -171,17 +184,19 @@ impl Worker {
                 let mut e = stored_exif.clone().unwrap_or_else(|| exif::read(&item.path));
                 // Back-fill camera colour data into XMLs written before it existed.
                 let enriched = enrich_camera_color(&item.path, &mut e, opt);
-                let adj = match stored {
-                    Some(a) => a,
-                    None => store::ensure_default(&item.path, Some(&e), item.copy),
+                let reload = keep.is_some();
+                let adj = match (keep, stored) {
+                    (Some(a), _) => a,
+                    (None, Some(a)) => a,
+                    (None, None) => store::ensure_default(&item.path, Some(&e), item.copy),
                 };
-                if enriched {
+                if enriched && !reload {
                     let _ = store::save(&item.path, &adj, item.copy, Some(&e));
                 }
-                let proxy = loader::load_proxy(&item.path, opt);
-                let (proxy, source) = match proxy {
-                    Some((p, s)) => (Some(p), s),
-                    None => (None, DecodeSource::LibRaw),
+                let proxy = loader::load_proxy_for(&item.path, &adj, e.camera.as_ref(), opt);
+                let (proxy, source, source_kind) = match proxy {
+                    Some((p, s, k)) => (Some(p), s, k),
+                    None => (None, DecodeSource::LibRaw, SourceKind::Encoded),
                 };
                 w.send(Msg::Loaded(Box::new(Loaded {
                     version,
@@ -189,6 +204,8 @@ impl Worker {
                     exif: e,
                     proxy,
                     source,
+                    source_kind,
+                    reload,
                     millis: t0.elapsed().as_millis(),
                 })));
             })

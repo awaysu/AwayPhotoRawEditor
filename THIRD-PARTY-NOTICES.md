@@ -12,6 +12,38 @@ the full dependency tree (transitive crates included) can be listed with
 | [LibRaw](https://www.libraw.org/) | 0.22.2 | CDDL-1.0 (chosen) or LGPL-2.1 | Vendored in `crates/libraw-sys/vendor/LibRaw-0.22.2/`, statically linked under CDDL-1.0. Its source, including any changes, is available in this repository. See `LICENSE.CDDL` in that folder. |
 | [zlib](https://zlib.net/) (bundled by `libz-sys`) | (libz-sys 1.1) | Zlib | Statically linked, used by LibRaw for DNG. |
 
+## Code adapted from other projects
+
+| Project | License | What |
+|---|---|---|
+| [lightcraft](https://github.com/storytold/lightcraft) | MIT OR Apache-2.0 (used under MIT) | 處理版本 3 (`crates/core/src/v3.rs`): highlight reconstruction (`crates/raw/src/highlight.rs`: clip-neutral, coarse-to-fine chromaticity fill), the OkLab / OkLCh conversions and colour tools with the 8-band partition-of-unity weights (`crates/color/src/perceptual.rs`, `crates/pipeline/src/colorops.rs`), the monotone cubic curve (`crates/color/src/spline.rs`), the gamut compression to the output space; the XMP reader's structure (`crates/photo/src/xmp.rs`, from `crates/meta/src/xmp.rs`). |
+
+lightcraft's licence (MIT):
+
+```
+MIT License
+
+Copyright (c) 2026 ArtCraft Team and the LightCraft contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
 ## Rust crates (direct dependencies)
 
 | Crate | Version | License |

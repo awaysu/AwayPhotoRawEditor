@@ -7,7 +7,7 @@ use super::App;
 use crate::theme;
 use crate::worker::Item;
 use awpr_core::ImageAdjustments;
-use awpr_photo::{edits, library, presets, store};
+use awpr_photo::{edits, library, presets, store, xmp};
 use eframe::egui::{self, Color32, RichText, Vec2};
 
 /// One undo step: the current photo's prior state, plus — for a step that opened a batch
@@ -37,6 +37,8 @@ enum MenuAction {
     Copy(usize),
     Paste,
     Upgrade,
+    ExportXmp,
+    ImportXmp,
     VirtualCopy(usize),
     Hide,
     Unhide,
@@ -365,12 +367,67 @@ impl App {
         }
     }
 
-    /// 升級處理版本: only photos still on the legacy maths; asks first.
+    /// 升級處理版本: photos on an older version go to the current one; asks first.
     fn upgrade_selected(&mut self) {
         let targets = self.selected_items();
         if !targets.is_empty() {
             self.confirm = Some(Confirm::Upgrade(targets));
         }
+    }
+
+    /// 匯出 XMP: each selected photo's adjustments to its sidecar (`{stem}.xmp`).
+    pub(super) fn export_xmp_selected(&mut self) {
+        let current_key = self.current.map(|i| self.items[i].key.clone());
+        let mut n = 0;
+        for it in self.selected_items() {
+            let (stored, exif, _) = store::load_all(&it.path, it.copy);
+            let adj = if Some(&it.key) == current_key.as_ref() { Some(self.adj.clone()) } else { stored };
+            let Some(adj) = adj else { continue };
+            if self.headless() {
+                n += 1;
+                continue;
+            }
+            match xmp::export_sidecar(&it.path, it.copy, &adj, exif.as_ref()) {
+                Ok(_) => n += 1,
+                Err(e) => {
+                    self.status = f("無法寫入 {0}：{1}", &[&xmp::sidecar_path(&it.path, it.copy), &e]);
+                    return;
+                }
+            }
+        }
+        self.status = f("已匯出 {0} 個 XMP 檔", &[&n]);
+    }
+
+    /// 匯入 XMP: each selected photo takes its sidecar's settings (as one undo step for the
+    /// photo being edited).
+    pub(super) fn import_xmp_selected(&mut self) {
+        let current_key = self.current.map(|i| self.items[i].key.clone());
+        let (mut n, mut missing) = (0, 0);
+        for it in self.selected_items() {
+            if Some(&it.key) == current_key.as_ref() {
+                let Some(a) = xmp::import_sidecar(&it.path, it.copy, &self.adj) else {
+                    missing += 1;
+                    continue;
+                };
+                self.edit_begin();
+                self.adj = a;
+                self.edited();
+                if self.needs_source_reload() {
+                    self.reload_source();
+                }
+                n += 1;
+            } else {
+                let base = store::load_all(&it.path, it.copy).0.unwrap_or_default();
+                match xmp::import_sidecar(&it.path, it.copy, &base) {
+                    Some(a) => {
+                        self.write_other(&it, &a);
+                        n += 1;
+                    }
+                    None => missing += 1,
+                }
+            }
+        }
+        self.status = if missing > 0 { f("已匯入 {0} 個 XMP 檔（{1} 張沒有可讀的 XMP）", &[&n, &missing]) } else { f("已匯入 {0} 個 XMP 檔", &[&n]) };
     }
 
     fn upgrade_confirmed(&mut self, targets: Vec<Item>) {
@@ -379,7 +436,7 @@ impl App {
         let current_key = self.current.map(|i| self.items[i].key.clone());
         for it in targets {
             if Some(&it.key) == current_key.as_ref() {
-                if !self.adj.is_legacy_pipeline() {
+                if self.adj.pipeline_version >= ImageAdjustments::CURRENT_PIPELINE_VERSION {
                     continue;
                 }
                 self.edit_begin();
@@ -387,6 +444,10 @@ impl App {
                 edits::upgrade(&mut self.adj, exif.as_ref());
                 self.edited();
                 n += 1;
+                // 處理版本 3 edits a RAW from LibRaw's linear decode.
+                if self.needs_source_reload() {
+                    self.reload_source();
+                }
             } else {
                 let (a, exif, _) = store::load_all(&it.path, it.copy);
                 let Some(mut a) = a else { continue };
@@ -524,6 +585,8 @@ impl App {
                 item(ui, t("複製照片設定"), sel.len() <= 1, MenuAction::Copy(i));
                 item(ui, t("貼上照片設定"), self.copied.is_some(), MenuAction::Paste);
                 item(ui, t("升級處理版本"), true, MenuAction::Upgrade);
+                item(ui, t("匯出 XMP"), true, MenuAction::ExportXmp);
+                item(ui, t("匯入 XMP"), true, MenuAction::ImportXmp);
                 ui.separator();
                 item(ui, t("建立副本"), true, MenuAction::VirtualCopy(i));
                 item(ui, t("隱藏且不輸出"), any_shown, MenuAction::Hide);
@@ -558,6 +621,8 @@ impl App {
             MenuAction::Copy(i) => self.copy_settings(i),
             MenuAction::Paste => self.paste_settings(),
             MenuAction::Upgrade => self.upgrade_selected(),
+            MenuAction::ExportXmp => self.export_xmp_selected(),
+            MenuAction::ImportXmp => self.import_xmp_selected(),
             MenuAction::VirtualCopy(i) => self.create_virtual_copy(i),
             MenuAction::Hide => self.hide_selected(),
             MenuAction::Unhide => self.unhide_selected(),
@@ -572,7 +637,7 @@ impl App {
         let Some(c) = &self.confirm else { return };
         let (title, text) = match c {
             Confirm::DeleteFile(it) => (t("刪除照片檔案").to_string(), f("確定刪除檔案？（會移到資源回收桶）\n{0}", &[&it.name()])),
-            Confirm::Upgrade(v) => (t("升級處理版本").to_string(), f("升級後曝光與白平衡改以線性光計算，畫面可能略有變化。要升級選取的 {0} 張照片嗎？", &[&v.len()])),
+            Confirm::Upgrade(v) => (t("升級處理版本").to_string(), f("升級到處理版本 3（寬色域線性管線，可用高光復原、HSL 與曲線）。曝光與白平衡維持不變，畫面可能略有變化。要升級選取的 {0} 張照片嗎？", &[&v.len()])),
             Confirm::ClearCache => (t("刪除快取縮圖").to_string(), t("關閉資料夾並刪除此資料夾的快取與縮圖檔案？\n（編輯設定會保留，下次開啟會重新產生快取）").to_string()),
         };
         let mut answer = None;
