@@ -97,6 +97,16 @@ fn rotation_from(s: &str) -> Option<Rotation> {
     })
 }
 
+/// An `<Adjustments>` element in the rawpipe layout (presets.xml embeds the same one).
+pub fn adjustments_node(a: &ImageAdjustments) -> XmlNode {
+    encode_adjustments(a)
+}
+
+/// Read an `<Adjustments>` element (the version is not part of it: current by default).
+pub fn adjustments_from_node(n: &XmlNode) -> ImageAdjustments {
+    decode_adjustments(n)
+}
+
 // ---- encoding (element order = the C# property declaration order) ----------------
 
 fn encode_adjustments(a: &ImageAdjustments) -> XmlNode {

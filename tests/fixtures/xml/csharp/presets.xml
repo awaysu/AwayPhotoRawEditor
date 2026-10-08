@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Presets xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Items>
+    <NamedPreset>
+      <Name>自訂1</Name>
+      <Adjustments>
+        <Exposure>0</Exposure>
+        <Contrast>0</Contrast>
+        <Highlights>0</Highlights>
+        <Shadows>0</Shadows>
+        <Whites>0</Whites>
+        <Blacks>0</Blacks>
+        <Temperature>5723.404109477997</Temperature>
+        <Tint>-37.76123630842111</Tint>
+        <Vibrance>0</Vibrance>
+        <Saturation>0</Saturation>
+        <Sharpening>0</Sharpening>
+        <NoiseReduction>0</NoiseReduction>
+        <Vignette>0</Vignette>
+        <Distortion>0</Distortion>
+        <CropAspectRatio>Original</CropAspectRatio>
+        <CropAngle>0</CropAngle>
+        <CropX>0</CropX>
+        <CropY>0.14088543256123853</CropY>
+        <CropWidth>0.8591145674387615</CropWidth>
+        <CropHeight>0.8591145674387615</CropHeight>
+        <Rotation>R0</Rotation>
+        <Gradients>
+          <LinearGradient>
+            <CenterX>0.5191406091054281</CenterX>
+            <CenterY>0.4986338797814208</CenterY>
+            <Angle>0.4774537773095774</Angle>
+            <Range>0.333962619304657</Range>
+            <Exposure>1.335877776145935</Exposure>
+            <Contrast>0</Contrast>
+            <Highlights>0</Highlights>
+            <Shadows>0</Shadows>
+            <Saturation>0</Saturation>
+          </LinearGradient>
+        </Gradients>
+        <HealSize>10</HealSize>
+        <HealSpots />
+      </Adjustments>
+    </NamedPreset>
+    <NamedPreset>
+      <Name>我的夜景</Name>
+      <Adjustments>
+        <Exposure>0.4</Exposure>
+        <Contrast>20</Contrast>
+        <Highlights>-30</Highlights>
+        <Shadows>25</Shadows>
+        <Whites>0</Whites>
+        <Blacks>0</Blacks>
+        <Temperature>6200</Temperature>
+        <Tint>0</Tint>
+        <Vibrance>25</Vibrance>
+        <Saturation>8</Saturation>
+        <Sharpening>30</Sharpening>
+        <NoiseReduction>0</NoiseReduction>
+        <Vignette>0</Vignette>
+        <Distortion>0</Distortion>
+        <CropAspectRatio>Original</CropAspectRatio>
+        <CropAngle>0</CropAngle>
+        <CropX>0</CropX>
+        <CropY>0</CropY>
+        <CropWidth>1</CropWidth>
+        <CropHeight>1</CropHeight>
+        <Rotation>R0</Rotation>
+        <Gradients />
+        <HealSize>10</HealSize>
+        <HealSpots />
+      </Adjustments>
+    </NamedPreset>
+  </Items>
+</Presets>

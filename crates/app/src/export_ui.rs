@@ -24,12 +24,19 @@ pub enum DialogAction {
     Cancel,
 }
 
+/// Which photos an export covers.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Scope {
+    Current,
+    Selected,
+    All,
+}
+
 /// The open 匯出設定 window: a draft of the settings until 儲存.
 pub struct ExportDialog {
     pub draft: ExportSettings,
     max_edge: String,
-    /// Export every (not hidden) photo instead of the current one.
-    pub all: bool,
+    pub scope: Scope,
 }
 
 /// The installed font families, scanned once in the background.
@@ -45,14 +52,16 @@ pub fn font_list() -> Option<&'static Vec<String>> {
 }
 
 impl ExportDialog {
-    pub fn new(settings: &ExportSettings) -> Self {
+    pub fn new(settings: &ExportSettings, scope: Scope) -> Self {
         font_list();
-        Self { draft: settings.clone(), max_edge: settings.max_long_edge.to_string(), all: false }
+        Self { draft: settings.clone(), max_edge: settings.max_long_edge.to_string(), scope }
     }
 
     /// Draw the window. Watermark edits are copied into `live` straight away so the main
     /// preview follows them (the C# dialog did the same).
-    pub fn show(&mut self, ctx: &egui::Context, live: &mut ExportSettings, current: usize, all: usize) -> DialogAction {
+    /// `counts` = photos in [current, selected, all] (hidden ones never count).
+    pub fn show(&mut self, ctx: &egui::Context, live: &mut ExportSettings, counts: [usize; 3]) -> DialogAction {
+        let [current, selected, all] = counts;
         let mut action = DialogAction::None;
         let mut open = true;
         egui::Window::new("匯出設定")
@@ -66,13 +75,20 @@ impl ExportDialog {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         ui.label(RichText::new("匯出照片").strong().size(18.0));
-                        let n = if self.all { all } else { current };
+                        let n = match self.scope {
+                            Scope::Current => current,
+                            Scope::Selected => selected,
+                            Scope::All => all,
+                        };
                         ui.label(RichText::new(format!("共 {n} 張相片將被轉存")).color(theme::TEXT_DIM));
                     });
                     ui.add_space(40.0);
                     ui.label(RichText::new("範圍").color(theme::TEXT_DIM));
-                    ui.radio_value(&mut self.all, false, "目前這張");
-                    ui.radio_value(&mut self.all, true, format!("資料夾全部（{all} 張，不含隱藏）"));
+                    ui.radio_value(&mut self.scope, Scope::Current, "目前這張");
+                    if selected > 1 || self.scope == Scope::Selected {
+                        ui.radio_value(&mut self.scope, Scope::Selected, format!("選取的照片（{selected} 張）"));
+                    }
+                    ui.radio_value(&mut self.scope, Scope::All, format!("資料夾全部（{all} 張，不含隱藏）"));
                 });
                 ui.separator();
                 ui.columns(2, |cols| {

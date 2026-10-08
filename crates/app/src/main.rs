@@ -8,7 +8,10 @@
 //!                                              diagnostics: screenshot and quit
 //!   env AWPR_SHOT_ADJ="exposure=0.5,..."       (shot) adjustments applied in memory
 //!   env AWPR_SHOT_TOOL=crop|gradient|heal      (shot) open that tool (sample spots if none)
-//!   env AWPR_SHOT_DLG=export                   (shot) open the 匯出設定 window
+//!   env AWPR_SHOT_DLG=export|presets           (shot) open the 匯出設定 / 編輯風格檔 window
+//!   env AWPR_SHOT_SELECT=1,2                   (shot) select these strip positions (1-based)
+//!   env AWPR_SHOT_MENU=1                       (shot) open the thumbnail menu
+//!   env AWPR_SHOT_SHOW_HIDDEN=1                (shot) show hidden photos
 //!   env AWPR_SHOT_WM=<text>                    (shot) turn the export watermark on (live preview)
 //!   env AWPR_NO_GPU=1                          render on the CPU
 
@@ -16,6 +19,7 @@
 
 mod app;
 mod export_ui;
+mod presets_ui;
 mod settings;
 mod theme;
 mod tools;

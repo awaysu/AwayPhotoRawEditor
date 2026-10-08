@@ -14,3 +14,4 @@ tiff = { version = "0.11", default-features = false, features = ["lzw"] }
 ab_glyph = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 epaint_default_fonts = "0.36"
+trash = "5"

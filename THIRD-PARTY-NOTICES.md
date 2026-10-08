@@ -26,6 +26,7 @@ the full dependency tree (transitive crates included) can be listed with
 | [rfd](https://github.com/PolyMeilex/rfd) | 0.17 | MIT |
 | [rayon](https://github.com/rayon-rs/rayon) | 1.12 | MIT OR Apache-2.0 |
 | [chrono](https://github.com/chronotope/chrono) | 0.4 | MIT OR Apache-2.0 |
+| [trash](https://github.com/Byron/trash-rs) | 5 | MIT |
 | [bytemuck](https://github.com/Lokathor/bytemuck) | 1.25 | Zlib OR Apache-2.0 OR MIT |
 | [pollster](https://github.com/zesterer/pollster) | 0.4 | Apache-2.0 OR MIT |
 | [libz-sys](https://github.com/rust-lang/libz-sys) | 1.1 | MIT OR Apache-2.0 |

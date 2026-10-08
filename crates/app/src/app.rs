@@ -1,7 +1,7 @@
 //! The main window: folder → thumbnail strip → photo, with the C# layout (top bar,
 //! strip, left adjustments, centre viewer, right histogram / info / tools).
 
-use crate::export_ui::{DialogAction, ExportDialog, ExportJob, WatermarkOverlay};
+use crate::export_ui::{DialogAction, ExportDialog, ExportJob, Scope, WatermarkOverlay};
 use crate::settings::Settings;
 use crate::theme;
 use crate::tools::{self, Drag, HealMode, ToolMode, View, P};
@@ -12,6 +12,8 @@ use awpr_core::pipeline::ProcessContext;
 use awpr_core::{color, FloatImage, ImageAdjustments, LinearGradient, Rotation};
 use awpr_gpu::{GpuFrame, GpuPipeline, HistogramJob};
 use awpr_photo::export::{ExportItem, ExportSettings};
+use awpr_photo::presets::PresetCollection;
+use awpr_photo::edits;
 use awpr_photo::loader::DecodeSource;
 use awpr_photo::store::{self, PreviewList};
 use awpr_photo::{paths, ExifData};
@@ -22,6 +24,9 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+
+mod library;
+use library::{Confirm, UndoStep};
 
 /// What the viewer currently shows.
 enum Display {
@@ -85,8 +90,8 @@ pub struct App {
     hist_job: Option<(HistogramJob, Instant)>,
     viewer: ViewerState,
     show_original: bool,
-    undo: Vec<ImageAdjustments>,
-    redo: Vec<ImageAdjustments>,
+    undo: Vec<UndoStep>,
+    redo: Vec<UndoStep>,
     status: String,
     render_note: String,
 
@@ -117,6 +122,23 @@ pub struct App {
     export_dlg: Option<(ExportDialog, ExportSettings)>,
     export_job: Option<ExportJob>,
     wm_overlay: WatermarkOverlay,
+
+    // ---- photo management (library.rs) ----
+    /// Selected strip positions; `current` is the one being edited.
+    selected: std::collections::BTreeSet<usize>,
+    /// Where a Shift-click range starts.
+    anchor: Option<usize>,
+    /// The batch edit session: the other selected photos and the adjustments when it began.
+    sync: Option<(Vec<Item>, ImageAdjustments)>,
+    /// 複製照片設定 (memory only, like the C# build) and which photo it came from.
+    copied: Option<ImageAdjustments>,
+    copy_source: Option<String>,
+    presets: PresetCollection,
+    preset_choice: String,
+    preset_editor: Option<crate::presets_ui::PresetEditor>,
+    /// The thumbnail menu: item, position, opened this frame.
+    strip_menu: Option<(usize, egui::Pos2, bool)>,
+    confirm: Option<Confirm>,
 }
 
 impl App {
@@ -125,6 +147,9 @@ impl App {
         let mut settings = Settings::load();
         if std::env::var_os("AWPR_NO_GPU").is_some() {
             settings.use_gpu = false;
+        }
+        if shot.is_some() && std::env::var_os("AWPR_SHOT_SHOW_HIDDEN").is_some() {
+            settings.show_hidden = true; // memory only: the hidden badge in a screenshot
         }
         let rs = cc.wgpu_render_state.clone();
         let (mut gpu, mut gpu_status) = (None, "沒有 GPU".to_string());
@@ -200,6 +225,16 @@ impl App {
             export_dlg: None,
             export_job: None,
             wm_overlay: WatermarkOverlay::default(),
+            selected: Default::default(),
+            anchor: None,
+            sync: None,
+            copied: None,
+            copy_source: None,
+            presets: PresetCollection::load(),
+            preset_choice: awpr_photo::presets::DEFAULT_NAME.to_string(),
+            preset_editor: None,
+            strip_menu: None,
+            confirm: None,
         };
         crate::export_ui::font_list();
         if let Some(s) = &app.shot {
@@ -263,6 +298,9 @@ impl App {
         }
         self.worker.generate_caches(self.items.clone(), self.settings.loader_options());
         let first = self.shot.as_ref().map(|s| s.select).unwrap_or(0).min(self.items.len() - 1);
+        self.selected = [first].into();
+        self.anchor = Some(first);
+        self.copy_source = None;
         self.select(first);
     }
 
@@ -271,6 +309,8 @@ impl App {
         self.worker.folder_gen.fetch_add(1, Ordering::SeqCst);
         self.folder.clear();
         self.items.clear();
+        self.selected.clear();
+        self.anchor = None;
         self.thumbs.clear();
         self.cache_progress = None;
         self.clear_editor();
@@ -344,6 +384,7 @@ impl App {
         self.exif = None;
         self.undo.clear();
         self.redo.clear();
+        self.sync = None;
         self.show_original = false;
         self.needs_render = false;
         self.adj = ImageAdjustments::default();
@@ -406,8 +447,20 @@ impl App {
                 self.export_settings.watermark_enabled = true;
                 self.export_settings.watermark_text = text;
             }
-            if std::env::var("AWPR_SHOT_DLG").as_deref() == Ok("export") {
-                self.export_dlg = Some((ExportDialog::new(&self.export_settings), self.export_settings.clone()));
+            if let Ok(sel) = std::env::var("AWPR_SHOT_SELECT") {
+                let picks: std::collections::BTreeSet<usize> = sel.split(',').filter_map(|v| v.trim().parse::<usize>().ok()).filter(|&v| v >= 1 && v <= self.items.len()).map(|v| v - 1).collect();
+                if !picks.is_empty() {
+                    self.selected = picks;
+                }
+            }
+            if std::env::var("AWPR_SHOT_MENU").is_ok() {
+                let i = self.selected.iter().next().copied().unwrap_or(0);
+                self.strip_menu = Some((i, egui::pos2(60.0 + i as f32 * 180.0, 150.0), true));
+            }
+            match std::env::var("AWPR_SHOT_DLG").as_deref() {
+                Ok("export") => self.open_export(false),
+                Ok("presets") => self.preset_editor = Some(crate::presets_ui::PresetEditor::new(&self.presets)),
+                _ => {}
             }
         }
         // The load may just have generated the proxy (and its strip thumbnail).
@@ -418,6 +471,7 @@ impl App {
     }
 
     fn save_current_if_dirty(&mut self) {
+        self.flush_batch_sync();
         let Some(i) = self.current else { return };
         if self.headless() || self.proxy.is_none() || store::value_equals(&self.adj, &self.saved_adj) {
             return;
@@ -433,53 +487,30 @@ impl App {
 
     // ---- editing ------------------------------------------------------------------
 
-    /// An edit gesture starts: snapshot for undo.
-    fn edit_begin(&mut self) {
-        self.undo.push(self.adj.clone());
-        if self.undo.len() > 200 {
-            self.undo.remove(0);
-        }
-        self.redo.clear();
-        self.show_original = false;
-    }
-
     fn edited(&mut self) {
         self.needs_render = true;
         self.thumb_live_due = Some(Instant::now() + Duration::from_millis(200));
         if let Some(i) = self.current {
             self.items[i].edited = !store::is_default(&self.adj);
         }
-    }
-
-    fn do_undo(&mut self) {
-        if let Some(prev) = self.undo.pop() {
-            self.redo.push(std::mem::replace(&mut self.adj, prev));
-            self.edited();
+        // Provisional badges for the batch targets (final once flushed).
+        if let Some((targets, _)) = &self.sync {
+            for t in targets {
+                if let Some(it) = self.items.iter_mut().find(|x| x.key == t.key) {
+                    it.edited = true;
+                }
+            }
         }
     }
 
-    fn do_redo(&mut self) {
-        if let Some(next) = self.redo.pop() {
-            self.undo.push(std::mem::replace(&mut self.adj, next));
-            self.edited();
-        }
-    }
-
+    /// 基本／色彩／細節 重設 (every selected photo).
     fn reset_basic_color_detail(&mut self) {
-        self.edit_begin();
-        let d = ImageAdjustments::default();
-        let a = &mut self.adj;
-        (a.exposure, a.contrast, a.highlights, a.shadows, a.whites, a.blacks) = (d.exposure, d.contrast, d.highlights, d.shadows, d.whites, d.blacks);
-        (a.temperature, a.tint, a.vibrance, a.saturation) = (d.temperature, d.tint, d.vibrance, d.saturation);
-        (a.sharpening, a.noise_reduction, a.vignette) = (d.sharpening, d.noise_reduction, d.vignette);
-        self.edited();
+        self.reset_selected(edits::reset_basic_color_detail);
     }
 
+    /// 全部重設 (every selected photo).
     fn reset_all(&mut self) {
-        self.edit_begin();
-        let v = self.adj.pipeline_version;
-        self.adj = ImageAdjustments { pipeline_version: v, ..Default::default() };
-        self.edited();
+        self.reset_selected(edits::reset_all);
     }
 
     /// 拍攝時設定: the as-shot white balance.
@@ -728,20 +759,30 @@ impl App {
 
     // ---- export -------------------------------------------------------------------
 
-    /// The photos an export covers: the current one or the whole strip, never hidden ones.
-    fn export_items(&self, all: bool) -> Vec<ExportItem> {
+    /// The photos an export covers, never hidden ones.
+    fn export_items(&self, scope: Scope) -> Vec<ExportItem> {
         let pick = |it: &worker::Item| (!it.hidden).then(|| ExportItem { path: it.path.clone(), copy: it.copy });
-        if all {
-            self.items.iter().filter_map(pick).collect()
-        } else {
-            self.current.and_then(|i| pick(&self.items[i])).into_iter().collect()
+        match scope {
+            Scope::All => self.items.iter().filter_map(pick).collect(),
+            Scope::Selected => self.selected_items().iter().filter_map(pick).collect(),
+            Scope::Current => self.current.and_then(|i| pick(&self.items[i])).into_iter().collect(),
         }
     }
 
+    /// 匯出…: the selection when several photos are selected (or asked for), else the
+    /// current photo.
+    fn open_export(&mut self, selection: bool) {
+        if self.export_job.is_some() || !self.has_photo() {
+            return;
+        }
+        let scope = if selection || self.selected.len() > 1 { Scope::Selected } else { Scope::Current };
+        self.export_dlg = Some((ExportDialog::new(&self.export_settings, scope), self.export_settings.clone()));
+    }
+
     fn export_windows(&mut self, ctx: &egui::Context) {
-        let (current, all) = (self.export_items(false).len(), self.export_items(true).len());
+        let counts = [self.export_items(Scope::Current).len(), self.export_items(Scope::Selected).len(), self.export_items(Scope::All).len()];
         if let Some((dlg, before)) = &mut self.export_dlg {
-            match dlg.show(ctx, &mut self.export_settings, current, all) {
+            match dlg.show(ctx, &mut self.export_settings, counts) {
                 DialogAction::None => {}
                 DialogAction::Cancel => {
                     self.export_settings = before.clone();
@@ -749,7 +790,7 @@ impl App {
                 }
                 act @ (DialogAction::Save | DialogAction::Start) => {
                     self.export_settings = dlg.draft.clone();
-                    let all = dlg.all;
+                    let all = dlg.scope;
                     self.export_dlg = None;
                     if !self.headless() {
                         self.export_settings.save();
@@ -780,7 +821,7 @@ impl App {
         }
     }
 
-    fn start_export(&mut self, ctx: &egui::Context, all: bool) {
+    fn start_export(&mut self, ctx: &egui::Context, all: Scope) {
         // The XML is what the export reads.
         self.save_current_if_dirty();
         let items = self.export_items(all);
@@ -920,6 +961,15 @@ impl App {
         if ctx.egui_wants_keyboard_input() || self.headless() {
             return;
         }
+        let (select_all, delete_file) = ctx.input(|i| (i.modifiers.command && i.key_pressed(Key::A), i.modifiers.shift && i.key_pressed(Key::Delete)));
+        if select_all {
+            self.select_all();
+        }
+        if delete_file {
+            if let Some(c) = self.current {
+                self.delete_item(c);
+            }
+        }
         let (left, right, undo, redo, compare, refresh, open, delete, escape) = ctx.input(|i| {
             let cmd = i.modifiers.command;
             (
@@ -946,26 +996,22 @@ impl App {
         // nothing selected it is left for 隱藏照片 (TASK-004; the C# Delete key), so that
         // must only run when this did not take the key.
         if delete && self.has_photo() && self.drag == Drag::None {
-            match self.tool {
-                ToolMode::Gradient => {
-                    if let Some(i) = self.active_gradient() {
-                        self.delete_gradient(i);
-                    }
-                }
-                ToolMode::Heal => {
-                    if let Some(i) = self.active_spot() {
-                        self.delete_heal_spot(i);
-                    }
-                }
-                _ => {}
+            let taken = match self.tool {
+                ToolMode::Gradient => self.active_gradient().map(|i| self.delete_gradient(i)).is_some(),
+                ToolMode::Heal => self.active_spot().map(|i| self.delete_heal_spot(i)).is_some(),
+                _ => false,
+            };
+            // Otherwise Delete = 隱藏且不輸出 (the C# key).
+            if !taken {
+                self.hide_selected();
             }
         }
         if let Some(c) = self.current {
-            if left && c > 0 {
-                self.select(c - 1);
-            }
-            if right && c + 1 < self.items.len() {
-                self.select(c + 1);
+            let step = if left && c > 0 { Some(c - 1) } else if right && c + 1 < self.items.len() { Some(c + 1) } else { None };
+            if let Some(n) = step {
+                self.selected = [n].into();
+                self.anchor = Some(n);
+                self.select(n);
             }
         }
         if undo {
@@ -1008,7 +1054,11 @@ impl App {
             }
             let can_export = self.has_photo() && self.export_job.is_none() && self.export_dlg.is_none();
             if ui.add_enabled(can_export, egui::Button::new("匯出…")).clicked() {
-                self.export_dlg = Some((ExportDialog::new(&self.export_settings), self.export_settings.clone()));
+                self.open_export(false);
+            }
+            let show = self.settings.show_hidden;
+            if ui.add_enabled(has_folder, egui::Button::new("顯示隱藏的照片").selected(show)).on_hover_text("不顯示隱藏／顯示全部").clicked() {
+                self.set_show_hidden(!show);
             }
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1031,65 +1081,6 @@ impl App {
                 }
             });
         });
-    }
-
-    fn strip(&mut self, ui: &mut egui::Ui) {
-        if self.items.is_empty() {
-            ui.centered_and_justified(|ui| {
-                ui.label(RichText::new("開啟一個相片資料夾開始編輯（Ctrl+O）").color(theme::TEXT_FAINT));
-            });
-            return;
-        }
-        let mut clicked = None;
-        let scroll_to = std::mem::take(&mut self.scroll_to_current);
-        egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
-            ui.horizontal(|ui| {
-                ui.add_space(4.0);
-                for (i, it) in self.items.iter().enumerate() {
-                    let (rect, resp) = ui.allocate_exact_size(Vec2::new(176.0, 136.0), egui::Sense::click());
-                    if ui.is_rect_visible(rect) {
-                        let p = ui.painter();
-                        let selected = self.current == Some(i);
-                        p.rect_filled(rect, 3.0, if selected { Color32::from_rgb(0x2F, 0x3E, 0x52) } else { theme::WINDOW });
-                        let img_area = egui::Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(172.0, 115.0));
-                        if let Some((tex, _)) = self.thumbs.get(&it.key) {
-                            let s = tex.size_vec2();
-                            let k = (img_area.width() / s.x).min(img_area.height() / s.y);
-                            let r = egui::Rect::from_center_size(img_area.center(), s * k);
-                            p.image(tex.id(), r, egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), if it.hidden { Color32::from_gray(110) } else { Color32::WHITE });
-                        } else {
-                            p.rect_filled(img_area, 2.0, theme::PANEL);
-                        }
-                        let tag = p.layout_no_wrap(format!("#{}", it.number), egui::FontId::proportional(12.0), Color32::WHITE);
-                        let tag_rect = egui::Rect::from_min_size(img_area.min, tag.size() + Vec2::new(8.0, 2.0));
-                        p.rect_filled(tag_rect, 2.0, Color32::from_black_alpha(150));
-                        p.galley(tag_rect.min + Vec2::new(4.0, 1.0), tag, Color32::WHITE);
-                        if it.edited {
-                            p.circle_filled(egui::pos2(img_area.max.x - 8.0, img_area.min.y + 8.0), 4.5, theme::EDITED);
-                        }
-                        p.text(
-                            egui::pos2(rect.center().x, rect.max.y - 9.0),
-                            egui::Align2::CENTER_CENTER,
-                            truncate(&it.name(), 26),
-                            egui::FontId::proportional(11.5),
-                            if selected { theme::TEXT } else { theme::TEXT_DIM },
-                        );
-                        if selected {
-                            p.rect_stroke(rect, 3.0, egui::Stroke::new(2.0, theme::ACCENT), egui::StrokeKind::Inside);
-                        }
-                    }
-                    if resp.clicked() {
-                        clicked = Some(i);
-                    }
-                    if scroll_to && self.current == Some(i) {
-                        ui.scroll_to_rect(rect, Some(egui::Align::Center));
-                    }
-                }
-            });
-        });
-        if let Some(i) = clicked {
-            self.select(i);
-        }
     }
 
     fn slider(&mut self, ui: &mut egui::Ui, spec: SliderSpec, get: fn(&mut ImageAdjustments) -> &mut f64) {
@@ -1185,6 +1176,8 @@ impl App {
         if ui.add_enabled(self.has_photo(), egui::Button::new("基本／色彩／細節 重設").min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
             self.reset_basic_color_detail();
         }
+        ui.add_space(8.0);
+        self.preset_panel(ui);
     }
 
     fn right_column(&mut self, ui: &mut egui::Ui) {
@@ -1794,6 +1787,19 @@ impl eframe::App for App {
             egui::CentralPanel::no_frame().show(ui, |ui| self.viewer(ui));
         });
         self.export_windows(&ctx);
+        self.strip_menu_ui(&ctx);
+        self.confirm_ui(&ctx);
+        if let Some(mut ed) = self.preset_editor.take() {
+            let headless = self.headless();
+            let keep = ed.show(&ctx, &mut self.presets, &mut |p: &PresetCollection| {
+                if !headless {
+                    let _ = p.save();
+                }
+            });
+            if keep {
+                self.preset_editor = Some(ed);
+            }
+        }
         self.shot_step(&ctx);
         let _ = &self.font;
     }
