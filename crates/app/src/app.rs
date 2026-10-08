@@ -484,17 +484,18 @@ impl App {
         self.adj.is_v3() && awpr_photo::loader::linear_capable(&self.items[i].path, self.exif.as_ref().and_then(|e| e.camera.as_ref()), self.settings.loader_options())
     }
 
-    /// Still showing a 處理版本 3 RAW from its 8-bit proxy while the linear one builds.
+    /// Still showing a 處理版本 3 RAW from its 8-bit proxy: the linear one is building, or
+    /// is built but not switched to yet (the message is on its way, or the reload runs).
     pub(crate) fn waiting_for_v3_proxy(&self) -> bool {
         self.source_kind == SourceKind::Encoded
             && self.v3_proxy_possible()
             && std::env::var_os("AWPR_SHOT_HOLD_V3").is_none()
-            && self.current.is_some_and(|i| !awpr_photo::loader::proxy_v3_ready(&self.items[i].path))
     }
 
     /// Load the open photo's source again for the adjustments in memory.
     pub(crate) fn reload_source(&mut self) {
         let Some(i) = self.current else { return };
+        crate::trace(&format!("reload source for {} (version {})", self.items[i].name(), self.adj.pipeline_version + 1));
         self.loading = true;
         self.load_version += 1;
         self.status = format!("{}{}", t("載入中… "), self.items[i].name());
@@ -537,6 +538,7 @@ impl App {
         if l.version != self.load_version {
             return; // superseded by a later selection
         }
+        crate::trace(&format!("loaded{}: source {:?}", if l.reload { " (reload)" } else { "" }, l.source_kind));
         self.loading = false;
         // A reload changes only the source: the adjustments in memory (perhaps edited while it
         // loaded), the undo history and the saved state stay. If their version moved again
@@ -1106,6 +1108,7 @@ impl App {
                 }
                 Msg::Loaded(l) => self.on_loaded(*l),
                 Msg::ProxyV3Ready { path } => {
+                    crate::trace(&format!("ProxyV3Ready {}", paths::file_name(&path)));
                     // Its thumbnails now render from the linear source; the open photo
                     // switches to it (`render` sees the source no longer fits).
                     let current = self.current.map(|i| self.items[i].key.clone());
@@ -1939,7 +1942,7 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let ready = !self.loading && self.hist.is_some() && self.cache_progress.is_none() && !self.needs_render && self.thumb_live_due.is_none() && !waiting_v3;
+        let ready = !self.loading && self.hist.is_some() && self.cache_progress.is_none() && !self.needs_render && self.hist_job.is_none() && self.thumb_live_due.is_none() && !waiting_v3;
         let waited = s.started.elapsed();
         if !s.requested && ((ready && waited > Duration::from_millis(1500)) || waited > Duration::from_secs(120)) {
             s.requested = true;
