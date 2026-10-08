@@ -8,7 +8,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor
 
 ## 目前狀態
-**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步 TASK-006 打包與 CI 進行中。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
+**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步 TASK-007 色彩升級進行中。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
 PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過）。
 
 ## 工作方式（Multi-Agent）
@@ -48,6 +48,7 @@ cargo test --workspace
 - 兩台都在各自 WorkspaceAwaysu 下**新建** `AwayPhotoRawEditor` 目錄處理（用 `git clone` 或 rsync 本機 repo），不要動旁邊的 `AwayPhotoRawEditor_Rust_PoC`（PoC 建置檔與測試資料）。
 - Mac 遠端 SSH 看不到桌面，視窗畫面要請使用者在機器前確認；Linux 可用 Xvfb。
 - 密碼不寫進 repo；需要時問使用者。
+- **Mac 簽章／公證要在同一個 SSH 指令裡解鎖登入鑰匙圈**（鑰匙圈解鎖狀態跟 security session 走，別的 SSH 連線解鎖沒用）：`AWPR_KEYCHAIN_PASSWORD=… AWPR_SIGN_IDENTITY="Developer ID Application: Chih-Wei Su (BNH8YS88T9)" AWPR_NOTARY_PROFILE=AwayTerminalNotary scripts/package-macos.sh`。2026-10-09 實跑成功（兩次公證 Accepted、spctl Notarized Developer ID）。
 
 ## 版本號
 正式版從 **2.0.0** 開始（使用者 2026-10-09 決定）；完成前 `Cargo.toml` 維持 `2.0.0-dev`。

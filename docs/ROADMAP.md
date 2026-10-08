@@ -10,8 +10,8 @@
 | 2 | TASK-003 | 匯出：ExportForm 全部選項（格式 JPEG/PNG/TIFF、品質、符合寬高、DPI、重新命名、浮水印、去重）、**16-bit TIFF/PNG 並嵌 sRGB ICC**、匯出進度、匯出隱藏過濾 | `awpr exporttest`（移植 C# `--exporttest`） | 完成 2026-10-09 |
 | 3 | TASK-004 | 風格檔（PresetStore、編輯視窗、備份/還原全部、套用時不改白平衡）、多選批次同步、複製/貼上設定、虛擬副本、隱藏/取消隱藏/顯示全部、刪除、升級處理版本 | 單元測試 + `--shot` | 完成 2026-10-09 |
 | 4 | TASK-005 | 設定視窗（介面大小、字體大小 12 級、RAW 精度、GPU 開關、捲軸、恢復預設）、8 種語言（移植 `Localization.cs`）、第一次執行語言選擇、關於／檢查更新／支援相機列表 | i18n 完整性測試（每個 key 八語） | 完成 2026-10-09 |
-| 5 | TASK-006 | 打包與 CI：Windows（Inno Setup + 簽章，照 legacy CLAUDE.md）、macOS（universal DMG + Developer ID + 公證）、Linux（.deb/.rpm）；GitHub Actions 三平台跑 `cargo test` + hashtest；awaysu.cc 上傳腳本 | CI 綠燈 | 進行中 |
-| 6 | TASK-007 | 色彩管線升級＝處理版本 3：LibRaw 輸出線性寬色域（Rec.2020）f32、高光復原（lightcraft highlight.rs）、HSL（OkLCh）、曲線、XMP 匯出/匯入（lightcraft xmp.rs） | gputest 新版 14 組；舊版照片 hashtest 不變 | 未開始 |
+| 5 | TASK-006 | 打包與 CI：Windows（Inno Setup + 簽章，照 legacy CLAUDE.md）、macOS（universal DMG + Developer ID + 公證）、Linux（.deb/.rpm）；GitHub Actions 三平台跑 `cargo test` + hashtest；awaysu.cc 上傳腳本 | CI 綠燈 | 完成 2026-10-09 |
+| 6 | TASK-007 | 色彩管線升級＝處理版本 3：LibRaw 輸出線性寬色域（Rec.2020）f32、高光復原（lightcraft highlight.rs）、HSL（OkLCh）、曲線、XMP 匯出/匯入（lightcraft xmp.rs） | gputest 新版 14 組；舊版照片 hashtest 不變 | 進行中 |
 | 7 | TASK-008 | 放射狀／筆刷遮罩；HEIC（libheif）評估 | | 未開始 |
 
 每步完成：更新本表「狀態」、`CLAUDE.md` 目前狀態、`CHANGELOG.md`，commit 到 main。
