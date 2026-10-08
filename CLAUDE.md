@@ -8,11 +8,12 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor
 
 ## 目前狀態
-**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步 TASK-007 色彩升級進行中。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
+**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP；快取效能修正中）；第 7 步 TASK-008 遮罩／HEIC 評估待派。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
 PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過）。
 
 ## 工作方式（Multi-Agent）
 - Agent-11（PM）規劃、拆步驟、審查；Agent-12（Software Engineer）寫程式。每一步寫完 → PM 審查 → 修正 → 下一步。
+- 處理版本對照：XML `PipelineVersion` 0／1／2 ＝ 使用者看到的「處理版本 1／2／3」；版本 3 走 `crates/core/src/v3.rs`，GPU 對照用 `awpr gputest3`。
 - 大項目完成時更新本檔的「目前狀態」與 `docs/ROADMAP.md`，並在 `CHANGELOG.md` 記錄。
 
 ## 不可違反的原則
