@@ -856,7 +856,10 @@ mod tests {
         assert_eq!(base_name(RenameMode::DateTime, "c.ARW", 0, || (2021, 5, 10, 16, 2, 59), &mut st), "IMG21051016025901");
         assert_eq!(base_name(RenameMode::Sequence, "a.ARW", 0, stamp, &mut st), "IMG00001");
         assert_eq!(base_name(RenameMode::Sequence, "a.ARW", 0, stamp, &mut st), "IMG00002");
+        // Paths are local ones: backslashes only separate on Windows.
+        #[cfg(windows)]
         assert_eq!(base_name(RenameMode::Original, r"C:\p\DSC0001.ARW", 0, stamp, &mut st), "DSC0001_edited");
+        assert_eq!(base_name(RenameMode::Original, "/p/DSC0001.ARW", 0, stamp, &mut st), "DSC0001_edited");
         assert_eq!(base_name(RenameMode::Original, "/p/DSC0001.ARW", 2, stamp, &mut st), "DSC0001_copy2_edited");
         assert_eq!(parse_exif_date("2021:05:10 16:02:58"), Some((2021, 5, 10, 16, 2, 58)));
         assert_eq!(parse_exif_date("0000:00:00 00:00:00"), None);
