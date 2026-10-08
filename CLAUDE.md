@@ -40,6 +40,18 @@ cargo test --workspace
 - `D:\Awaysu\raw_samples\`：hashtest 的 4 個公開樣本（raw.pixls.us：`canon_eosr.CR3`、`leica_m10.DNG`、`pana_s5.RW2`、`sony_a7m3.ARW`），報告要與 `tests/results/windows-x86_64/` 逐位元組相同。
 - `D:\Awaysu\raw_test\`：使用者提供的 RAW（含 61 MP ARW），只能拷貝出來用，不要改動原檔。
 
+## 建置機（2026-10-09 起，免密碼 SSH 已設好，alias 在 `~/.ssh/config`）
+| 平台 | alias | 工作目錄 | 工具鏈 |
+|---|---|---|---|
+| Linux x86_64（12 核） | `ssh awpr-linux` | `/home/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（/usr/bin） |
+| macOS 26.6 arm64（M2） | `ssh awpr-mac` | `/Users/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（`export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`，非互動 shell 要自己加） |
+- 兩台都在各自 WorkspaceAwaysu 下**新建** `AwayPhotoRawEditor` 目錄處理（用 `git clone` 或 rsync 本機 repo），不要動旁邊的 `AwayPhotoRawEditor_Rust_PoC`（PoC 建置檔與測試資料）。
+- Mac 遠端 SSH 看不到桌面，視窗畫面要請使用者在機器前確認；Linux 可用 Xvfb。
+- 密碼不寫進 repo；需要時問使用者。
+
+## 版本號
+正式版從 **2.0.0** 開始（使用者 2026-10-09 決定）；完成前 `Cargo.toml` 維持 `2.0.0-dev`。
+
 ## crate 配置
 | crate | 內容 |
 |---|---|
