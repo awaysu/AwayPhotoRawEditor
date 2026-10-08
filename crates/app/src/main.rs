@@ -7,6 +7,7 @@
 //!   AwayPhotoRawEditor --shot <folder> <png> [WxH] [index]
 //!                                              diagnostics: screenshot and quit
 //!   env AWPR_SHOT_ADJ="exposure=0.5,..."       (shot) adjustments applied in memory
+//!   env AWPR_SHOT_TOOL=crop|gradient|heal      (shot) open that tool (sample spots if none)
 //!   env AWPR_NO_GPU=1                          render on the CPU
 
 #![cfg_attr(all(windows, not(debug_assertions), not(feature = "console")), windows_subsystem = "windows")]
@@ -14,6 +15,7 @@
 mod app;
 mod settings;
 mod theme;
+mod tools;
 mod viewer;
 mod widgets;
 mod worker;

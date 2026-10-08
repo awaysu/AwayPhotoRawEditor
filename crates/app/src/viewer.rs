@@ -29,6 +29,8 @@ pub struct ViewerState {
     center: Pos2,
     image_size: Vec2,
     press: Option<Pos2>,
+    /// The press being tracked is the middle button (pans, never cycles the zoom).
+    press_middle: bool,
     panned: bool,
 }
 
@@ -37,7 +39,7 @@ const PAN_THRESHOLD: f32 = 4.0;
 
 impl Default for ViewerState {
     fn default() -> Self {
-        Self { mode: ZoomMode::Fit, scale: 1.0, center: Pos2::ZERO, image_size: Vec2::ZERO, press: None, panned: false }
+        Self { mode: ZoomMode::Fit, scale: 1.0, center: Pos2::ZERO, image_size: Vec2::ZERO, press: None, press_middle: false, panned: false }
     }
 }
 
@@ -83,8 +85,9 @@ impl ViewerState {
     }
 
     /// Handle input over `resp` and work out this frame's placement for an image of
-    /// `size` (image pixels).
-    pub fn update(&mut self, ui: &egui::Ui, resp: &egui::Response, size: Vec2) -> Placement {
+    /// `size` (image pixels). `left_free`: the left button pans / cycles the zoom (no tool
+    /// or picker wants it); the middle button always pans.
+    pub fn update(&mut self, ui: &egui::Ui, resp: &egui::Response, size: Vec2, left_free: bool) -> Placement {
         let ppp = ui.ctx().pixels_per_point();
         let view = resp.rect;
         if size != self.image_size {
@@ -106,11 +109,18 @@ impl ViewerState {
 
         // Left button: click cycles Fit → 100% → 200% → Fit around the clicked point,
         // drag pans (the C# viewer). Panning keeps the zoom mode so the cycle continues.
-        if resp.is_pointer_button_down_on() && ui.input(|i| i.pointer.primary_down()) {
+        let (primary, middle) = ui.input(|i| (i.pointer.primary_down(), i.pointer.middle_down()));
+        let held = match self.press {
+            None => (left_free && primary) || middle,
+            Some(_) if self.press_middle => middle,
+            Some(_) => primary,
+        };
+        if resp.is_pointer_button_down_on() && held {
             if let Some(p) = ui.input(|i| i.pointer.interact_pos()) {
                 match self.press {
                     None => {
                         self.press = Some(p);
+                        self.press_middle = !(left_free && primary);
                         self.panned = false;
                     }
                     Some(start) => {
@@ -127,7 +137,7 @@ impl ViewerState {
                 }
             }
         } else if let Some(p) = self.press.take() {
-            if !self.panned && resp.hovered() {
+            if !self.panned && !self.press_middle && resp.hovered() {
                 let anchor = to_image(self, p);
                 let next = match self.mode {
                     ZoomMode::Fit => ZoomMode::Actual100,
