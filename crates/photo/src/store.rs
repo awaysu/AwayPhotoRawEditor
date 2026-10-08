@@ -165,7 +165,8 @@ fn encode_adjustments(a: &ImageAdjustments) -> XmlNode {
 // Appended after every existing element and written only when one differs from its
 // default, so files without them stay byte-identical. The C# XmlSerializer and the Swift
 // reader skip elements they do not know (a 1.x build shows such a photo with version-2
-// maths and drops these values if it saves it).
+// maths and drops these values if it saves it; PipelineVersion=2 survives). Verified for
+// the C# side on 2026-10-09 with .NET 9 and the legacy/windows model classes.
 
 fn encode_curve(n: &mut XmlNode, name: &str, pts: &[(f64, f64)]) {
     let flat: Vec<f64> = pts.iter().flat_map(|&(x, y)| [x, y]).collect();

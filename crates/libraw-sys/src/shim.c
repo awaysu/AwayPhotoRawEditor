@@ -231,6 +231,74 @@ fail:
     return 0;
 }
 
+static libraw_processed_image_t *process_to_mem(libraw_data_t *lr)
+{
+    if (libraw_dcraw_process(lr) != LIBRAW_SUCCESS) return NULL;
+    int err = 0;
+    libraw_processed_image_t *img = libraw_dcraw_make_mem_image(lr, &err);
+    if (img && (img->type != LIBRAW_IMAGE_BITMAP || img->colors < 3 || img->width <= 0 || img->height <= 0)) {
+        libraw_dcraw_clear_mem(img);
+        return NULL;
+    }
+    return img;
+}
+
+awpr_raw awpr_open_unpacked(const char *path)
+{
+    libraw_data_t *lr = libraw_init(0);
+    if (!lr) return NULL;
+    if (open_utf8(lr, path) != LIBRAW_SUCCESS || libraw_unpack(lr) != LIBRAW_SUCCESS) {
+        libraw_close(lr);
+        return NULL;
+    }
+    return (awpr_raw)lr;
+}
+
+/* dcraw_process restores the colour data, sizes and image from the unpacked raw each
+   time (raw2image_start), so one unpack serves any number of processes: only the output
+   parameters set here differ. */
+int awpr_process_encoded(awpr_raw h, int bps, awpr_image *out)
+{
+    if (!h || !out) return 0;
+    memset(out, 0, sizeof(*out));
+    libraw_data_t *lr = (libraw_data_t *)h;
+    /* awpr_decode_full's settings (and the library defaults decode_linear changes) */
+    libraw_set_output_color(lr, 1);
+    libraw_set_output_bps(lr, bps);
+    libraw_set_gamma(lr, 0, 0.45f);
+    libraw_set_gamma(lr, 1, 4.5f);
+    libraw_set_no_auto_bright(lr, 0);
+    for (int i = 0; i < 4; i++)
+        libraw_set_user_mul(lr, i, 0.0f);
+    libraw_processed_image_t *img = process_to_mem(lr);
+    if (!img) return 0;
+    fill_image(out, lr, img);
+    out->owner = NULL; /* the handle stays with the caller */
+    return 1;
+}
+
+int awpr_process_linear(awpr_raw h, awpr_image *out)
+{
+    if (!h || !out) return 0;
+    memset(out, 0, sizeof(*out));
+    libraw_data_t *lr = (libraw_data_t *)h;
+    if (lr->rawdata.iparams.colors != 3) return 0;
+    /* awpr_decode_linear's settings */
+    libraw_set_output_color(lr, 0);
+    libraw_set_output_bps(lr, 16);
+    libraw_set_gamma(lr, 0, 1.0f);
+    libraw_set_gamma(lr, 1, 1.0f);
+    libraw_set_no_auto_bright(lr, 1);
+    for (int i = 0; i < 4; i++)
+        libraw_set_user_mul(lr, i, 1.0f);
+    libraw_processed_image_t *img = process_to_mem(lr);
+    if (img && img->bits != 16) { libraw_dcraw_clear_mem(img); img = NULL; }
+    if (!img) return 0;
+    fill_image(out, lr, img);
+    out->owner = NULL;
+    return 1;
+}
+
 int awpr_decode_thumb(const char *path, awpr_image *out, int *flip)
 {
     if (!out) return 0;

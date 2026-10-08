@@ -2,6 +2,7 @@
 //! `--selftest` / `--hashtest` switches.
 
 mod bench;
+mod cachebench;
 mod compare;
 mod dllcheck;
 mod exporttest;
@@ -24,6 +25,7 @@ usage:
   awpr viewtest <raw> [report]    the editor's viewer shader vs a CPU reference (offscreen, any backend)
   awpr exporttest <image> <outDir> <report>  export JPEG / PNG / TIFF (8 / 16-bit, ICC, watermark) and check them
   awpr bench <raw>                decode / proxy / pipeline timings
+  awpr cachebench <dir> <raw>...  cache build time: 處理版本 2 only vs + 處理版本 3 (two decodes / one), identical output
   awpr stages <raw>               SHA of each intermediate (bisect a cross-platform difference)
   awpr dumpsrc <raw> <out.f32>    write the hashtest source proxy
   awpr cmpsrc <raw> <other.f32>   render the 14 cases from both proxies and compare (gputest criteria)
@@ -41,6 +43,7 @@ fn main() {
         Some("viewtest") if args.len() >= 2 => viewtest::run(&args[1], args.get(2).map(String::as_str)),
         Some("exporttest") if args.len() >= 4 => exporttest::run(&args[1], &args[2], &args[3]),
         Some("bench") if args.len() >= 2 => bench::run(&args[1]),
+        Some("cachebench") if args.len() >= 3 => cachebench::run(&args[1], &args[2..]),
         Some("stages") if args.len() >= 2 => stages::run(&args[1]),
         Some("dumpsrc") if args.len() >= 3 => compare::dump(&args[1], &args[2]),
         Some("cmpsrc") if args.len() >= 3 => compare::run(&args[1], &args[2]),

@@ -1310,7 +1310,10 @@ impl App {
         if self.adj.is_v3() || !self.has_photo() {
             return self.has_photo();
         }
-        ui.add(egui::Label::new(RichText::new(t("需要處理版本 3：在縮圖上按右鍵 →「升級處理版本」")).color(theme::TEXT_DIM).size(theme::scaled(12.0))).wrap());
+        // Two labels, so a narrow column breaks before the arrow, never inside the quote.
+        let note = |ui: &mut egui::Ui, s: &str| ui.add(egui::Label::new(RichText::new(s).color(theme::TEXT_DIM).size(theme::scaled(12.0))).wrap());
+        note(ui, t("需要處理版本 3"));
+        note(ui, t("→ 縮圖按右鍵「升級處理版本」"));
         false
     }
 

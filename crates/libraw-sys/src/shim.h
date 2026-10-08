@@ -84,6 +84,14 @@ int awpr_decode_full(const char *path, int bps, awpr_image *out);
    auto-bright; the sensor clip is 65535. The version-3 (處理版本 3) source. */
 int awpr_decode_linear(const char *path, awpr_image *out);
 
+/* One open + unpack (the expensive part), then decodes from it: `awpr_process_encoded`
+   gives exactly awpr_decode_full(path, bps), `awpr_process_linear` exactly
+   awpr_decode_linear(path), in any order. The images do not own the handle: free them with
+   awpr_free_image and the handle with awpr_close. */
+awpr_raw awpr_open_unpacked(const char *path);
+int awpr_process_encoded(awpr_raw h, int bps, awpr_image *out);
+int awpr_process_linear(awpr_raw h, awpr_image *out);
+
 /* The camera's embedded preview (fast). May come back as a JPEG blob (type 1). */
 int awpr_decode_thumb(const char *path, awpr_image *out, int *flip);
 

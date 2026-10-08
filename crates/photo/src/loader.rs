@@ -167,8 +167,14 @@ pub fn ensure_proxy_cache(path: &str, opt: LoaderOptions) -> bool {
         return true;
     }
     let Some((full, source)) = decode_full(path, opt) else { return false };
+    write_proxy(path, full, source, opt)
+}
+
+/// The proxy files from a full decode: PNG, `.f16` in high precision, the source marker
+/// and the strip thumbnail.
+fn write_proxy(path: &str, full: FloatImage, source: DecodeSource, opt: LoaderOptions) -> bool {
     let scaled = resize_to_max_dim(full, PROXY_MAX_DIM);
-    let ok = codec::save_png(&scaled, &png).is_ok();
+    let ok = codec::save_png(&scaled, &paths::proxy_path(path)).is_ok();
     if opt.high_precision {
         let _ = codec::save_half(&scaled, &paths::proxy_f16_path(path));
     }
@@ -229,13 +235,65 @@ pub fn ensure_proxy_v3(path: &str, camera: &CameraColorInfo) -> bool {
     if codec::is_complete(&png) && read_gain(path).is_some() {
         return true;
     }
-    let Some((full, gain)) = decode_linear_full(path, camera) else { return false };
+    let Some(full) = libraw::decode_linear(path, exif::visible_size(path)) else { return false };
+    write_proxy_v3(path, full, camera)
+}
+
+/// The version-3 proxy files from LibRaw's linear decode: reconstruct, measure the gain,
+/// shrink, write the PNG, then the gain.
+fn write_proxy_v3(path: &str, mut full: FloatImage, camera: &CameraColorInfo) -> bool {
+    let gain = v3::prepare_linear_source(&mut full, camera);
     let scaled = resize_to_max_dim(full, PROXY_MAX_DIM);
-    if codec::save_linear_png(&scaled, &png).is_err() {
+    if codec::save_linear_png(&scaled, &paths::proxy_v3_path(path)).is_err() {
         return false;
     }
-    paths::write_atomic(&paths::proxy_v3_meta_path(path), format!("gain={gain}
-").as_bytes()).is_ok()
+    paths::write_atomic(&paths::proxy_v3_meta_path(path), format!("gain={gain}\n").as_bytes()).is_ok()
+}
+
+fn proxy_v3_ready(path: &str) -> bool {
+    codec::is_complete(&paths::proxy_v3_path(path)) && read_gain(path).is_some()
+}
+
+/// The folder cache builder's entry: the usual proxy, and with `camera` (a 處理版本 3
+/// RAW) the linear one too — when both are missing, from a single LibRaw open + unpack
+/// (`libraw::with_unpacked`), so the second proxy costs a second `dcraw_process` instead of
+/// a second decode.
+pub fn ensure_proxy_caches(path: &str, opt: LoaderOptions, camera: Option<&CameraColorInfo>) -> bool {
+    let need_v2 = !codec::is_complete(&paths::proxy_path(path)) || (opt.high_precision && !std::path::Path::new(&paths::proxy_f16_path(path)).exists());
+    let v3_cam = camera.filter(|c| linear_capable(path, Some(c), opt));
+    if let (true, Some(cam)) = (need_v2, v3_cam) {
+        if !proxy_v3_ready(path) {
+            let (png, v3png) = (paths::proxy_path(path), paths::proxy_v3_path(path));
+            let (l1, l2) = (path_lock(&png), path_lock(&v3png));
+            let g1 = l1.lock().unwrap();
+            let g2 = l2.lock().unwrap();
+            let bps = if opt.high_precision { 16 } else { 8 };
+            let vis = exif::visible_size(path);
+            let (p, cam) = (path.to_string(), cam.clone());
+            // Linear first: its reconstruction, gain and 16-bit PNG then run on other cores
+            // while LibRaw renders the encoded decode from the same unpack.
+            libraw::with_unpacked(path, move |u| {
+                let Some(u) = u else { return };
+                let lin = u.linear(vis);
+                std::thread::scope(|s| {
+                    if let Some(l) = lin {
+                        s.spawn(|| write_proxy_v3(&p, l, &cam));
+                    }
+                    if let Some(b) = u.encoded(bps, vis) {
+                        write_proxy(&p, b, DecodeSource::LibRaw, opt);
+                    }
+                });
+            });
+            drop((g2, g1));
+        }
+    }
+    // Whatever is still missing (a failed half, a camera preview fallback, the strip
+    // thumbnail of an existing proxy) the single-purpose builders finish.
+    let ok = ensure_proxy_cache(path, opt);
+    if let Some(cam) = v3_cam {
+        ensure_proxy_v3(path, cam);
+    }
+    ok
 }
 
 /// The version-3 editing proxy and its gain (building it if needed).

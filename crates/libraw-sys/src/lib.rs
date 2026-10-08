@@ -101,8 +101,12 @@ extern "C" {
     pub fn awpr_read_meta(path: *const c_char, out: *mut awpr_meta) -> c_int;
     pub fn awpr_decode_full(path: *const c_char, bps: c_int, out: *mut awpr_image) -> c_int;
     pub fn awpr_decode_linear(path: *const c_char, out: *mut awpr_image) -> c_int;
+    pub fn awpr_open_unpacked(path: *const c_char) -> awpr_raw;
+    pub fn awpr_process_encoded(h: awpr_raw, bps: c_int, out: *mut awpr_image) -> c_int;
+    pub fn awpr_process_linear(h: awpr_raw, out: *mut awpr_image) -> c_int;
     pub fn awpr_decode_thumb(path: *const c_char, out: *mut awpr_image, flip: *mut c_int) -> c_int;
     pub fn awpr_free_image(img: *mut awpr_image);
+    pub fn awpr_close(h: awpr_raw);
     pub fn awpr_camera_count() -> c_int;
     pub fn awpr_camera_name(index: c_int) -> *const c_char;
 }

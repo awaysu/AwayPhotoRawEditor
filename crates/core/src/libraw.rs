@@ -156,6 +156,83 @@ pub fn decode_linear(path: &str, expected_visible: Option<(usize, usize)>) -> Op
     })
 }
 
+/// A file LibRaw has opened and unpacked once (the expensive, single-threaded part):
+/// `encoded` gives exactly `decode_full(path, bps, …)`, `linear` exactly
+/// `decode_linear(path, …)`, in any order and as often as needed. Only usable inside
+/// `with_unpacked` (LibRaw's large stack).
+pub struct Unpacked {
+    h: sys::awpr_raw,
+}
+
+impl Unpacked {
+    fn image(&self, img: &mut sys::awpr_image, expected_visible: Option<(usize, usize)>) -> Option<FloatImage> {
+        let out = to_float(img, expected_visible);
+        unsafe { sys::awpr_free_image(img) };
+        out
+    }
+
+    pub fn encoded(&self, bps: i32, expected_visible: Option<(usize, usize)>) -> Option<FloatImage> {
+        let mut img = sys::awpr_image::default();
+        if unsafe { sys::awpr_process_encoded(self.h, bps, &mut img) } == 0 {
+            return None;
+        }
+        self.image(&mut img, expected_visible)
+    }
+
+    pub fn linear(&self, expected_visible: Option<(usize, usize)>) -> Option<FloatImage> {
+        let mut img = sys::awpr_image::default();
+        if unsafe { sys::awpr_process_linear(self.h, &mut img) } == 0 || img.bits != 16 {
+            unsafe { sys::awpr_free_image(&mut img) };
+            return None;
+        }
+        self.image(&mut img, expected_visible)
+    }
+}
+
+impl Drop for Unpacked {
+    fn drop(&mut self) {
+        unsafe { sys::awpr_close(self.h) };
+    }
+}
+
+/// Open + unpack `path` once and run `f` with it on LibRaw's large-stack thread (None when
+/// LibRaw cannot open it). `f` may start its own threads for work between decodes.
+pub fn with_unpacked<T: Send + 'static>(path: &str, f: impl FnOnce(Option<&Unpacked>) -> T + Send + 'static) -> T {
+    let cp = c_path(path);
+    run_large_stack(move || {
+        let h = cp.map(|cp| unsafe { sys::awpr_open_unpacked(cp.as_ptr()) }).filter(|h| !h.is_null());
+        let u = h.map(|h| Unpacked { h });
+        f(u.as_ref())
+    })
+}
+
+/// Both decodes from one open + unpack (diagnostics; the cache builder uses
+/// `with_unpacked` to overlap its own work with the second decode).
+pub fn decode_both(path: &str, bps: i32, expected_visible: Option<(usize, usize)>) -> (Option<FloatImage>, Option<FloatImage>) {
+    with_unpacked(path, move |u| match u {
+        Some(u) => (u.encoded(bps, expected_visible), u.linear(expected_visible)),
+        None => (None, None),
+    })
+}
+
+/// A LibRaw bitmap as floats, mask border trimmed (the `decode` path's conversion).
+fn to_float(img: &sys::awpr_image, expected_visible: Option<(usize, usize)>) -> Option<FloatImage> {
+    if img.data.is_null() {
+        return None;
+    }
+    let (w, h, colors) = (img.width as usize, img.height as usize, img.colors as usize);
+    let n = w * h * colors;
+    if img.bits == 16 {
+        let s = unsafe { std::slice::from_raw_parts(img.data as *const u16, n) };
+        let rect = visible_rect(&|i| s[i] as u32, w, h, colors, 2 * 257, expected_visible);
+        buffer_from(s, w, colors, rect, 1.0f32 / 65535.0f32)
+    } else {
+        let s = unsafe { std::slice::from_raw_parts(img.data as *const u8, n) };
+        let rect = visible_rect(&|i| s[i] as u32, w, h, colors, 2, expected_visible);
+        buffer_from(s, w, colors, rect, 1.0f32 / 255.0f32)
+    }
+}
+
 fn decode(path: &str, bps: i32, expected_visible: Option<(usize, usize)>, trim: bool) -> Option<FloatImage> {
     let cp = c_path(path)?;
     run_large_stack(move || {

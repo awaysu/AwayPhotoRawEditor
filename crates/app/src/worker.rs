@@ -149,17 +149,14 @@ impl Worker {
                     for it in items.iter().filter(|i| i.path == path) {
                         w.thumbnail(it, None, 0);
                     }
-                    loader::ensure_proxy_cache(&path, opt);
                     // Seed the XML so the as-shot white balance is set once, here.
                     let mut e = exif::read(&path);
                     enrich_camera_color(&path, &mut e, opt);
                     let adj = store::ensure_default(&path, Some(&e), 0);
-                    // 處理版本 3 RAWs edit from the linear camera proxy: build it now too.
-                    if adj.is_v3() && loader::linear_capable(&path, e.camera.as_ref(), opt) {
-                        if let Some(c) = e.camera.as_ref() {
-                            loader::ensure_proxy_v3(&path, c);
-                        }
-                    }
+                    // 處理版本 3 RAWs edit from the linear camera proxy: both proxies from
+                    // one LibRaw decode.
+                    let v3_camera = if adj.is_v3() { e.camera.as_ref() } else { None };
+                    loader::ensure_proxy_caches(&path, opt, v3_camera);
                     for it in items.iter().filter(|i| i.path == path) {
                         w.thumbnail(it, None, 0);
                     }
