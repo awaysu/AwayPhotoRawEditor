@@ -1,85 +1,18 @@
 # AwayPhotoRawEditor
 
-AwayPhotoRawEditor 是一套類似 Lightroom 的 Windows RAW 相片編輯器，支援非破壞式編輯、RAW 調色、局部修圖、批次處理、風格檔與完整照片匯出功能。
+AwayPhotoRawEditor 正在以 **Rust 重寫為跨平台版本**（Windows / macOS），程式碼將陸續放在 `main` 分支。
 
-A lightweight Windows RAW photo editor with non-destructive editing, color adjustment, local retouching, presets, batch processing, and export tools.
+AwayPhotoRawEditor is being rewritten in **Rust** as a cross-platform app (Windows / macOS). New code will land on `main`.
 
-所有調整以 XML 存於各資料夾的 `RAW_TEMP` 快取，原始檔案永不變動。
+## 舊版本 / Legacy versions
 
-## 畫面 / Screenshots
+| 平台 | 技術 | 分支 |
+|------|------|------|
+| Windows | C# / WinForms / .NET 8 | [`legacy/windows`](https://github.com/awaysu/AwayPhotoRawEditor/tree/legacy/windows) |
+| macOS | Swift / AppKit / Metal | [`legacy/macos`](https://github.com/awaysu/AwayPhotoRawEditor/tree/legacy/macos) |
 
-主畫面（縮圖列、基本／色彩／細節調整、直方圖與 EXIF、裁切／漸層／修護工具）
-![主畫面](docs/screenshots/main.jpg)
+兩個分支皆保留完整的開發歷史，僅作封存，不再更新。
 
-匯出設定（重新命名規則、尺寸上限、DPI、浮水印、EXIF 保留）
-![匯出設定](docs/screenshots/export.jpg)
-
-編輯風格檔（內建＋自訂風格檔，可備份／還原）
-![編輯風格檔](docs/screenshots/presets.jpg)
-
-## 下載
+## 下載 / Download
 
 **https://www.awaysu.cc/software/awayphotoraweditor**
-
-提供兩種形式，都是自含式、無需另裝 .NET：
-
-- `AwayPhotoRawEditor-Setup-vX.Y.Z.exe` — 安裝檔（每使用者安裝、不需系統管理員權限）
-- `AwayPhotoRawEditor-vX.Y.Z.zip` — 免安裝（攜帶版），解壓縮即可執行
-
-> 以自簽憑證簽署（`CN=Awaysu`），Windows SmartScreen 可能顯示警告，
-> 點「其他資訊 → 仍要執行」即可。zip 請先「右鍵 → 內容 → 解除封鎖」再解壓縮。
-
-## 功能
-
-- RAW 解碼（LibRaw）＋一般影像格式（WIC），EXIF 讀取（ExifTool）
-- **GPU 加速算圖**（Direct3D 12）：預覽與匯出都在顯示卡上運算，內建顯示卡（Intel Iris Xe、UHD 630 等）即可使用；偵測不到裝置或運算失敗時自動改用 CPU，結果相同，設定中可關閉
-- 線性光色彩管線：白平衡與曝光在線性域運算，有相機色彩資料時以相機矩陣做白平衡；RAW 可選 8-bit／16-bit 處理精度
-- 基本調整／色彩（Kelvin 白平衡、滴管）／細節（銳利度、暗角、降噪）
-- 裁切、旋轉、廣角變形、多重線性漸層、局部修護
-- 風格檔（內建＋自訂，可編輯覆寫、備份／還原）
-- 縮圖多選批次編輯、批次復原、虛擬副本
-- 匯出：重新命名規則、尺寸上限、DPI、浮水印、EXIF 保留
-- 可切換「經典深色／暖白相紙」兩套自繪 UI
-- 八語介面：繁體中文、English、日本語、한국어、简体中文、Deutsch、Français、Español
-
-## 系統需求
-
-- Windows 10 / 11 x64
-- GPU 加速需要支援 Direct3D 12 的顯示卡（2015 年後的 Intel 內顯／NVIDIA／AMD 皆可，不需獨立顯示卡）；沒有也能用，會自動改以 CPU 運算
-
-## 從原始碼建置
-
-```powershell
-# .NET 8 SDK
-dotnet build src\AwayPhotoRawEditor.csproj -c Debug
-
-# 發佈（自含式）
-dotnet publish src\AwayPhotoRawEditor.csproj -c Release -r win-x64 --self-contained true
-
-# 安裝檔（需 Inno Setup 6）
-iscc installer\AwayPhotoRawEditor.iss
-```
-
-外部工具已內建於 `tools/`（LibRaw 0.22.2、ExifTool 13.59），執行期自動偵測。
-
-## 第三方元件
-
-- [LibRaw](https://www.libraw.org/) 0.22.2 — LGPL 2.1（以動態連結使用，原始碼一併散布於 `tools/libraw/`）
-- [ExifTool](https://exiftool.org/) 13.59 by Phil Harvey — Perl Artistic License（以獨立行程呼叫）
-- [ComputeSharp](https://github.com/Sergio0694/ComputeSharp) 3.2 by Sergio Pedri — MIT（GPU 加速：Direct3D 12 compute shader，shader 於編譯期產生，執行期不需額外元件）
-
-## 授權 / License
-
-本專案以 [BSD 3-Clause](LICENSE) 授權 — Copyright (c) 2026, Chih-Wei Su (Awaysu)
-
-上述第三方元件維持各自的授權，不受本授權影響。
-
-## 作者
-
-Chih-Wei Su (Awaysu) — awaysu@gmail.com
-
-## 二次開發 / Modifying this project
-
-歡迎自由修改成你自己的版本，只希望你能在你的「關於」視窗中提及來源是這裡（AwayPhotoRawEditor / Awaysu）。
-
-You are welcome to modify this project into your own version — I only ask that you credit the original source (AwayPhotoRawEditor / Awaysu) in your About dialog.
