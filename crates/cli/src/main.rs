@@ -4,6 +4,7 @@
 mod bench;
 mod compare;
 mod dllcheck;
+mod exporttest;
 mod gputest;
 mod hashtest;
 mod stages;
@@ -19,6 +20,7 @@ usage:
   awpr hashtest <raw> [report]    colour-pipeline fingerprint (diff against the Swift / C# report)
   awpr gputest <raw> [report]     CPU vs GPU on the 14 cases + 3 heal cases (8-bit criteria)
   awpr viewtest <raw> [report]    the editor's viewer shader vs a CPU reference (offscreen, any backend)
+  awpr exporttest <image> <outDir> <report>  export JPEG / PNG / TIFF (8 / 16-bit, ICC, watermark) and check them
   awpr bench <raw>                decode / proxy / pipeline timings
   awpr stages <raw>               SHA of each intermediate (bisect a cross-platform difference)
   awpr dumpsrc <raw> <out.f32>    write the hashtest source proxy
@@ -33,6 +35,7 @@ fn main() {
         Some("hashtest") if args.len() >= 2 => hashtest::run(&args[1], args.get(2).map(String::as_str)),
         Some("gputest") if args.len() >= 2 => gputest::run(&args[1], args.get(2).map(String::as_str)),
         Some("viewtest") if args.len() >= 2 => viewtest::run(&args[1], args.get(2).map(String::as_str)),
+        Some("exporttest") if args.len() >= 4 => exporttest::run(&args[1], &args[2], &args[3]),
         Some("bench") if args.len() >= 2 => bench::run(&args[1]),
         Some("stages") if args.len() >= 2 => stages::run(&args[1]),
         Some("dumpsrc") if args.len() >= 3 => compare::dump(&args[1], &args[2]),

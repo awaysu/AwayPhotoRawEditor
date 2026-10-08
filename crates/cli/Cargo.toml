@@ -14,6 +14,8 @@ awpr-core = { path = "../core" }
 awpr-gpu = { path = "../gpu" }
 awpr-photo = { path = "../photo" }
 sha2 = "0.10"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "bmp"] }
+tiff = { version = "0.11", default-features = false, features = ["lzw"] }
 
 [target.'cfg(windows)'.dependencies]
 # Only for `dllcheck`: decode with the C# build's own libraw.dll for comparison.

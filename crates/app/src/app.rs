@@ -1,6 +1,7 @@
 //! The main window: folder → thumbnail strip → photo, with the C# layout (top bar,
 //! strip, left adjustments, centre viewer, right histogram / info / tools).
 
+use crate::export_ui::{DialogAction, ExportDialog, ExportJob, WatermarkOverlay};
 use crate::settings::Settings;
 use crate::theme;
 use crate::tools::{self, Drag, HealMode, ToolMode, View, P};
@@ -10,6 +11,7 @@ use crate::worker::{self, Item, Msg, Worker};
 use awpr_core::pipeline::ProcessContext;
 use awpr_core::{color, FloatImage, ImageAdjustments, LinearGradient, Rotation};
 use awpr_gpu::{GpuFrame, GpuPipeline, HistogramJob};
+use awpr_photo::export::{ExportItem, ExportSettings};
 use awpr_photo::loader::DecodeSource;
 use awpr_photo::store::{self, PreviewList};
 use awpr_photo::{paths, ExifData};
@@ -107,6 +109,14 @@ pub struct App {
     crop_custom: Option<(u32, u32)>,
     /// The gradient a right-click landed on (its 刪除 menu).
     grad_menu: Option<usize>,
+
+    // ---- export ----
+    export_settings: ExportSettings,
+    /// The open 匯出設定 window, and the settings before it opened (取消 restores the
+    /// watermark, which the window previews live).
+    export_dlg: Option<(ExportDialog, ExportSettings)>,
+    export_job: Option<ExportJob>,
+    wm_overlay: WatermarkOverlay,
 }
 
 impl App {
@@ -186,7 +196,12 @@ impl App {
             wb_picker: false,
             crop_custom: None,
             grad_menu: None,
+            export_settings: ExportSettings::load(),
+            export_dlg: None,
+            export_job: None,
+            wm_overlay: WatermarkOverlay::default(),
         };
+        crate::export_ui::font_list();
         if let Some(s) = &app.shot {
             let f = s.folder.clone();
             app.open_folder(&f);
@@ -385,6 +400,14 @@ impl App {
             }
             if let Ok(t) = std::env::var("AWPR_SHOT_TOOL") {
                 self.shot_tool(&t);
+            }
+            if let Ok(text) = std::env::var("AWPR_SHOT_WM") {
+                // Memory only: the live watermark preview in a screenshot.
+                self.export_settings.watermark_enabled = true;
+                self.export_settings.watermark_text = text;
+            }
+            if std::env::var("AWPR_SHOT_DLG").as_deref() == Ok("export") {
+                self.export_dlg = Some((ExportDialog::new(&self.export_settings), self.export_settings.clone()));
             }
         }
         // The load may just have generated the proxy (and its strip thumbnail).
@@ -703,6 +726,71 @@ impl App {
         }
     }
 
+    // ---- export -------------------------------------------------------------------
+
+    /// The photos an export covers: the current one or the whole strip, never hidden ones.
+    fn export_items(&self, all: bool) -> Vec<ExportItem> {
+        let pick = |it: &worker::Item| (!it.hidden).then(|| ExportItem { path: it.path.clone(), copy: it.copy });
+        if all {
+            self.items.iter().filter_map(pick).collect()
+        } else {
+            self.current.and_then(|i| pick(&self.items[i])).into_iter().collect()
+        }
+    }
+
+    fn export_windows(&mut self, ctx: &egui::Context) {
+        let (current, all) = (self.export_items(false).len(), self.export_items(true).len());
+        if let Some((dlg, before)) = &mut self.export_dlg {
+            match dlg.show(ctx, &mut self.export_settings, current, all) {
+                DialogAction::None => {}
+                DialogAction::Cancel => {
+                    self.export_settings = before.clone();
+                    self.export_dlg = None;
+                }
+                act @ (DialogAction::Save | DialogAction::Start) => {
+                    self.export_settings = dlg.draft.clone();
+                    let all = dlg.all;
+                    self.export_dlg = None;
+                    if !self.headless() {
+                        self.export_settings.save();
+                    }
+                    if act == DialogAction::Start {
+                        self.start_export(ctx, all);
+                    }
+                }
+            }
+        }
+        if let Some(job) = &mut self.export_job {
+            job.poll();
+            match job.result.take() {
+                Some(r) => {
+                    self.status = match r {
+                        Ok(w) if w.is_empty() => "匯出已取消".into(),
+                        Ok(w) => {
+                            let dir = w[0].path.parent().map(|p| p.display().to_string()).unwrap_or_default();
+                            let note = if job.cancelled() { "（已取消其餘）" } else { "" };
+                            format!("已匯出 {} 張到 {dir}{note}", w.len())
+                        }
+                        Err(e) => e,
+                    };
+                    self.export_job = None;
+                }
+                None => job.show(ctx),
+            }
+        }
+    }
+
+    fn start_export(&mut self, ctx: &egui::Context, all: bool) {
+        // The XML is what the export reads.
+        self.save_current_if_dirty();
+        let items = self.export_items(all);
+        if items.is_empty() {
+            self.status = "沒有可匯出的照片（隱藏的照片不會匯出）".into();
+            return;
+        }
+        self.export_job = Some(ExportJob::start(ctx.clone(), items, self.export_settings.clone(), self.settings.loader_options(), self.gpu));
+    }
+
     // ---- rendering ----------------------------------------------------------------
 
     fn process_context(&self) -> ProcessContext {
@@ -917,6 +1005,10 @@ impl App {
             }
             if ui.add_enabled(has_folder, egui::Button::new("關閉資料夾")).clicked() {
                 self.close_folder();
+            }
+            let can_export = self.has_photo() && self.export_job.is_none() && self.export_dlg.is_none();
+            if ui.add_enabled(can_export, egui::Button::new("匯出…")).clicked() {
+                self.export_dlg = Some((ExportDialog::new(&self.export_settings), self.export_settings.clone()));
             }
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1352,6 +1444,12 @@ impl App {
             ToolMode::Heal => self.paint_heal(&painter, &v),
             ToolMode::None => {}
         }
+        // The export watermark, live (the C# preview drew it whenever it was enabled).
+        if let (Some(p), Some(e)) = (&self.proxy, &self.exif) {
+            let full_long = e.width.max(e.height) as f64;
+            let ratio = if full_long > 0.0 { p.width.max(p.height) as f64 / full_long } else { 1.0 };
+            self.wm_overlay.paint(ui, &painter, &self.export_settings, pl.image, (size.x as usize, size.y as usize), ratio, pl.scale_px as f64);
+        }
         if self.wb_picker {
             painter.text(egui::pos2(rect.center().x, rect.min.y + 10.0), egui::Align2::CENTER_TOP, "點擊中性灰色區域設定白平衡", egui::FontId::proportional(14.0), theme::TEXT);
         }
@@ -1695,6 +1793,7 @@ impl eframe::App for App {
             egui::Panel::bottom("viewer_bar").exact_size(36.0).frame(egui::Frame::new().fill(theme::TOOLBAR)).show(ui, |ui| self.viewer_toolbar(ui));
             egui::CentralPanel::no_frame().show(ui, |ui| self.viewer(ui));
         });
+        self.export_windows(&ctx);
         self.shot_step(&ctx);
         let _ = &self.font;
     }

@@ -8,11 +8,14 @@
 //!                                              diagnostics: screenshot and quit
 //!   env AWPR_SHOT_ADJ="exposure=0.5,..."       (shot) adjustments applied in memory
 //!   env AWPR_SHOT_TOOL=crop|gradient|heal      (shot) open that tool (sample spots if none)
+//!   env AWPR_SHOT_DLG=export                   (shot) open the 匯出設定 window
+//!   env AWPR_SHOT_WM=<text>                    (shot) turn the export watermark on (live preview)
 //!   env AWPR_NO_GPU=1                          render on the CPU
 
 #![cfg_attr(all(windows, not(debug_assertions), not(feature = "console")), windows_subsystem = "windows")]
 
 mod app;
+mod export_ui;
 mod settings;
 mod theme;
 mod tools;
