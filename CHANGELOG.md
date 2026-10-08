@@ -9,4 +9,5 @@ Rust 重寫：PoC 第 1–3 步搬入 main。
 - **egui + wgpu 編輯視窗**：開資料夾、縮圖列、大圖直接從 GPU buffer 畫、滑桿即時更新；`--shot` 離屏截圖可做 headless 驗證。
 - **與舊版互通**：`RAW_TEMP` 快取、`rawpipe.xml`、`preview_list.xml` 與 C# / Swift 版逐位元組相容。
 - **工具互動編輯**：裁切框（比例、角度即時拉直、四角優先抓取）、線性漸層手把（白／黃／藍、旋轉 icon）、修護圓（仿製／修補、拖曳、Delete）、白平衡滴管；`--shot` 加 `AWPR_SHOT_TOOL=crop|gradient|heal`。
+- **匯出**：C# 匯出設定全部選項（位置／次資料夾／重新命名／同名處理／格式／長邊／DPI／品質／EXIF／浮水印）、匯出進度與取消；**TIFF／PNG 在 16-bit 精度時輸出 16-bit**、JPEG／PNG／TIFF 嵌入 sRGB ICC；浮水印跨平台繪製並可即時預覽；`awpr exporttest`。三平台 `cargo test` 29 個通過。
 - 已知問題：Windows 新建置的 exe 以 `--shot` 執行時約 2.4 秒無聲結束（PoC 原始 exe 正常），疑為本機安全機制，待確認。
