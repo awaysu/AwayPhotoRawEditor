@@ -1,0 +1,12 @@
+[package]
+name = "awpr-photo"
+description = "Photo library side of AwayPhotoRawEditor: RAW_TEMP caches, rawpipe.xml, EXIF, decoding"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+awpr-core = { path = "../core" }
+rayon = "1.10"
+quick-xml = "0.42"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff", "bmp", "rayon"] }

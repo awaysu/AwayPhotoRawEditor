@@ -1,0 +1,8 @@
+# AwayTerminal Multi-Agent mailbox
+.ai/
+
+# Rust build output
+target/
+target-*/
+out/
+*.f32

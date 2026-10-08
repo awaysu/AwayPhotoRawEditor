@@ -1,0 +1,22 @@
+[package]
+name = "awpr-libraw-sys"
+description = "LibRaw 0.22.2 built from vendored source, plus the C shim shared with the Swift build"
+version.workspace = true
+edition.workspace = true
+license = "BSD-3-Clause AND (LGPL-2.1-only OR CDDL-1.0)"
+links = "awpr_libraw"
+build = "build.rs"
+
+[features]
+default = ["openmp"]
+# LibRaw's demosaic, CR3 decoder and postprocessing are `#pragma omp`. The Swift build
+# measured 1.4–2.2x slower full decodes without it; the pixels are identical either way.
+openmp = []
+
+[dependencies]
+# DNG deflate needs zlib. `static` builds the bundled copy on every platform so all three
+# link the same zlib instead of whatever the system has.
+libz-sys = { version = "1.1", default-features = false, features = ["static"] }
+
+[build-dependencies]
+cc = { version = "1.2", features = ["parallel"] }

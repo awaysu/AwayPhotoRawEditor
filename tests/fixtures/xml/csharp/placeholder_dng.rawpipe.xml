@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RawPipe xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IsPlaceholder>true</IsPlaceholder>
+  <PipelineVersion>1</PipelineVersion>
+  <Adjustments>
+    <Exposure>0</Exposure>
+    <Contrast>0</Contrast>
+    <Highlights>0</Highlights>
+    <Shadows>0</Shadows>
+    <Whites>0</Whites>
+    <Blacks>0</Blacks>
+    <Temperature>6500.111995871754</Temperature>
+    <Tint>-15.857306958617297</Tint>
+    <Vibrance>0</Vibrance>
+    <Saturation>0</Saturation>
+    <Sharpening>0</Sharpening>
+    <NoiseReduction>0</NoiseReduction>
+    <Vignette>0</Vignette>
+    <Distortion>0</Distortion>
+    <CropAspectRatio>Original</CropAspectRatio>
+    <CropAngle>0</CropAngle>
+    <CropX>0</CropX>
+    <CropY>0</CropY>
+    <CropWidth>1</CropWidth>
+    <CropHeight>1</CropHeight>
+    <Rotation>R0</Rotation>
+    <Gradients />
+    <HealSize>10</HealSize>
+    <HealSpots />
+  </Adjustments>
+  <Exif>
+    <CameraMake />
+    <CameraModel />
+    <Lens />
+    <ISO />
+    <Aperture />
+    <Shutter />
+    <FocalLength />
+    <ExposureBias>0 EV</ExposureBias>
+    <WhiteBalance />
+    <MeteringMode />
+    <ColorTemperature>0</ColorTemperature>
+    <Tint>0</Tint>
+    <Camera>
+      <PreMul>
+        <double>0.999947007496217</double>
+        <double>1</double>
+        <double>0.9999573495816327</double>
+      </PreMul>
+      <CamMul>
+        <double>0.999947007496217</double>
+        <double>1</double>
+        <double>0.9999573495816327</double>
+      </CamMul>
+      <RgbCam>
+        <double>1.0417795181274414</double>
+        <double>0.0641307681798935</double>
+        <double>-0.10591026395559311</double>
+        <double>0.001551023917272687</double>
+        <double>0.9823022484779358</double>
+        <double>0.0161467045545578</double>
+        <double>-0.0020881236996501684</double>
+        <double>0.010334696620702744</double>
+        <double>0.9917533993721008</double>
+      </RgbCam>
+    </Camera>
+    <DateTaken />
+    <Width>2560</Width>
+    <Height>1707</Height>
+    <FileSize>7680732</FileSize>
+    <FilePath>D:\Awaysu\raw_test\- credit_signatureedits.com - @thelo-8.dng</FilePath>
+  </Exif>
+</RawPipe>

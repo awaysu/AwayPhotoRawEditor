@@ -1,0 +1,10 @@
+[package]
+name = "awpr-core"
+description = "AwayPhotoRawEditor colour pipeline (port of AwayRawCore / the C# reference)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+awpr-libraw-sys = { path = "../libraw-sys" }
+rayon = "1.10"

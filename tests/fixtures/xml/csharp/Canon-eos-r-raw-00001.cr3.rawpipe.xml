@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RawPipe xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IsPlaceholder>false</IsPlaceholder>
+  <PipelineVersion>1</PipelineVersion>
+  <Adjustments>
+    <Exposure>0</Exposure>
+    <Contrast>0</Contrast>
+    <Highlights>0</Highlights>
+    <Shadows>0</Shadows>
+    <Whites>0</Whites>
+    <Blacks>0</Blacks>
+    <Temperature>5723.404109477997</Temperature>
+    <Tint>-37.76123630842111</Tint>
+    <Vibrance>0</Vibrance>
+    <Saturation>0</Saturation>
+    <Sharpening>0</Sharpening>
+    <NoiseReduction>0</NoiseReduction>
+    <Vignette>0</Vignette>
+    <Distortion>0</Distortion>
+    <CropAspectRatio>Original</CropAspectRatio>
+    <CropAngle>0</CropAngle>
+    <CropX>0</CropX>
+    <CropY>0.14088543256123853</CropY>
+    <CropWidth>0.8591145674387615</CropWidth>
+    <CropHeight>0.8591145674387615</CropHeight>
+    <Rotation>R0</Rotation>
+    <Gradients>
+      <LinearGradient>
+        <CenterX>0.5191406091054281</CenterX>
+        <CenterY>0.4986338797814208</CenterY>
+        <Angle>0.4774537773095774</Angle>
+        <Range>0.333962619304657</Range>
+        <Exposure>1.335877776145935</Exposure>
+        <Contrast>0</Contrast>
+        <Highlights>0</Highlights>
+        <Shadows>0</Shadows>
+        <Saturation>0</Saturation>
+      </LinearGradient>
+    </Gradients>
+    <HealSize>10</HealSize>
+    <HealSpots />
+  </Adjustments>
+  <Exif>
+    <CameraMake>Canon</CameraMake>
+    <CameraModel>Canon EOS R</CameraModel>
+    <Lens>RF50mm F1.2 L USM</Lens>
+    <ISO>100</ISO>
+    <Aperture>f/1.2</Aperture>
+    <Shutter>1/10 s</Shutter>
+    <FocalLength>50 mm</FocalLength>
+    <ExposureBias>+0.7 EV</ExposureBias>
+    <WhiteBalance>Auto</WhiteBalance>
+    <MeteringMode>Multi-segment</MeteringMode>
+    <ColorTemperature>0</ColorTemperature>
+    <Tint>0</Tint>
+    <Camera>
+      <PreMul>
+        <double>2.179202484988396</double>
+        <double>1</double>
+        <double>1.2901748874766445</double>
+      </PreMul>
+      <CamMul>
+        <double>2.115234375</double>
+        <double>1</double>
+        <double>1.42578125</double>
+      </CamMul>
+      <RgbCam>
+        <double>1.7058850526809692</double>
+        <double>-0.7750129103660583</double>
+        <double>0.06912783533334732</double>
+        <double>-0.1593201756477356</double>
+        <double>1.633560061454773</double>
+        <double>-0.47423985600471497</double>
+        <double>0.00013250407937448472</double>
+        <double>-0.6149186491966248</double>
+        <double>1.614786148071289</double>
+      </RgbCam>
+    </Camera>
+    <DateTaken>2019:02:28 18:07:31</DateTaken>
+    <Width>6720</Width>
+    <Height>4480</Height>
+    <FileSize>33593764</FileSize>
+    <FilePath>D:\Awaysu\raw_test\Canon-eos-r-raw-00001.cr3</FilePath>
+  </Exif>
+</RawPipe>

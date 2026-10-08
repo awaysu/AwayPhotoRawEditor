@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RawPipe xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IsPlaceholder>false</IsPlaceholder>
+  <PipelineVersion>1</PipelineVersion>
+  <Adjustments>
+    <Exposure>0.4</Exposure>
+    <Contrast>20</Contrast>
+    <Highlights>-30</Highlights>
+    <Shadows>25</Shadows>
+    <Whites>0</Whites>
+    <Blacks>0</Blacks>
+    <Temperature>6200</Temperature>
+    <Tint>0</Tint>
+    <Vibrance>25</Vibrance>
+    <Saturation>8</Saturation>
+    <Sharpening>30</Sharpening>
+    <NoiseReduction>0</NoiseReduction>
+    <Vignette>0</Vignette>
+    <Distortion>0</Distortion>
+    <CropAspectRatio>Original</CropAspectRatio>
+    <CropAngle>0</CropAngle>
+    <CropX>0</CropX>
+    <CropY>0</CropY>
+    <CropWidth>1</CropWidth>
+    <CropHeight>1</CropHeight>
+    <Rotation>R0</Rotation>
+    <Gradients />
+    <HealSize>10</HealSize>
+    <HealSpots />
+  </Adjustments>
+  <Exif>
+    <CameraMake>NIKON CORPORATION</CameraMake>
+    <CameraModel>NIKON Z 8</CameraModel>
+    <Lens>TAMRON 12-20mm F2.8 A084 Z</Lens>
+    <ISO>64</ISO>
+    <Aperture>f/5.6</Aperture>
+    <Shutter>1/400 s</Shutter>
+    <FocalLength>20 mm</FocalLength>
+    <ExposureBias>-0.3 EV</ExposureBias>
+    <WhiteBalance>Auto</WhiteBalance>
+    <MeteringMode>Multi-segment</MeteringMode>
+    <ColorTemperature>0</ColorTemperature>
+    <Tint>0</Tint>
+    <DateTaken>2026:07:01 19:09:56</DateTaken>
+    <Width>8280</Width>
+    <Height>5520</Height>
+    <FileSize>34519040</FileSize>
+    <FilePath>D:\Awaysu\raw_test\DSC_3579.NEF</FilePath>
+  </Exif>
+</RawPipe>

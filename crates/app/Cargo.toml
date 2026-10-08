@@ -1,0 +1,25 @@
+[package]
+name = "awpr-app"
+description = "AwayPhotoRawEditor desktop editor (egui + wgpu)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "AwayPhotoRawEditor"
+path = "src/main.rs"
+
+[features]
+# Keep the console window on Windows release builds (diagnostics).
+console = []
+
+[dependencies]
+awpr-core = { path = "../core" }
+awpr-gpu = { path = "../gpu" }
+awpr-photo = { path = "../photo" }
+eframe = { version = "0.36", default-features = false, features = ["wgpu", "default_fonts", "accesskit", "x11", "wayland"] }
+egui-wgpu = "0.36"
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "dx12", "metal", "vulkan"] }
+bytemuck = { version = "1.25", features = ["derive"] }
+rfd = "0.17"
+image = { version = "0.25", default-features = false, features = ["png"] }

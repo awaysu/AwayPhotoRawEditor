@@ -1,0 +1,12 @@
+[package]
+name = "awpr-gpu"
+description = "wgpu renderer for the AwayPhotoRawEditor pipeline (port of the Swift Metal path)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+awpr-core = { path = "../core" }
+wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "dx12", "metal", "vulkan"] }
+pollster = "0.4"
+bytemuck = { version = "1.25", features = ["derive"] }

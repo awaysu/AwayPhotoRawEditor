@@ -1,0 +1,73 @@
+<?xml version="1.0"?>
+<RawPipe xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <IsPlaceholder>false</IsPlaceholder>
+  <PipelineVersion>1</PipelineVersion>
+  <Adjustments>
+    <Exposure>0.3</Exposure>
+    <Contrast>15</Contrast>
+    <Highlights>0</Highlights>
+    <Shadows>0</Shadows>
+    <Whites>0</Whites>
+    <Blacks>0</Blacks>
+    <Temperature>5200</Temperature>
+    <Tint>0</Tint>
+    <Vibrance>20</Vibrance>
+    <Saturation>0</Saturation>
+    <Sharpening>0</Sharpening>
+    <NoiseReduction>0</NoiseReduction>
+    <Vignette>0</Vignette>
+    <Distortion>0</Distortion>
+    <CropAspectRatio>Original</CropAspectRatio>
+    <CropAngle>0</CropAngle>
+    <CropX>0</CropX>
+    <CropY>0</CropY>
+    <CropWidth>1</CropWidth>
+    <CropHeight>1</CropHeight>
+    <Rotation>R0</Rotation>
+    <Gradients />
+    <HealSize>10</HealSize>
+    <HealSpots />
+  </Adjustments>
+  <Exif>
+    <CameraMake>SONY</CameraMake>
+    <CameraModel>ILCE-7M3</CameraModel>
+    <Lens>FE 16-35mm F2.8 GM</Lens>
+    <ISO>400</ISO>
+    <Aperture>f/4</Aperture>
+    <Shutter>1/50 s</Shutter>
+    <FocalLength>32 mm</FocalLength>
+    <ExposureBias>0 EV</ExposureBias>
+    <WhiteBalance>Auto</WhiteBalance>
+    <MeteringMode>Multi-segment</MeteringMode>
+    <ColorTemperature>0</ColorTemperature>
+    <Tint>0</Tint>
+    <Camera>
+      <PreMul>
+        <double>2.6715026035417435</double>
+        <double>1</double>
+        <double>1.3469425402955446</double>
+      </PreMul>
+      <CamMul>
+        <double>2.21875</double>
+        <double>1</double>
+        <double>1.7578125</double>
+      </CamMul>
+      <RgbCam>
+        <double>1.635386347770691</double>
+        <double>-0.4219624102115631</double>
+        <double>-0.21342389285564423</double>
+        <double>-0.13107207417488098</double>
+        <double>1.542707085609436</double>
+        <double>-0.4116349518299103</double>
+        <double>0.011429641395807266</double>
+        <double>-0.419592946767807</double>
+        <double>1.40816330909729</double>
+      </RgbCam>
+    </Camera>
+    <DateTaken>2018:03:13 16:38:13</DateTaken>
+    <Width>6000</Width>
+    <Height>4000</Height>
+    <FileSize>25639680</FileSize>
+    <FilePath>swiftxml/sony_a7m3.ARW</FilePath>
+  </Exif>
+</RawPipe>

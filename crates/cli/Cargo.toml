@@ -1,0 +1,20 @@
+[package]
+name = "awpr-cli"
+description = "Headless diagnostics for the AwayPhotoRawEditor Rust engine (hashtest, info, bench)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "awpr"
+path = "src/main.rs"
+
+[dependencies]
+awpr-core = { path = "../core" }
+awpr-gpu = { path = "../gpu" }
+awpr-photo = { path = "../photo" }
+sha2 = "0.10"
+
+[target.'cfg(windows)'.dependencies]
+# Only for `dllcheck`: decode with the C# build's own libraw.dll for comparison.
+libloading = "0.8"

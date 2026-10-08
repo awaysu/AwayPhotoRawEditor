@@ -1,0 +1,7 @@
+# Shell scripts run on macOS / Linux; keep LF even when checked out on Windows.
+*.sh text eol=lf
+# Byte-exact copies of files the C# / Swift builds wrote (CRLF vs LF matters).
+tests/fixtures/** -text
+# hashtest reference reports are compared byte-for-byte; keep them exactly as committed.
+tests/results/** -text
+tests/reference/** -text

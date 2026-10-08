@@ -1,0 +1,14 @@
+[workspace]
+resolver = "2"
+members = ["crates/libraw-sys", "crates/core", "crates/gpu", "crates/photo", "crates/cli", "crates/app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "BSD-3-Clause"
+authors = ["Chih-Wei Su (Awaysu)"]
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "thin"
