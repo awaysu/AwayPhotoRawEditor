@@ -232,7 +232,7 @@ pub fn ensure_proxy_v3(path: &str, camera: &CameraColorInfo) -> bool {
     let png = paths::proxy_v3_path(path);
     let lock = path_lock(&png);
     let _g = lock.lock().unwrap();
-    if codec::is_complete(&png) && read_gain(path).is_some() {
+    if proxy_v3_ready(path) {
         return true;
     }
     let Some(full) = libraw::decode_linear(path, exif::visible_size(path)) else { return false };
@@ -247,11 +247,21 @@ fn write_proxy_v3(path: &str, mut full: FloatImage, camera: &CameraColorInfo) ->
     if codec::save_linear_png(&scaled, &paths::proxy_v3_path(path)).is_err() {
         return false;
     }
+    if codec::save_linear_png(&resize_to_fit(&scaled, THUMB_MAX_W, THUMB_MAX_H), &paths::proxy_v3_thumbnail_path(path)).is_err() {
+        return false;
+    }
+    // The gain last: its presence marks the set complete.
     paths::write_atomic(&paths::proxy_v3_meta_path(path), format!("gain={gain}\n").as_bytes()).is_ok()
 }
 
-fn proxy_v3_ready(path: &str) -> bool {
-    codec::is_complete(&paths::proxy_v3_path(path)) && read_gain(path).is_some()
+/// The linear proxy, its strip thumbnail and its gain are all on disk.
+pub fn proxy_v3_ready(path: &str) -> bool {
+    codec::is_complete(&paths::proxy_v3_path(path)) && codec::is_complete(&paths::proxy_v3_thumbnail_path(path)) && read_gain(path).is_some()
+}
+
+/// The version-3 strip thumbnail base (linear camera RGB) and its gain, when built.
+pub fn load_thumbnail_v3(path: &str) -> Option<(FloatImage, f32)> {
+    Some((codec::load_linear_png(&paths::proxy_v3_thumbnail_path(path))?, read_gain(path)?))
 }
 
 /// The folder cache builder's entry: the usual proxy, and with `camera` (a 處理版本 3
@@ -304,8 +314,10 @@ pub fn load_proxy_v3(path: &str, camera: &CameraColorInfo) -> Option<(FloatImage
 
 /// The editing proxy for these adjustments: the linear camera proxy for a version-3 RAW,
 /// otherwise the usual one. Falls back to the usual proxy when the linear one fails.
+/// The editor's: the linear proxy is used only once it is built (the background builder
+/// makes it); until then the usual proxy renders version 3 from its encoded pixels.
 pub fn load_proxy_for(path: &str, adj: &ImageAdjustments, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> Option<(FloatImage, DecodeSource, SourceKind)> {
-    if adj.is_v3() && linear_capable(path, camera, opt) {
+    if adj.is_v3() && linear_capable(path, camera, opt) && proxy_v3_ready(path) {
         if let Some((p, gain)) = camera.and_then(|c| load_proxy_v3(path, c)) {
             return Some((p, DecodeSource::LibRaw, SourceKind::LinearCamera { gain }));
         }

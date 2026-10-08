@@ -471,11 +471,25 @@ impl App {
     pub(crate) fn needs_source_reload(&self) -> bool {
         let Some(i) = self.current else { return false };
         match self.source_kind {
-            SourceKind::Encoded => {
-                self.adj.is_v3() && awpr_photo::loader::linear_capable(&self.items[i].path, self.exif.as_ref().and_then(|e| e.camera.as_ref()), self.settings.loader_options())
-            }
+            // Only once the linear proxy exists (the background builder makes it; until then
+            // version 3 renders from the 8-bit proxy).
+            SourceKind::Encoded => self.v3_proxy_possible() && awpr_photo::loader::proxy_v3_ready(&self.items[i].path),
             SourceKind::LinearCamera { .. } => !self.adj.is_v3(),
         }
+    }
+
+    /// The open photo is a 處理版本 3 RAW that can have a linear proxy.
+    fn v3_proxy_possible(&self) -> bool {
+        let Some(i) = self.current else { return false };
+        self.adj.is_v3() && awpr_photo::loader::linear_capable(&self.items[i].path, self.exif.as_ref().and_then(|e| e.camera.as_ref()), self.settings.loader_options())
+    }
+
+    /// Still showing a 處理版本 3 RAW from its 8-bit proxy while the linear one builds.
+    pub(crate) fn waiting_for_v3_proxy(&self) -> bool {
+        self.source_kind == SourceKind::Encoded
+            && self.v3_proxy_possible()
+            && std::env::var_os("AWPR_SHOT_HOLD_V3").is_none()
+            && self.current.is_some_and(|i| !awpr_photo::loader::proxy_v3_ready(&self.items[i].path))
     }
 
     /// Load the open photo's source again for the adjustments in memory.
@@ -1091,6 +1105,19 @@ impl App {
                     self.thumbs.insert(key, (tex, version));
                 }
                 Msg::Loaded(l) => self.on_loaded(*l),
+                Msg::ProxyV3Ready { path } => {
+                    // Its thumbnails now render from the linear source; the open photo
+                    // switches to it (`render` sees the source no longer fits).
+                    let current = self.current.map(|i| self.items[i].key.clone());
+                    for it in self.items.iter().filter(|it| it.path == path) {
+                        self.thumb_version += 1;
+                        let adj = (Some(&it.key) == current.as_ref()).then(|| self.adj.clone());
+                        self.worker.thumbnail(it, adj, self.thumb_version);
+                    }
+                    if self.current.is_some_and(|i| self.items[i].path == path) {
+                        self.needs_render = true;
+                    }
+                }
                 Msg::CacheProgress { gen, done, total, name } => {
                     if gen == self.worker.folder_gen.load(Ordering::SeqCst) {
                         self.cache_progress = if done >= total { None } else { Some((done, total, name)) };
@@ -1895,6 +1922,7 @@ impl App {
     // ---- --shot -------------------------------------------------------------------
 
     fn shot_step(&mut self, ctx: &egui::Context) {
+        let waiting_v3 = self.waiting_for_v3_proxy();
         let Some(s) = &mut self.shot else { return };
         let shot_event = ctx.input(|i| {
             i.raw.events.iter().find_map(|e| match e {
@@ -1911,7 +1939,7 @@ impl App {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
-        let ready = !self.loading && self.hist.is_some() && self.cache_progress.is_none() && !self.needs_render && self.thumb_live_due.is_none();
+        let ready = !self.loading && self.hist.is_some() && self.cache_progress.is_none() && !self.needs_render && self.thumb_live_due.is_none() && !waiting_v3;
         let waited = s.started.elapsed();
         if !s.requested && ((ready && waited > Duration::from_millis(1500)) || waited > Duration::from_secs(120)) {
             s.requested = true;

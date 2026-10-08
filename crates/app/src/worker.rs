@@ -16,6 +16,8 @@ pub enum Msg {
     /// One more photo's caches are ready (folder generation `gen`).
     CacheProgress { gen: u64, done: usize, total: usize, name: String },
     CpuRendered { version: u64, image: Arc<FloatImage> },
+    /// A 處理版本 3 RAW's linear proxy is built (its photos can switch to it).
+    ProxyV3Ready { path: String },
 }
 
 pub struct Loaded {
@@ -63,6 +65,17 @@ pub struct Worker {
     pub folder_gen: Arc<AtomicU64>,
     thumb_queue: Arc<Mutex<Vec<ThumbJob>>>,
     thumb_signal: Sender<()>,
+    /// Second-stage cache work: linear proxies for 處理版本 3 RAWs. The front is served
+    /// first; a photo the user opens is put there.
+    v3_queue: Arc<Mutex<std::collections::VecDeque<V3Job>>>,
+    v3_signal: Sender<()>,
+}
+
+struct V3Job {
+    path: String,
+    opt: LoaderOptions,
+    /// The folder generation of a second-stage job (None: asked for by the editor).
+    gen: Option<u64>,
 }
 
 struct ThumbJob {
@@ -75,13 +88,30 @@ impl Worker {
     pub fn new(ctx: egui::Context) -> (Self, Receiver<Msg>) {
         let (tx, rx) = std::sync::mpsc::channel();
         let (sig_tx, sig_rx) = std::sync::mpsc::channel::<()>();
+        let (v3_tx, v3_rx) = std::sync::mpsc::channel::<()>();
         let w = Self {
             tx,
             ctx,
             folder_gen: Arc::new(AtomicU64::new(0)),
             thumb_queue: Arc::new(Mutex::new(Vec::new())),
             thumb_signal: sig_tx,
+            v3_queue: Default::default(),
+            v3_signal: v3_tx,
         };
+        // One linear-proxy thread: a full LibRaw decode each, behind the first stage.
+        let w3 = w.clone();
+        std::thread::Builder::new()
+            .name("cache-v3".into())
+            .spawn(move || {
+                while v3_rx.recv().is_ok() {
+                    loop {
+                        let job = w3.v3_queue.lock().unwrap().pop_front();
+                        let Some(job) = job else { break };
+                        w3.build_v3(job);
+                    }
+                }
+            })
+            .expect("v3 cache thread");
         // One thumbnail thread: renders are small, and newest-first ordering matters
         // more than parallelism (the live slider preview of the current photo).
         let w2 = w.clone();
@@ -127,8 +157,15 @@ impl Worker {
 
     /// Build thumbnails, proxies and placeholder XMLs for a whole folder, two photos at
     /// a time (a full RAW decode each; more at once runs out of memory on 60 MP files).
+    /// Two stages: first every photo's usual caches (thumbnail, 8-bit proxy, XML) — the
+    /// folder is usable as soon as they exist — then, one by one in the background, the
+    /// linear proxies of the 處理版本 3 RAWs (`build_v3`).
     pub fn generate_caches(&self, items: Vec<Item>, opt: LoaderOptions) {
         let gen = self.folder_gen.load(Ordering::SeqCst);
+        let all: Vec<String> = {
+            let mut seen = std::collections::HashSet::new();
+            items.iter().filter(|i| seen.insert(i.path.clone())).map(|i| i.path.clone()).collect()
+        };
         let mut seen = std::collections::HashSet::new();
         let sources: Vec<String> = items.iter().filter(|i| seen.insert(i.path.clone())).map(|i| i.path.clone()).collect();
         let total = sources.len();
@@ -136,7 +173,7 @@ impl Worker {
         let done = Arc::new(AtomicU64::new(0));
         let items = Arc::new(items);
         for t in 0..2 {
-            let (w, queue, done, items) = (self.clone(), queue.clone(), done.clone(), items.clone());
+            let (w, queue, done, items, all) = (self.clone(), queue.clone(), done.clone(), items.clone(), all.clone());
             std::thread::Builder::new()
                 .name(format!("cache{t}"))
                 .spawn(move || loop {
@@ -152,18 +189,72 @@ impl Worker {
                     // Seed the XML so the as-shot white balance is set once, here.
                     let mut e = exif::read(&path);
                     enrich_camera_color(&path, &mut e, opt);
-                    let adj = store::ensure_default(&path, Some(&e), 0);
-                    // 處理版本 3 RAWs edit from the linear camera proxy: both proxies from
-                    // one LibRaw decode.
-                    let v3_camera = if adj.is_v3() { e.camera.as_ref() } else { None };
-                    loader::ensure_proxy_caches(&path, opt, v3_camera);
+                    store::ensure_default(&path, Some(&e), 0);
+                    loader::ensure_proxy_cache(&path, opt);
                     for it in items.iter().filter(|i| i.path == path) {
                         w.thumbnail(it, None, 0);
                     }
                     let d = done.fetch_add(1, Ordering::SeqCst) as usize + 1;
                     w.send(Msg::CacheProgress { gen, done: d, total, name: paths::file_name(&path) });
+                    if d == total {
+                        // Stage 2, behind anything the editor already asked for.
+                        crate::trace(&format!("cache stage 1 done ({total} photos); stage 2 queued"));
+                        let mut q = w.v3_queue.lock().unwrap();
+                        q.extend(all.iter().map(|p| V3Job { path: p.clone(), opt, gen: Some(gen) }));
+                        drop(q);
+                        let _ = w.v3_signal.send(());
+                    }
                 })
                 .expect("cache thread");
+        }
+    }
+
+    /// The editor opened a 處理版本 3 RAW whose linear proxy is not built yet: build it
+    /// next, ahead of the second stage.
+    pub fn request_v3(&self, path: &str, opt: LoaderOptions) {
+        if std::env::var_os("AWPR_SHOT_HOLD_V3").is_some() {
+            return; // screenshots of the waiting state
+        }
+        let mut q = self.v3_queue.lock().unwrap();
+        q.retain(|j| j.path != path);
+        q.push_front(V3Job { path: path.to_string(), opt, gen: None });
+        drop(q);
+        crate::trace(&format!("v3 proxy: {} moved to the front of the queue", paths::file_name(path)));
+        let _ = self.v3_signal.send(());
+    }
+
+    /// One linear proxy, if the photo is a 處理版本 3 RAW that still needs it. When the
+    /// usual proxy is missing too (the editor asked before stage 1 reached it), both come
+    /// from one LibRaw unpack (`ensure_proxy_caches`).
+    fn build_v3(&self, job: V3Job) {
+        if std::env::var_os("AWPR_SHOT_HOLD_V3").is_some() {
+            return;
+        }
+        if job.gen.is_some_and(|g| g != self.folder_gen.load(Ordering::SeqCst)) {
+            return; // another folder now
+        }
+        if loader::proxy_v3_ready(&job.path) {
+            return;
+        }
+        let (adj, exif, _) = store::load_all(&job.path, 0);
+        let mut e = exif.unwrap_or_else(|| exif::read(&job.path));
+        enrich_camera_color(&job.path, &mut e, job.opt);
+        // Stage 2 checks the photo's version; the editor asks only for version-3 photos
+        // (a virtual copy may be version 3 while the original is not).
+        let v3 = job.gen.is_none() || adj.as_ref().is_some_and(ImageAdjustments::is_v3);
+        if !v3 || !loader::linear_capable(&job.path, e.camera.as_ref(), job.opt) {
+            return;
+        }
+        let t0 = std::time::Instant::now();
+        loader::ensure_proxy_caches(&job.path, job.opt, e.camera.as_ref());
+        if loader::proxy_v3_ready(&job.path) {
+            crate::trace(&format!(
+                "v3 proxy built: {} ({}, {} ms)",
+                paths::file_name(&job.path),
+                if job.gen.is_none() { "requested by the editor" } else { "stage 2" },
+                t0.elapsed().as_millis()
+            ));
+            self.send(Msg::ProxyV3Ready { path: job.path });
         }
     }
 
@@ -191,6 +282,10 @@ impl Worker {
                     let _ = store::save(&item.path, &adj, item.copy, Some(&e));
                 }
                 let proxy = loader::load_proxy_for(&item.path, &adj, e.camera.as_ref(), opt);
+                if adj.is_v3() && loader::linear_capable(&item.path, e.camera.as_ref(), opt) && !loader::proxy_v3_ready(&item.path) {
+                    // Shown from the 8-bit proxy meanwhile; switched when it is built.
+                    w.request_v3(&item.path, opt);
+                }
                 let (proxy, source, source_kind) = match proxy {
                     Some((p, s, k)) => (Some(p), s, k),
                     None => (None, DecodeSource::LibRaw, SourceKind::Encoded),
@@ -239,6 +334,15 @@ pub fn enrich_camera_color(path: &str, e: &mut ExifData, opt: LoaderOptions) -> 
 pub fn render_thumbnail(base: &ThumbnailBase, item: &Item, adjustments: Option<ImageAdjustments>) -> FloatImage {
     let (stored, exif, _) = store::load_all(&item.path, item.copy);
     let mut a = adjustments.or(stored).unwrap_or_default();
+    // 處理版本 3 RAW with its linear proxy built: the thumbnail renders from the linear
+    // strip thumbnail, the editor's own source (until then from the 8-bit one below).
+    let camera = exif.as_ref().and_then(|e| e.camera.clone()).filter(|c| c.is_valid());
+    if a.is_v3() && camera.is_some() && paths::is_raw(&item.path) {
+        if let Some((lin, gain)) = loader::load_thumbnail_v3(&item.path) {
+            let ctx = ProcessContext { camera, source_kind: SourceKind::LinearCamera { gain }, ..Default::default() };
+            return apply_to_float(&lin, &a, &ctx);
+        }
+    }
     if store::is_default(&a) {
         return base.buffer.clone();
     }

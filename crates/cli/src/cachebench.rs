@@ -3,10 +3,13 @@
 //!
 //! * A: the usual proxy only (`ensure_proxy_cache`, what a version-2 photo gets),
 //! * B: the usual + linear proxies the old way (two LibRaw decodes),
-//! * C: both from one open + unpack (`ensure_proxy_caches`, what the editor does),
+//! * C: both from one open + unpack (`ensure_proxy_caches`),
+//! * D: the editor's two stages — the usual proxy (stage 1, the folder is usable), then
+//!   the linear one on its own (stage 2): reported as stage-1 time / total,
 //!
 //! and checks that `decode_both` gives exactly what `decode_full` and `decode_linear` give
-//! on their own (every float equal) and that C's cache files equal B's byte for byte.
+//! on their own (every float equal) and that C's and D's cache files equal B's byte for
+//! byte.
 
 use awpr_core::libraw;
 use awpr_photo::loader::{self, LoaderOptions};
@@ -35,8 +38,8 @@ pub fn run(work: &str, files: &[String]) -> i32 {
     let work = Path::new(work);
     let opt = LoaderOptions::default();
     let mut ok = true;
-    let (mut ta, mut tb, mut tc) = (0.0, 0.0, 0.0);
-    println!("{:<44} {:>9} {:>9} {:>9} {:>7} {:>7}  一致", "檔案", "A 版本2", "B 兩次解碼", "C 一次解碼", "B/A", "C/A");
+    let (mut ta, mut tb, mut tc, mut td1, mut td) = (0.0, 0.0, 0.0, 0.0, 0.0);
+    println!("{:<40} {:>8} {:>8} {:>8} {:>15} {:>6} {:>6} {:>13}  一致", "檔案", "A 版本2", "B 兩次", "C 一次", "D 兩階段 1/全部", "B/A", "C/A", "D1/A  D/A");
     for src in files {
         let Some(img) = fresh_copy(work, src) else {
             println!("!! 無法複製 {src}");
@@ -63,12 +66,28 @@ pub fn run(work: &str, files: &[String]) -> i32 {
             loader::ensure_proxy_cache(&img, opt);
             loader::ensure_proxy_v3(&img, &cam);
         });
-        let files_b = [read(&paths::proxy_path(&img)), read(&paths::proxy_v3_path(&img)), read(&paths::proxy_v3_meta_path(&img)), read(&paths::proxy_thumbnail_path(&img))];
+        let files = || {
+            [
+                read(&paths::proxy_path(&img)),
+                read(&paths::proxy_v3_path(&img)),
+                read(&paths::proxy_v3_meta_path(&img)),
+                read(&paths::proxy_v3_thumbnail_path(&img)),
+                read(&paths::proxy_thumbnail_path(&img)),
+            ]
+        };
+        let files_b = files();
         let c = secs(&|| {
             loader::ensure_proxy_caches(&img, opt, Some(&cam));
         });
-        let files_c = [read(&paths::proxy_path(&img)), read(&paths::proxy_v3_path(&img)), read(&paths::proxy_v3_meta_path(&img)), read(&paths::proxy_thumbnail_path(&img))];
-        let same_files = files_b.iter().zip(&files_c).all(|(x, y)| !x.is_empty() && x == y);
+        let files_c = files();
+        clear_caches(&img);
+        let t = Instant::now();
+        loader::ensure_proxy_cache(&img, opt);
+        let d1 = t.elapsed().as_secs_f64();
+        loader::ensure_proxy_caches(&img, opt, Some(&cam));
+        let d = t.elapsed().as_secs_f64();
+        let files_d = files();
+        let same_files = files_b.iter().zip(&files_c).zip(&files_d).all(|((x, y), z)| !x.is_empty() && x == y && x == z);
 
         // The decodes themselves, float for float.
         let vis = exif::visible_size(&img);
@@ -86,15 +105,21 @@ pub fn run(work: &str, files: &[String]) -> i32 {
         ta += a;
         tb += b;
         tc += c;
-        let name: String = paths::file_name(src).chars().take(30).collect();
+        td1 += d1;
+        td += d;
+        let name: String = paths::file_name(src).chars().take(26).collect();
         println!(
-            "{:<44} {:>8.2}s {:>8.2}s {:>8.2}s {:>7.2} {:>7.2}  {}",
+            "{:<40} {:>7.2}s {:>7.2}s {:>7.2}s {:>6.2}s/{:>6.2}s {:>6.2} {:>6.2} {:>5.2} {:>6.2}  {}",
             format!("{name} ({size})"),
             a,
             b,
             c,
+            d1,
+            d,
             b / a,
             c / a,
+            d1 / a,
+            d / a,
             if good { "✅ 解碼與快取逐位元組相同" } else { "❌ 不同" }
         );
         if !same_decode {
@@ -105,6 +130,6 @@ pub fn run(work: &str, files: &[String]) -> i32 {
         }
         let _ = std::fs::remove_dir_all(Path::new(&img).parent().unwrap());
     }
-    println!("{:<44} {:>8.2}s {:>8.2}s {:>8.2}s {:>7.2} {:>7.2}", "合計", ta, tb, tc, tb / ta, tc / ta);
+    println!("{:<40} {:>7.2}s {:>7.2}s {:>7.2}s {:>6.2}s/{:>6.2}s {:>6.2} {:>6.2} {:>5.2} {:>6.2}", "合計", ta, tb, tc, td1, td, tb / ta, tc / ta, td1 / ta, td / ta);
     i32::from(!ok)
 }

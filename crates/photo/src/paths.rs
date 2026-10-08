@@ -82,6 +82,12 @@ pub fn proxy_v3_meta_path(image: &str) -> String {
     proxy_v3_path(image) + ".txt"
 }
 
+/// RAW_TEMP/{file}.rawpipe.v3.png.thumb.png — the linear proxy shrunk to strip-thumbnail
+/// size (same encoding), so a version-3 thumbnail renders from the linear source cheaply.
+pub fn proxy_v3_thumbnail_path(image: &str) -> String {
+    proxy_v3_path(image) + ".thumb.png"
+}
+
 /// RAW_TEMP/{file}.rawpipe.xml, or {file}.copyN.rawpipe.xml for a virtual copy.
 pub fn adjustment_xml_path(image: &str, copy_index: i32) -> String {
     let suffix = if copy_index <= 0 { ".rawpipe.xml".to_string() } else { format!(".copy{copy_index}.rawpipe.xml") };
