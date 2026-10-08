@@ -8,7 +8,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor
 
 ## 目前狀態
-**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP；快取效能修正中）；第 7 步 TASK-008 遮罩／HEIC 評估待派。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
+**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP、兩階段快取 044f7e4）；第 7 步 TASK-008 遮罩／HEIC 評估進行中。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
 PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過）。
 
 ## 工作方式（Multi-Agent）
