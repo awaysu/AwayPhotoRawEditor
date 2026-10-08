@@ -1469,15 +1469,12 @@ impl App {
         if r.changed {
             self.set_curve(ch, pts);
         }
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(t("點兩下或按右鍵刪除控制點")).color(theme::TEXT_FAINT).size(theme::scaled(11.0)));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.add_enabled(enabled, egui::Button::new(t("重設曲線"))).clicked() {
-                    self.edit_begin();
-                    self.set_curve(ch, Vec::new());
-                }
-            });
-        });
+        // The hint on its own line (it may be cut in a long language), the button whole.
+        ui.add(egui::Label::new(RichText::new(t("點兩下或按右鍵刪除控制點")).color(theme::TEXT_FAINT).size(theme::scaled(11.0))).truncate());
+        if ui.add_enabled(enabled, egui::Button::new(t("重設曲線")).min_size(Vec2::new(ui.available_width(), 24.0))).clicked() {
+            self.edit_begin();
+            self.set_curve(ch, Vec::new());
+        }
     }
 
     fn set_curve(&mut self, ch: usize, pts: Vec<(f64, f64)>) {
@@ -1545,6 +1542,11 @@ impl App {
             None => {
                 ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
             }
+            // A tool open (its panel needs the room): one line instead of the table.
+            Some(e) if matches!(self.tool, ToolMode::Gradient | ToolMode::Heal | ToolMode::Mask) => {
+                let line = format!("{} {} · {} · {}", e.camera_make, e.camera_model, e.dimensions_display(), f("處理版本 {0}", &[&(self.adj.pipeline_version + 1)]));
+                ui.add(egui::Label::new(RichText::new(line.trim()).size(theme::scaled(12.0)).color(theme::TEXT_DIM)).truncate());
+            }
             Some(e) => {
                 let rows = [
                     (t("相機"), format!("{} {}", e.camera_make, e.camera_model).trim().to_string()),
@@ -1586,21 +1588,32 @@ impl App {
     /// selected tool's controls, locked while no tool is open (`ToolsPanel`).
     fn tools_panel(&mut self, ui: &mut egui::Ui) {
         let on = self.has_photo();
-        ui.horizontal(|ui| {
+        // Four tabs in a row, or two rows of two when a label would not fit (long
+        // translations): a tab name is never cut.
+        let tabs_fit = |ui: &egui::Ui, labels: &[&str]| {
             let w = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0;
-            let tabs = [
+            let font = egui::TextStyle::Button.resolve(ui.style());
+            labels.iter().all(|l| ui.fonts_mut(|f| f.layout_no_wrap(l.to_string(), font.clone(), Color32::WHITE).size().x) + 2.0 * ui.spacing().button_padding.x <= w)
+        };
+        let four = tabs_fit(ui, &[t("裁切"), t("漸層"), t("修護"), t("遮罩")]);
+        let per_row = if four { 4 } else { 2 };
+        let w = (ui.available_width() - (per_row as f32 - 1.0) * ui.spacing().item_spacing.x) / per_row as f32;
+        let tabs = [
                 (t("裁切"), ToolMode::Crop, t("拖曳邊、角或整個框；角度滑桿即時拉直")),
                 (t("漸層"), ToolMode::Gradient, t("白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除")),
                 (t("修護"), ToolMode::Heal, t("點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除")),
                 (t("遮罩"), ToolMode::Mask, t("放射狀：白點移動、黃點半徑、藍點旋轉\n筆刷：在畫面上拖曳塗抹\nDelete：刪除選取的遮罩")),
-            ];
-            for (label, mode, hint) in tabs {
-                let sel = self.tool == mode;
-                if widgets::fixed_button(ui, on, Vec2::new(w, 28.0), label, |b| b.selected(sel)).on_hover_text(hint).clicked() {
-                    self.set_tool(if self.tool == mode { ToolMode::None } else { mode });
+        ];
+        for row in tabs.chunks(per_row) {
+            ui.horizontal(|ui| {
+                for (label, mode, hint) in row {
+                    let sel = self.tool == *mode;
+                    if widgets::fixed_button(ui, on, Vec2::new(w, 28.0), *label, |b| b.selected(sel)).on_hover_text(*hint).clicked() {
+                        self.set_tool(if self.tool == *mode { ToolMode::None } else { *mode });
+                    }
                 }
-            }
-        });
+            });
+        }
         ui.add_space(4.0);
         let enabled = on && self.tool != ToolMode::None;
         match self.tool {
@@ -2164,10 +2177,10 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 egui::Panel::bottom("right_bottom").exact_size(80.0).frame(egui::Frame::new().fill(theme::WINDOW)).show(ui, |ui| self.right_bottom(ui));
                 egui::CentralPanel::no_frame().show(ui, |ui| {
-                    let bars = self.scroll_bars();
-                    if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
-                        ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
-                    }
+                    // The tool panels (遮罩 above all) can be taller than the column: its
+                    // scroll bar shows whenever that happens, whatever 顯示捲軸 says.
+                    let bars = egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded;
+                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
                     egui::ScrollArea::vertical().id_salt("right_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.right_column(ui));
                 });
             });
