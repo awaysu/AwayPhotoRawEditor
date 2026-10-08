@@ -8,7 +8,7 @@ use awpr_gpu::{GpuFrame, GpuPipeline};
 use std::time::Instant;
 
 fn cases() -> Vec<(&'static str, ImageAdjustments)> {
-    let d = ImageAdjustments::default;
+    let d = crate::hashtest::v1;
     vec![
         ("白平衡+曝光", ImageAdjustments { exposure: 1.0, temperature: 3200.0, ..d() }),
         ("色調曲線", ImageAdjustments { contrast: 40.0, highlights: -50.0, shadows: 40.0, ..d() }),

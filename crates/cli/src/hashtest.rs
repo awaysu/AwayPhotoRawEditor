@@ -181,8 +181,14 @@ fn samples(b: &FloatImage) -> String {
 // ⚠️ Must stay word for word identical to PipelineHash.swift `cases()` and the C#
 // `Cases()`, or the comparison loses its meaning.
 
+/// The defaults the 14 cases start from: version 1 (處理版本 2), whatever a new photo
+/// gets today — the cases fingerprint the version-1 maths.
+pub fn v1() -> ImageAdjustments {
+    ImageAdjustments { pipeline_version: 1, ..ImageAdjustments::default() }
+}
+
 pub fn cases() -> Vec<(&'static str, ImageAdjustments)> {
-    let d = ImageAdjustments::default;
+    let d = v1;
     let mut out = Vec::new();
 
     out.push(("v1 預設（LUT 恆等 + 白平衡中性）", d()));
@@ -253,7 +259,7 @@ pub fn combined() -> ImageAdjustments {
         crop_height: 0.85,
         crop_angle: -3.0,
         distortion: -20.0,
-        ..ImageAdjustments::default()
+        ..v1()
     })
 }
 

@@ -16,6 +16,7 @@ use crate::buffer::{round_half_even, round_half_even_f32, FloatImage};
 use crate::color::{self, WhiteBalanceReference};
 use crate::model::{CameraColorInfo, ImageAdjustments, LinearGradient, Rotation};
 use crate::tone;
+use crate::v3::V3Params;
 use std::f64::consts::PI;
 
 /// Per-render context.
@@ -28,6 +29,18 @@ pub struct ProcessContext {
     /// Camera colour data for the white-balance matrix; None → black-body multipliers.
     pub camera: Option<CameraColorInfo>,
     pub white_balance_reference: WhiteBalanceReference,
+    /// What the source pixels are. Only 處理版本 3 reads linear camera sources.
+    pub source_kind: SourceKind,
+}
+
+/// The kind of source a render starts from.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum SourceKind {
+    /// Gamma-encoded RGB (LibRaw's sRGB decode, a camera preview, a regular image).
+    #[default]
+    Encoded,
+    /// LibRaw's linear camera RGB (處理版本 3), with the auto-bright gain to apply.
+    LinearCamera { gain: f32 },
 }
 
 /// Parameters for a geometry resample. f64 on purpose: the CPU geometry must not drift
@@ -87,6 +100,8 @@ pub trait StageTarget {
     fn width(&self) -> usize;
     fn height(&self) -> usize;
     fn pixel(&mut self, p: &PixelStageParams) -> Result<(), StageError>;
+    /// 處理版本 3's colour pass (`v3.rs`).
+    fn pixel_v3(&mut self, p: &V3Params) -> Result<(), StageError>;
     fn blur(&mut self, op: BlurOp) -> Result<(), StageError>;
     fn heal(&mut self, adj: &ImageAdjustments) -> Result<(), StageError>;
     fn resample(&mut self, p: ResampleParams, out_w: usize, out_h: usize) -> Result<(), StageError>;
@@ -104,8 +119,16 @@ pub fn run_pipeline<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &Proc
     let blur_stages = adj.noise_reduction > 0.0 || adj.sharpening != 0.0;
     let grad_active = adj.has_active_gradient();
 
+    if adj.is_v3() {
+        // 處理版本 3: its own colour pass; the stages after it are version 1's.
+        t.pixel_v3(&V3Params::new(adj, ctx))?;
+        if grad_active && !blur_stages {
+            t.pixel(&build_gradient_params(adj))?; // 7
+        }
+    } else {
     // 1-4 (with no blur stage in between, 7 gradient folds into the same pass)
     t.pixel(&build_color_params(adj, ctx, grad_active && !blur_stages))?;
+    }
 
     if blur_stages {
         if adj.noise_reduction > 0.0 {
@@ -244,6 +267,11 @@ impl StageTarget for CpuTarget<'_> {
                 self.buf = Some(buf);
             }
         }
+        Ok(())
+    }
+
+    fn pixel_v3(&mut self, p: &V3Params) -> Result<(), StageError> {
+        crate::v3::apply(self.buf(), p);
         Ok(())
     }
 

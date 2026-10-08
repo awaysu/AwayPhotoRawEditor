@@ -11,7 +11,8 @@ pub mod model;
 pub mod pipeline;
 pub mod resize;
 pub mod tone;
+pub mod v3;
 
 pub use buffer::FloatImage;
 pub use model::{CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, Rotation};
-pub use pipeline::{apply_to_float, ProcessContext};
+pub use pipeline::{apply_to_float, ProcessContext, SourceKind};

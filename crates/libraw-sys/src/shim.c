@@ -194,6 +194,43 @@ fail:
     return 0;
 }
 
+int awpr_decode_linear(const char *path, awpr_image *out)
+{
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+
+    libraw_data_t *lr = libraw_init(0);
+    if (!lr) return 0;
+
+    libraw_set_output_color(lr, 0);      /* raw camera colour: no matrix       */
+    libraw_set_output_bps(lr, 16);
+    libraw_set_gamma(lr, 0, 1.0f);       /* linear                             */
+    libraw_set_gamma(lr, 1, 1.0f);
+    libraw_set_no_auto_bright(lr, 1);
+    for (int i = 0; i < 4; i++)          /* no white balance: scaled so the    */
+        libraw_set_user_mul(lr, i, 1.0f);/* sensor clip lands on 65535         */
+
+    if (open_utf8(lr, path) != LIBRAW_SUCCESS) goto fail;
+    if (lr->idata.colors != 3) goto fail; /* four-colour sensors: not linear-capable */
+    if (libraw_unpack(lr) != LIBRAW_SUCCESS) goto fail;
+    if (libraw_dcraw_process(lr) != LIBRAW_SUCCESS) goto fail;
+
+    int err = 0;
+    libraw_processed_image_t *img = libraw_dcraw_make_mem_image(lr, &err);
+    if (!img) goto fail;
+    if (img->type != LIBRAW_IMAGE_BITMAP || img->colors < 3 || img->bits != 16 ||
+        img->width <= 0 || img->height <= 0) {
+        libraw_dcraw_clear_mem(img);
+        goto fail;
+    }
+    fill_image(out, lr, img);
+    return 1;
+
+fail:
+    libraw_close(lr);
+    return 0;
+}
+
 int awpr_decode_thumb(const char *path, awpr_image *out, int *flip)
 {
     if (!out) return 0;

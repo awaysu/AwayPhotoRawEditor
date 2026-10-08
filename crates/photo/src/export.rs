@@ -762,7 +762,6 @@ pub struct Written {
 /// Export one photo under `base` (`ExportOne`): full decode → pipeline → watermark at
 /// full resolution → long-edge resize → encode → write.
 pub fn export_one(item: &ExportItem, s: &ExportSettings, opt: LoaderOptions, base: &str, render: &Render) -> Result<Written, String> {
-    let (full, source) = loader::decode_full(&item.path, opt).ok_or_else(|| crate::text::tr("無法解碼影像", &[]))?;
     let (adj, exif, _) = store::load_all(&item.path, item.copy);
     let adj = adj.unwrap_or_default();
     let mut exif = exif.unwrap_or_else(|| crate::exif::read(&item.path));
@@ -773,7 +772,8 @@ pub fn export_one(item: &ExportItem, s: &ExportSettings, opt: LoaderOptions, bas
             let _ = store::save(&item.path, &adj, item.copy, Some(&exif));
         }
     }
-    let ctx = ProcessContext { camera: exif.camera.clone(), white_balance_reference: source.white_balance_reference(), ..Default::default() };
+    // 處理版本 3 RAWs render from LibRaw's linear decode; everything else as before.
+    let (full, ctx) = loader::decode_for_render(&item.path, &adj, exif.camera.as_ref(), opt).ok_or_else(|| crate::text::tr("無法解碼影像", &[]))?;
     let mut out = render(&full, &adj, &ctx);
     drop(full);
     watermark::apply(&mut out, &s.watermark(), 1.0);

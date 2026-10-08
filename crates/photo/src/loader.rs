@@ -7,7 +7,8 @@ use awpr_core::color::WhiteBalanceReference;
 use awpr_core::libraw::{self, Thumbnail};
 use awpr_core::pipeline::rotate_discrete;
 use awpr_core::resize::{resize_to_fit, resize_to_max_dim};
-use awpr_core::{FloatImage, Rotation};
+use awpr_core::pipeline::{ProcessContext, SourceKind};
+use awpr_core::{v3, CameraColorInfo, FloatImage, ImageAdjustments, Rotation};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
 
@@ -198,3 +199,74 @@ pub fn load_proxy(path: &str, opt: LoaderOptions) -> Option<(FloatImage, DecodeS
     // An unreadable cache: decode directly rather than failing the photo.
     decode_full(path, opt).map(|(b, s)| (resize_to_max_dim(b, PROXY_MAX_DIM), s))
 }
+
+// ---- 處理版本 3: the linear camera source ---------------------------------------------
+
+/// Whether a photo can have a linear camera source: a RAW LibRaw reads with a 3×3 camera
+/// matrix. Everything else renders version 3 from its gamma-encoded pixels.
+pub fn linear_capable(path: &str, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> bool {
+    paths::is_raw(path) && opt.use_libraw && libraw::available() && camera.is_some_and(|c| c.is_valid())
+}
+
+/// Full-resolution linear camera RGB, highlights reconstructed, and its auto-bright gain.
+pub fn decode_linear_full(path: &str, camera: &CameraColorInfo) -> Option<(FloatImage, f32)> {
+    let mut full = libraw::decode_linear(path, exif::visible_size(path))?;
+    let gain = v3::prepare_linear_source(&mut full, camera);
+    Some((full, gain))
+}
+
+fn read_gain(path: &str) -> Option<f32> {
+    let s = std::fs::read_to_string(paths::proxy_v3_meta_path(path)).ok()?;
+    s.lines().find_map(|l| l.trim().strip_prefix("gain=")).and_then(|v| v.trim().parse::<f32>().ok()).filter(|g| g.is_finite() && *g > 0.0)
+}
+
+/// Build the version-3 proxy unless it is cached: `RAW_TEMP/{file}.rawpipe.v3.png` and
+/// its gain. The gain is measured on the full decode, as LibRaw's auto-bright is.
+pub fn ensure_proxy_v3(path: &str, camera: &CameraColorInfo) -> bool {
+    let png = paths::proxy_v3_path(path);
+    let lock = path_lock(&png);
+    let _g = lock.lock().unwrap();
+    if codec::is_complete(&png) && read_gain(path).is_some() {
+        return true;
+    }
+    let Some((full, gain)) = decode_linear_full(path, camera) else { return false };
+    let scaled = resize_to_max_dim(full, PROXY_MAX_DIM);
+    if codec::save_linear_png(&scaled, &png).is_err() {
+        return false;
+    }
+    paths::write_atomic(&paths::proxy_v3_meta_path(path), format!("gain={gain}
+").as_bytes()).is_ok()
+}
+
+/// The version-3 editing proxy and its gain (building it if needed).
+pub fn load_proxy_v3(path: &str, camera: &CameraColorInfo) -> Option<(FloatImage, f32)> {
+    ensure_proxy_v3(path, camera);
+    Some((codec::load_linear_png(&paths::proxy_v3_path(path))?, read_gain(path)?))
+}
+
+/// The editing proxy for these adjustments: the linear camera proxy for a version-3 RAW,
+/// otherwise the usual one. Falls back to the usual proxy when the linear one fails.
+pub fn load_proxy_for(path: &str, adj: &ImageAdjustments, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> Option<(FloatImage, DecodeSource, SourceKind)> {
+    if adj.is_v3() && linear_capable(path, camera, opt) {
+        if let Some((p, gain)) = camera.and_then(|c| load_proxy_v3(path, c)) {
+            return Some((p, DecodeSource::LibRaw, SourceKind::LinearCamera { gain }));
+        }
+    }
+    load_proxy(path, opt).map(|(p, s)| (p, s, SourceKind::Encoded))
+}
+
+/// The full-resolution source to render `adj` from, with its context (export).
+pub fn decode_for_render(path: &str, adj: &ImageAdjustments, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> Option<(FloatImage, ProcessContext)> {
+    if adj.is_v3() && linear_capable(path, camera, opt) {
+        if let Some(cam) = camera {
+            if let Some((full, gain)) = decode_linear_full(path, cam) {
+                let ctx = ProcessContext { camera: Some(cam.clone()), source_kind: SourceKind::LinearCamera { gain }, ..Default::default() };
+                return Some((full, ctx));
+            }
+        }
+    }
+    let (full, source) = decode_full(path, opt)?;
+    let ctx = ProcessContext { camera: camera.cloned(), white_balance_reference: source.white_balance_reference(), ..Default::default() };
+    Some((full, ctx))
+}
+

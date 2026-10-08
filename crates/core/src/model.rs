@@ -85,7 +85,8 @@ impl Default for HealSpot {
 /// The complete non-destructive edit description for one photo.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImageAdjustments {
-    /// 0 = legacy maths, 1 = linear light + camera-matrix white balance.
+    /// 0 = legacy maths, 1 = linear light + camera-matrix white balance, 2 = the wide-gamut
+    /// linear pipeline (`v3.rs`; shown to the user as 處理版本 1 / 2 / 3).
     pub pipeline_version: i32,
 
     pub exposure: f64,
@@ -118,13 +119,40 @@ pub struct ImageAdjustments {
 
     pub heal_size: f64,
     pub heal_spots: Vec<HealSpot>,
+
+    // ---- pipeline version 2 (處理版本 3) only ----
+    /// 高光復原 0..100.
+    pub highlight_recovery: f64,
+    /// HSL per colour band (紅 橙 黃 綠 青 藍 紫 洋紅), each −100..100.
+    pub hsl_hue: [f64; 8],
+    pub hsl_saturation: [f64; 8],
+    pub hsl_luminance: [f64; 8],
+    /// Point curves in 0..1 × 0..1 (encoded values); empty = identity.
+    pub curve_rgb: Vec<(f64, f64)>,
+    pub curve_red: Vec<(f64, f64)>,
+    pub curve_green: Vec<(f64, f64)>,
+    pub curve_blue: Vec<(f64, f64)>,
 }
 
 impl ImageAdjustments {
-    pub const CURRENT_PIPELINE_VERSION: i32 = 1;
+    pub const CURRENT_PIPELINE_VERSION: i32 = 2;
+    /// The first version with the wide-gamut pipeline (處理版本 3).
+    pub const V3_PIPELINE_VERSION: i32 = 2;
 
     pub fn is_legacy_pipeline(&self) -> bool {
         self.pipeline_version < 1
+    }
+
+    /// 處理版本 3: highlight recovery, HSL and curves exist only here.
+    pub fn is_v3(&self) -> bool {
+        self.pipeline_version >= Self::V3_PIPELINE_VERSION
+    }
+
+    /// True when any version-3-only value differs from its default.
+    pub fn has_v3_values(&self) -> bool {
+        self.highlight_recovery != 0.0
+            || self.hsl_hue.iter().chain(&self.hsl_saturation).chain(&self.hsl_luminance).any(|&v| v != 0.0)
+            || [&self.curve_rgb, &self.curve_red, &self.curve_green, &self.curve_blue].iter().any(|c| !crate::v3::curve_is_identity(c))
     }
 
     /// True when at least one gradient actually changes pixels.
@@ -161,6 +189,14 @@ impl Default for ImageAdjustments {
             gradients: Vec::new(),
             heal_size: 10.0,
             heal_spots: Vec::new(),
+            highlight_recovery: 0.0,
+            hsl_hue: [0.0; 8],
+            hsl_saturation: [0.0; 8],
+            hsl_luminance: [0.0; 8],
+            curve_rgb: Vec::new(),
+            curve_red: Vec::new(),
+            curve_green: Vec::new(),
+            curve_blue: Vec::new(),
         }
     }
 }

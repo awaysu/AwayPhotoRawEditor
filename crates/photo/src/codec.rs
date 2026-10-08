@@ -138,6 +138,49 @@ pub fn is_complete(path: &str) -> bool {
     b == [0x49, 0x45, 0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82] || (b[6] == 0xFF && b[7] == 0xD9) || (b[5] == 0xFF && b[6] == 0xD9)
 }
 
+// ---- 處理版本 3 linear proxy (.rawpipe.v3.png) -----------------------------------------
+// Linear camera RGB reaches above 1 after highlight reconstruction, so it is stored as
+// sqrt(v / LINEAR_MAX) in a 16-bit RGB PNG: 0.2 % steps at 1/1000 of white, finer above.
+
+/// The largest linear value the proxy keeps (reconstructed highlights rarely exceed 2).
+pub const LINEAR_MAX: f32 = 4.0;
+
+pub fn save_linear_png(buf: &FloatImage, path: &str) -> std::io::Result<()> {
+    let samples: Vec<u16> = buf
+        .data
+        .par_chunks(4)
+        .flat_map_iter(|p| {
+            let e = |v: f32| ((v.clamp(0.0, LINEAR_MAX) / LINEAR_MAX).sqrt() * 65535.0 + 0.5) as u16;
+            [e(p[0]), e(p[1]), e(p[2])]
+        })
+        .collect();
+    let img = image::ImageBuffer::<image::Rgb<u16>, Vec<u16>>::from_raw(buf.width as u32, buf.height as u32, samples).ok_or_else(|| std::io::Error::other("size"))?;
+    let mut bytes = Vec::new();
+    DynamicImage::ImageRgb16(img).write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png).map_err(std::io::Error::other)?;
+    crate::paths::write_atomic(path, &bytes)
+}
+
+pub fn load_linear_png(path: &str) -> Option<FloatImage> {
+    if !is_complete(path) {
+        return None;
+    }
+    let img = ImageReader::open(path).ok()?.with_guessed_format().ok()?.decode().ok()?;
+    let DynamicImage::ImageRgb16(rgb) = img else { return None };
+    let (w, h) = (rgb.width() as usize, rgb.height() as usize);
+    let src = rgb.as_raw();
+    let mut out = FloatImage::new(w, h);
+    out.data.par_chunks_mut(w * 4).enumerate().for_each(|(y, row)| {
+        for x in 0..w {
+            for c in 0..3 {
+                let e = src[(y * w + x) * 3 + c] as f32 / 65535.0;
+                row[x * 4 + c] = e * e * LINEAR_MAX;
+            }
+            row[x * 4 + 3] = 1.0;
+        }
+    });
+    Some(out)
+}
+
 // ---- 16-bit proxy (.f16) -----------------------------------------------------------
 // "AP16", i32 width, i32 height (little-endian), then RGBA u16 samples. LibRaw's
 // high-precision output is 16-bit integer, so this is lossless.

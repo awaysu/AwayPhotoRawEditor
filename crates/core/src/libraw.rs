@@ -131,6 +131,31 @@ pub fn decode_full_untrimmed(path: &str, bps: i32) -> Option<FloatImage> {
     decode(path, bps, None, false)
 }
 
+/// Full-resolution linear camera RGB for 處理版本 3: no white balance, no colour matrix,
+/// no gamma, no auto-bright, 16-bit, sensor clip = 1.0, flip applied. None for files
+/// LibRaw cannot decode and for four-colour sensors. The mask border is trimmed the way
+/// `decode_full` trims it, so both decodes cover the same pixels.
+pub fn decode_linear(path: &str, expected_visible: Option<(usize, usize)>) -> Option<FloatImage> {
+    let cp = c_path(path)?;
+    run_large_stack(move || {
+        let mut img = sys::awpr_image::default();
+        if unsafe { sys::awpr_decode_linear(cp.as_ptr(), &mut img) } == 0 {
+            return None;
+        }
+        let out = (|| {
+            if img.data.is_null() || img.bits != 16 {
+                return None;
+            }
+            let (w, h, colors) = (img.width as usize, img.height as usize, img.colors as usize);
+            let s = unsafe { std::slice::from_raw_parts(img.data as *const u16, w * h * colors) };
+            let rect = visible_rect(&|i| s[i] as u32, w, h, colors, 2 * 257, expected_visible);
+            buffer_from(s, w, colors, rect, 1.0f32 / 65535.0f32)
+        })();
+        unsafe { sys::awpr_free_image(&mut img) };
+        out
+    })
+}
+
 fn decode(path: &str, bps: i32, expected_visible: Option<(usize, usize)>, trim: bool) -> Option<FloatImage> {
     let cp = c_path(path)?;
     run_large_stack(move || {

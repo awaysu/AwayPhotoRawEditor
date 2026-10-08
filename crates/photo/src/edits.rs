@@ -20,6 +20,15 @@ pub fn reset_tonal(a: &mut ImageAdjustments) {
     (a.exposure, a.contrast, a.highlights, a.shadows, a.whites, a.blacks) = (d.exposure, d.contrast, d.highlights, d.shadows, d.whites, d.blacks);
     (a.vibrance, a.saturation) = (d.vibrance, d.saturation);
     (a.sharpening, a.noise_reduction, a.vignette, a.distortion) = (d.sharpening, d.noise_reduction, d.vignette, d.distortion);
+    reset_v3(a);
+}
+
+/// The 處理版本 3 values (高光復原, HSL, curves) back to neutral.
+pub fn reset_v3(a: &mut ImageAdjustments) {
+    let d = ImageAdjustments::default();
+    a.highlight_recovery = d.highlight_recovery;
+    (a.hsl_hue, a.hsl_saturation, a.hsl_luminance) = (d.hsl_hue, d.hsl_saturation, d.hsl_luminance);
+    (a.curve_rgb, a.curve_red, a.curve_green, a.curve_blue) = (d.curve_rgb, d.curve_red, d.curve_green, d.curve_blue);
 }
 
 /// 基本／色彩／細節 重設 (white balance included, geometry and local edits kept).
@@ -28,6 +37,7 @@ pub fn reset_basic_color_detail(a: &mut ImageAdjustments) {
     (a.exposure, a.contrast, a.highlights, a.shadows, a.whites, a.blacks) = (d.exposure, d.contrast, d.highlights, d.shadows, d.whites, d.blacks);
     (a.temperature, a.tint, a.vibrance, a.saturation) = (d.temperature, d.tint, d.vibrance, d.saturation);
     (a.sharpening, a.noise_reduction, a.vignette) = (d.sharpening, d.noise_reduction, d.vignette);
+    reset_v3(a);
 }
 
 /// Copy onto `target` every scalar field that differs between `edited` and `baseline` —
@@ -44,6 +54,7 @@ pub fn apply_delta(target: &mut ImageAdjustments, edited: &ImageAdjustments, bas
     sync!(
         exposure, contrast, highlights, shadows, whites, blacks, temperature, tint, vibrance, saturation, sharpening, noise_reduction, vignette, distortion,
         crop_aspect_ratio, crop_angle, crop_x, crop_y, crop_width, crop_height, rotation, heal_size,
+        highlight_recovery, hsl_hue, hsl_saturation, hsl_luminance, curve_rgb, curve_red, curve_green, curve_blue,
     );
 }
 
@@ -66,12 +77,24 @@ pub fn convert_legacy_to_linear(a: &mut ImageAdjustments, exif: Option<&ExifData
     // change, so the Kelvin value stays.
 }
 
-/// 升級處理版本 for one photo; false when it already uses the current maths.
+/// 處理版本 2 → 3. Exposure and white balance mean the same thing in both — version 3
+/// folds version 2's decode and white-balance matrix into one (`v3::camera_to_srgb`) and
+/// reproduces LibRaw's auto-bright as a gain — so they stay as they are; tone, colour and
+/// detail keep their values; the version-3-only tools start neutral.
+pub fn convert_linear_to_v3(a: &mut ImageAdjustments) {
+    reset_v3(a);
+}
+
+/// 升級處理版本 for one photo, from any older version straight to the current one;
+/// false when it already uses the current maths.
 pub fn upgrade(a: &mut ImageAdjustments, exif: Option<&ExifData>) -> bool {
-    if !a.is_legacy_pipeline() {
+    if a.pipeline_version >= ImageAdjustments::CURRENT_PIPELINE_VERSION {
         return false;
     }
-    convert_legacy_to_linear(a, exif);
+    if a.is_legacy_pipeline() {
+        convert_legacy_to_linear(a, exif);
+    }
+    convert_linear_to_v3(a);
     a.pipeline_version = ImageAdjustments::CURRENT_PIPELINE_VERSION;
     true
 }
@@ -125,7 +148,7 @@ mod tests {
         assert!(upgrade(&mut a, None));
         assert_eq!(a.exposure, 1.0 / 0.45);
         assert_eq!(a.gradients[0].exposure, -5.0); // −6.67 clamped
-        assert_eq!((a.temperature, a.tint, a.pipeline_version), (5600.0, 5.0, 1));
+        assert_eq!((a.temperature, a.tint, a.pipeline_version), (5600.0, 5.0, ImageAdjustments::CURRENT_PIPELINE_VERSION));
         assert!(!upgrade(&mut a, None)); // already current
 
         // With camera data: offset from the EXIF as-shot Kelvin moved onto the matrix as-shot.
@@ -136,5 +159,58 @@ mod tests {
         assert!(upgrade(&mut b, Some(&exif)));
         assert_eq!(b.temperature, (k + 300.0).clamp(2000.0, 12000.0));
         assert_eq!(b.tint, (t - 4.0).clamp(-100.0, 100.0));
+    }
+    /// 升級處理版本 2 → 3 on a synthetic photo: version 2 renders LibRaw's decode
+    /// (BT.709 of rgb_cam · pre_mul · raw · auto-bright), version 3 the linear camera data
+    /// with the same gain. With exposure and white balance set (and no version-3-only
+    /// values) the two must agree to 8-bit rounding.
+    #[test]
+    fn upgrade_2_to_3_keeps_exposure_and_white_balance() {
+        use awpr_core::color::WhiteBalanceReference;
+        use awpr_core::{apply_to_float, v3, FloatImage, ProcessContext, SourceKind};
+        let cam = CameraColorInfo { pre_mul: [2.1792, 1.0, 1.2902], cam_mul: [1.9463, 1.0, 1.5488], rgb_cam: [1.7, -0.6, -0.1, -0.2, 1.5, -0.3, 0.05, -0.45, 1.4] };
+        let gain = 1.6f32;
+        let (w, h) = (48usize, 24usize);
+        let mut raw = FloatImage::new(w, h);
+        for y in 0..h {
+            for x in 0..w {
+                // Greys and mild colours under daylight (raw ≈ 1 / pre_mul for a neutral).
+                let level = 0.01 + 0.13 * x as f32 / w as f32;
+                let tilt = [1.0 + 0.25 * ((y % 3) as f32 - 1.0), 1.0, 1.0 - 0.2 * ((y % 4) as f32 - 1.5) / 1.5];
+                let o = raw.index(x, y);
+                for c in 0..3 {
+                    raw.data[o + c] = level * tilt[c] / cam.pre_mul[c] as f32;
+                }
+                raw.data[o + 3] = 1.0;
+            }
+        }
+        let mut decoded = raw.clone();
+        for p in decoded.data.chunks_exact_mut(4) {
+            let q: Vec<f64> = (0..3).map(|c| p[c] as f64 * cam.pre_mul[c]).collect();
+            for r in 0..3 {
+                let s: f64 = (0..3).map(|k| cam.rgb_cam[r * 3 + k] * q[k]).sum::<f64>() * gain as f64;
+                p[r] = v3::oetf(s.clamp(0.0, 1.0) as f32);
+            }
+        }
+        let v2 = ImageAdjustments { pipeline_version: 1, exposure: 0.4, temperature: 4300.0, tint: 6.0, ..Default::default() };
+        let mut up = v2.clone();
+        assert!(upgrade(&mut up, None));
+        assert_eq!((up.exposure, up.temperature, up.tint, up.pipeline_version), (0.4, 4300.0, 6.0, 2));
+        let ctx2 = ProcessContext { camera: Some(cam.clone()), white_balance_reference: WhiteBalanceReference::Decode, ..Default::default() };
+        let ctx3 = ProcessContext { camera: Some(cam), source_kind: SourceKind::LinearCamera { gain }, ..Default::default() };
+        let a = apply_to_float(&decoded, &v2, &ctx2);
+        let b = apply_to_float(&raw, &up, &ctx3);
+        let byte = |v: f32| (v * 255.0 + 0.5).clamp(0.0, 255.0) as i32;
+        let (mut worst, mut sum) = (0, 0i64);
+        for (i, (x, y)) in a.data.iter().zip(&b.data).enumerate() {
+            if i % 4 == 3 {
+                continue;
+            }
+            let d = (byte(*x) - byte(*y)).abs();
+            worst = worst.max(d);
+            sum += d as i64;
+        }
+        assert!(worst <= 1, "8-bit difference up to {worst}");
+        assert!((sum as f64) / ((w * h * 3) as f64) < 0.2, "mean 8-bit difference {}", sum as f64 / (w * h * 3) as f64);
     }
 }

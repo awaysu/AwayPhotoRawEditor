@@ -16,6 +16,7 @@ use awpr_core::color;
 use awpr_core::pipeline::{
     self, BlurOp, PixelStageParams, ProcessContext, ResampleParams, StageError, StageTarget,
 };
+use awpr_core::v3::V3Params;
 use awpr_core::{FloatImage, ImageAdjustments, Rotation};
 use bytemuck::{Pod, Zeroable};
 use std::collections::HashMap;
@@ -120,6 +121,7 @@ fn err(s: impl Into<String>) -> StageError {
 
 struct Kernels {
     pixel: wgpu::ComputePipeline,
+    pixel_v3: wgpu::ComputePipeline,
     blur_h: wgpu::ComputePipeline,
     blur_v: wgpu::ComputePipeline,
     blur_combine: wgpu::ComputePipeline,
@@ -247,6 +249,7 @@ impl GpuPipeline {
         let make = |name: &str, src: &str| compute(name, shaders::module(src));
         let kernels = Kernels {
             pixel: make("pixelStage", shaders::PIXEL),
+            pixel_v3: compute("pixelV3", shaders::PIXEL_V3.to_string()),
             blur_h: make("blurH", shaders::BLUR_H),
             blur_v: make("blurV", shaders::BLUR_V),
             blur_combine: make("blurCombine", shaders::BLUR_COMBINE),
@@ -765,6 +768,21 @@ impl<'a> StageTarget for GpuTarget<'a> {
         ];
         let (w, h) = (self.width, self.height);
         self.dispatch("pixel", &gpu.kernels.pixel, &entries, w, h);
+        Ok(())
+    }
+
+    fn pixel_v3(&mut self, p: &V3Params) -> Result<(), StageError> {
+        let gpu = self.gpu;
+        let (w, h) = (self.width, self.height);
+        let words = gpu.storage(&p.words(w, h));
+        let luts = gpu.storage(&p.luts);
+        let image = self.image().clone();
+        let entries = [
+            wgpu::BindGroupEntry { binding: 0, resource: image.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: words.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: luts.as_entire_binding() },
+        ];
+        self.dispatch("pixelV3", &gpu.kernels.pixel_v3, &entries, w, h);
         Ok(())
     }
 

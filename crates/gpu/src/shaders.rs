@@ -194,6 +194,197 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// 處理版本 3's colour pass: a transliteration of `awpr_core::v3::pixel`. Parameters come
+/// from `V3Params::words` (offsets `W_*`, repeated below), the three tone tables from
+/// `v3::build_luts`. Standalone (does not use `module`).
+pub const PIXEL_V3: &str = r#"
+const W_LINEAR: u32 = 0u;
+const W_COLOR: u32 = 1u;
+const W_MIXER: u32 = 2u;
+const W_HL: u32 = 3u;
+const W_VIB: u32 = 4u;
+const W_SAT: u32 = 5u;
+const W_SKIN: u32 = 6u;
+const W_WIDTH: u32 = 7u;
+const W_HEIGHT: u32 = 8u;
+const W_WB: u32 = 9u;
+const W_M_IN: u32 = 12u;
+const W_OUT: u32 = 21u;
+const W_OUT_Y: u32 = 30u;
+const W_TO_LMS: u32 = 33u;
+const W_FROM_LMS: u32 = 42u;
+const W_TO_LAB: u32 = 51u;
+const W_FROM_LAB: u32 = 60u;
+const W_BANDS: u32 = 69u;
+const W_HUE: u32 = 77u;
+const W_HSAT: u32 = 85u;
+const W_HLUM: u32 = 93u;
+
+const LUT_SIZE: u32 = 4096u;
+const LUT_MAX: f32 = 2.0;
+const PI: f32 = 3.14159265358979;
+const TAU: f32 = 6.28318530717959;
+
+@group(0) @binding(0) var<storage, read_write> img: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> w: array<f32>;
+@group(0) @binding(2) var<storage, read> luts: array<f32>;
+
+fn mul3(o: u32, v: vec3<f32>) -> vec3<f32> {
+    return vec3<f32>(
+        w[o] * v.x + w[o + 1u] * v.y + w[o + 2u] * v.z,
+        w[o + 3u] * v.x + w[o + 4u] * v.y + w[o + 5u] * v.z,
+        w[o + 6u] * v.x + w[o + 7u] * v.y + w[o + 8u] * v.z);
+}
+
+fn oetf(l: f32) -> f32 {
+    if (!(l > 0.0)) { return 0.0; }
+    if (l < 0.018) { return 4.5 * l; }
+    return 1.099 * pow(l, 0.45) - 0.099;
+}
+
+fn eotf(v: f32) -> f32 {
+    if (!(v > 0.0)) { return 0.0; }
+    if (v < 0.081) { return v / 4.5; }
+    return pow((v + 0.099) / 1.099, 1.0 / 0.45);
+}
+
+fn cbrt_s(x: f32) -> f32 {
+    if (x == 0.0) { return 0.0; }
+    if (x < 0.0) { return -pow(-x, 1.0 / 3.0); }
+    return pow(x, 1.0 / 3.0);
+}
+
+fn oklab_from(rgb: vec3<f32>) -> vec3<f32> {
+    let l = mul3(W_TO_LMS, rgb);
+    return mul3(W_TO_LAB, vec3<f32>(cbrt_s(l.x), cbrt_s(l.y), cbrt_s(l.z)));
+}
+
+fn oklab_to(lab: vec3<f32>) -> vec3<f32> {
+    let l = mul3(W_FROM_LAB, lab);
+    return mul3(W_FROM_LMS, l * l * l);
+}
+
+fn wrap(a: f32) -> f32 {
+    let t = a + PI;
+    return t - TAU * floor(t / TAU) - PI;
+}
+
+fn rem_tau(a: f32) -> f32 {
+    return a - TAU * floor(a / TAU);
+}
+
+fn sample_lut(c: u32, x: f32) -> f32 {
+    let base = c * LUT_SIZE;
+    if (!(x > 0.0)) { return luts[base]; }
+    let f = min(x, LUT_MAX) * (f32(LUT_SIZE - 1u) / LUT_MAX);
+    let i = min(u32(f), LUT_SIZE - 2u);
+    let t = f - f32(i);
+    return luts[base + i] + (luts[base + i + 1u] - luts[base + i]) * t;
+}
+
+fn vib_factor(c: f32, h: f32) -> f32 {
+    let vib = w[W_VIB];
+    let low = 1.0 - clamp(c / 0.22, 0.0, 1.0);
+    var skin = 1.0;
+    if (vib > 0.0) {
+        let d = wrap(h - w[W_SKIN]) / 0.35;
+        skin = 1.0 - 0.6 * exp(-(d * d));
+    }
+    return max(1.0 + vib * low * low * skin * 1.2, 0.0);
+}
+
+fn color_ops(rgb: vec3<f32>) -> vec3<f32> {
+    var lab = oklab_from(rgb);
+    if (w[W_MIXER] == 0.0) {
+        let c0 = sqrt(lab.y * lab.y + lab.z * lab.z);
+        var c = c0;
+        if (w[W_VIB] != 0.0) {
+            c *= vib_factor(c, atan2(lab.z, lab.y));
+        }
+        if (w[W_SAT] != 0.0) {
+            c *= max(1.0 + w[W_SAT], 0.0);
+        }
+        if (c0 > 0.0) {
+            let k = c / c0;
+            lab.y *= k;
+            lab.z *= k;
+        }
+        return oklab_to(lab);
+    }
+    var l = lab.x;
+    var c = sqrt(lab.y * lab.y + lab.z * lab.z);
+    var h = atan2(lab.z, lab.y);
+    // band weights (v3::band_weights)
+    var dh = 0.0;
+    var ds = 0.0;
+    var dl = 0.0;
+    for (var i = 0u; i < 8u; i++) {
+        let a = w[W_BANDS + i];
+        let b = w[W_BANDS + (i + 1u) % 8u];
+        let span = rem_tau(wrap(b - a));
+        let d = rem_tau(wrap(h - a));
+        if (d <= span) {
+            let t = d / span;
+            let s = 0.5 - 0.5 * cos(t * PI);
+            let j = (i + 1u) % 8u;
+            dh = (1.0 - s) * w[W_HUE + i] + s * w[W_HUE + j];
+            ds = (1.0 - s) * w[W_HSAT + i] + s * w[W_HSAT + j];
+            dl = (1.0 - s) * w[W_HLUM + i] + s * w[W_HLUM + j];
+            break;
+        }
+    }
+    let chroma_w = min(c / 0.12, 1.0);
+    h += dh * chroma_w;
+    c *= max(1.0 + ds, 0.0);
+    l += dl * chroma_w * sqrt(max(l, 0.05));
+    if (w[W_VIB] != 0.0) {
+        c *= vib_factor(c, h);
+    }
+    if (w[W_SAT] != 0.0) {
+        c *= max(1.0 + w[W_SAT], 0.0);
+    }
+    return oklab_to(vec3<f32>(l, c * cos(h), c * sin(h)));
+}
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let width = u32(w[W_WIDTH]);
+    let height = u32(w[W_HEIGHT]);
+    if (gid.x >= width || gid.y >= height) { return; }
+    let idx = gid.y * width + gid.x;
+    let px = img[idx];
+    var v = px.rgb;
+    if (w[W_LINEAR] != 0.0) {
+        let wb = vec3<f32>(w[W_WB], w[W_WB + 1u], w[W_WB + 2u]);
+        let lim = min(wb.x, min(wb.y, wb.z));
+        let cn = min(v * wb, vec3<f32>(lim)) / wb;
+        v = cn + w[W_HL] * (v - cn);
+    } else {
+        v = vec3<f32>(eotf(v.x), eotf(v.y), eotf(v.z));
+    }
+    var lin = mul3(W_M_IN, v);
+    lin = vec3<f32>(eotf(sample_lut(0u, oetf(lin.x))), eotf(sample_lut(1u, oetf(lin.y))), eotf(sample_lut(2u, oetf(lin.z))));
+    if (w[W_COLOR] != 0.0) {
+        lin = color_ops(lin);
+    }
+    var s = mul3(W_OUT, lin);
+    let yy = clamp(w[W_OUT_Y] * s.x + w[W_OUT_Y + 1u] * s.y + w[W_OUT_Y + 2u] * s.z, 0.0, 1.0);
+    var tg = 1.0;
+    for (var k = 0u; k < 3u; k++) {
+        let c = s[k];
+        if (c < 0.0) {
+            tg = min(tg, yy / max(yy - c, 1e-9));
+        } else if (c > 1.0) {
+            tg = min(tg, (1.0 - yy) / max(c - yy, 1e-9));
+        }
+    }
+    if (tg < 1.0) {
+        s = yy + (s - yy) * tg;
+    }
+    img[idx] = vec4<f32>(oetf(clamp(s.x, 0.0, 1.0)), oetf(clamp(s.y, 0.0, 1.0)), oetf(clamp(s.z, 0.0, 1.0)), px.a);
+}
+"#;
+
 const BLUR_PARAMS: &str = r#"
 struct BlurParams {
     width: u32, height: u32,

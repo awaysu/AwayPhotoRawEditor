@@ -11,5 +11,6 @@ pub mod text;
 pub mod tiff;
 pub mod watermark;
 pub mod xml;
+pub mod xmp;
 
 pub use store::ExifData;

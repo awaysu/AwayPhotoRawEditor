@@ -163,11 +163,13 @@ fn test(image_path: &str, out_dir: &str, r: &mut String) -> Result<bool, String>
     ok &= dedupe;
     let _ = writeln!(r, "\n去重    : {}（{}）", if dedupe { "通過" } else { "未通過" }, names.join(", "));
 
-    // The 8-bit PNG against the CPU pipeline run directly on the same decode.
+    // The 8-bit PNG against the CPU pipeline run directly on the same decode (the linear
+    // one for a 處理版本 3 RAW, as the export uses).
     if let Some(p) = compare_png {
         let opt = LoaderOptions { use_libraw: true, high_precision: false };
-        let (full, source) = loader::decode_full(&src, opt).ok_or("無法解碼影像")?;
-        let ctx = ProcessContext { camera: e.camera.clone(), white_balance_reference: source.white_balance_reference(), ..Default::default() };
+        let (full, ctx) = loader::decode_for_render(&src, &adj, e.camera.as_ref(), opt).ok_or("無法解碼影像")?;
+        let _ = writeln!(r, "
+處理版本 : {}（{}）", adj.pipeline_version + 1, if matches!(ctx.source_kind, awpr_core::SourceKind::LinearCamera { .. }) { "線性相機來源" } else { "一般來源" });
         let reference = codec::to_rgb8(&apply_to_float(&full, &adj, &ctx));
         let png = image::open(&p).map_err(|e| e.to_string())?.to_rgb8();
         let (mut max, mut over1) = (0u8, 0usize);

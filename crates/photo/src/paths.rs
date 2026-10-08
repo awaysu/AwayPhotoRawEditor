@@ -70,6 +70,18 @@ pub fn proxy_thumbnail_path(image: &str) -> String {
     proxy_path(image) + ".thumb.jpg"
 }
 
+/// RAW_TEMP/{file}.rawpipe.v3.png — 處理版本 3's linear camera RGB proxy (16-bit,
+/// square-root encoded; see `codec::save_linear_png`). Rust build only.
+pub fn proxy_v3_path(image: &str) -> String {
+    join(&cache_dir(image), &(file_name(image) + ".rawpipe.v3.png"))
+}
+
+/// RAW_TEMP/{file}.rawpipe.v3.png.txt — the proxy's auto-bright gain (`gain=…`), written
+/// after the PNG.
+pub fn proxy_v3_meta_path(image: &str) -> String {
+    proxy_v3_path(image) + ".txt"
+}
+
 /// RAW_TEMP/{file}.rawpipe.xml, or {file}.copyN.rawpipe.xml for a virtual copy.
 pub fn adjustment_xml_path(image: &str, copy_index: i32) -> String {
     let suffix = if copy_index <= 0 { ".rawpipe.xml".to_string() } else { format!(".copy{copy_index}.rawpipe.xml") };

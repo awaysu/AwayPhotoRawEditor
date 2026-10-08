@@ -80,6 +80,10 @@ typedef struct {
    Matches the Windows settings: output_color = 1 (sRGB), no_auto_bright = 0. */
 int awpr_decode_full(const char *path, int bps, awpr_image *out);
 
+/* 16-bit linear camera RGB: no white balance, no colour matrix, no gamma, no
+   auto-bright; the sensor clip is 65535. The version-3 (處理版本 3) source. */
+int awpr_decode_linear(const char *path, awpr_image *out);
+
 /* The camera's embedded preview (fast). May come back as a JPEG blob (type 1). */
 int awpr_decode_thumb(const char *path, awpr_image *out, int *flip);
 

@@ -157,7 +157,57 @@ fn encode_adjustments(a: &ImageAdjustments) -> XmlNode {
         e.add_f64("RadiusNorm", s.radius_norm);
         e.add_bool("UseInpaint", s.use_inpaint);
     }
+    encode_v3(&mut n, a);
     n
+}
+
+// ---- 處理版本 3 fields ------------------------------------------------------------
+// Appended after every existing element and written only when one differs from its
+// default, so files without them stay byte-identical. The C# XmlSerializer and the Swift
+// reader skip elements they do not know (a 1.x build shows such a photo with version-2
+// maths and drops these values if it saves it).
+
+fn encode_curve(n: &mut XmlNode, name: &str, pts: &[(f64, f64)]) {
+    let flat: Vec<f64> = pts.iter().flat_map(|&(x, y)| [x, y]).collect();
+    n.add_f64_array(name, &flat);
+}
+
+fn decode_curve(n: &XmlNode, name: &str) -> Vec<(f64, f64)> {
+    let Some(c) = n.child(name) else { return Vec::new() };
+    let vals: Vec<f64> = c.children.iter().filter_map(|v| v.text.as_deref().and_then(|t| t.trim().parse::<f64>().ok())).collect();
+    vals.chunks_exact(2).map(|p| (p[0], p[1])).collect()
+}
+
+fn encode_v3(n: &mut XmlNode, a: &ImageAdjustments) {
+    if !a.has_v3_values() {
+        return;
+    }
+    n.add_f64("HighlightRecovery", a.highlight_recovery);
+    n.add_f64_array("HslHue", &a.hsl_hue);
+    n.add_f64_array("HslSaturation", &a.hsl_saturation);
+    n.add_f64_array("HslLuminance", &a.hsl_luminance);
+    encode_curve(n, "ToneCurveRgb", &a.curve_rgb);
+    encode_curve(n, "ToneCurveRed", &a.curve_red);
+    encode_curve(n, "ToneCurveGreen", &a.curve_green);
+    encode_curve(n, "ToneCurveBlue", &a.curve_blue);
+}
+
+fn decode_v3(n: &XmlNode, a: &mut ImageAdjustments) {
+    a.highlight_recovery = n.f64_or("HighlightRecovery", a.highlight_recovery);
+    let arr8 = |k| n.f64_array(k, 8).map(|v| <[f64; 8]>::try_from(v).unwrap_or([0.0; 8]));
+    if let Some(v) = arr8("HslHue") {
+        a.hsl_hue = v;
+    }
+    if let Some(v) = arr8("HslSaturation") {
+        a.hsl_saturation = v;
+    }
+    if let Some(v) = arr8("HslLuminance") {
+        a.hsl_luminance = v;
+    }
+    a.curve_rgb = decode_curve(n, "ToneCurveRgb");
+    a.curve_red = decode_curve(n, "ToneCurveRed");
+    a.curve_green = decode_curve(n, "ToneCurveGreen");
+    a.curve_blue = decode_curve(n, "ToneCurveBlue");
 }
 
 fn decode_adjustments(n: &XmlNode) -> ImageAdjustments {
@@ -222,6 +272,7 @@ fn decode_adjustments(n: &XmlNode) -> ImageAdjustments {
             })
             .collect();
     }
+    decode_v3(n, &mut a);
     a
 }
 
@@ -500,12 +551,34 @@ mod tests {
         a.crop_aspect_ratio = "3:2".into();
         a.gradients.push(LinearGradient { exposure: 0.5, angle: -12.5, ..Default::default() });
         a.heal_spots.push(HealSpot { target_x: 0.25, source_x: 0.3, use_inpaint: true, ..Default::default() });
-        let doc = RawPipeDocument { adjustments: a.clone(), pipeline_version: 1, ..Default::default() };
+        let doc = RawPipeDocument { adjustments: a.clone(), pipeline_version: a.pipeline_version, ..Default::default() };
         for style in [XmlStyle::DotNet, XmlStyle::Swift] {
             let back = RawPipeDocument::parse(&doc.to_xml(style)).unwrap();
             assert_eq!(back.adjustments, a);
             assert!(back.exif.is_none());
         }
+    }
+
+    #[test]
+    fn version_3_fields_round_trip_and_are_appended() {
+        let mut a = ImageAdjustments { exposure: 0.5, highlight_recovery: 40.0, ..Default::default() };
+        a.hsl_hue[0] = -20.0;
+        a.hsl_saturation[4] = 55.5;
+        a.hsl_luminance[7] = -100.0;
+        a.curve_rgb = vec![(0.0, 0.0), (0.25, 0.2), (1.0, 1.0)];
+        a.curve_blue = vec![(0.0, 0.05), (1.0, 0.95)];
+        let doc = RawPipeDocument { adjustments: a.clone(), pipeline_version: 2, ..Default::default() };
+        for style in [XmlStyle::DotNet, XmlStyle::Swift] {
+            let xml = doc.to_xml(style);
+            // After every element the 1.x builds know.
+            assert!(xml.find("<HealSpots").unwrap() < xml.find("<HighlightRecovery>").unwrap());
+            let back = RawPipeDocument::parse(&xml).unwrap();
+            assert_eq!(back.pipeline_version, 2);
+            assert_eq!(back.adjustments, ImageAdjustments { pipeline_version: 2, ..a.clone() });
+        }
+        // Nothing version-3-only set: nothing new written.
+        let plain = RawPipeDocument { adjustments: ImageAdjustments::default(), pipeline_version: 2, ..Default::default() };
+        assert!(!plain.to_xml(XmlStyle::DotNet).contains("Hsl"));
     }
 
     #[test]
