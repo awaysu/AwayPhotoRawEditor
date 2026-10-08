@@ -854,7 +854,9 @@ impl App {
                 self.set_tool(ToolMode::None);
             }
         }
-        // Delete removes the selected gradient / heal spot while that tool is open.
+        // Delete removes the selected gradient / heal spot while that tool is open. With
+        // nothing selected it is left for 隱藏照片 (TASK-004; the C# Delete key), so that
+        // must only run when this did not take the key.
         if delete && self.has_photo() && self.drag == Drag::None {
             match self.tool {
                 ToolMode::Gradient => {
@@ -917,13 +919,23 @@ impl App {
                 self.close_folder();
             }
             ui.add_space(10.0);
-            ui.label(RichText::new(&self.folder).color(theme::TEXT_DIM));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0);
                 ui.label(RichText::new(&self.gpu_status).size(12.0).color(theme::TEXT_FAINT));
                 if let Some((done, total, name)) = &self.cache_progress {
                     ui.add(egui::ProgressBar::new(*done as f32 / (*total).max(1) as f32).desired_width(140.0).show_percentage());
                     ui.label(RichText::new(format!("產生快取 {done}/{total} {name}")).size(12.0).color(theme::TEXT_DIM));
+                }
+                // The folder path gets whatever the status leaves; a long one keeps its
+                // end (`…/photos/2026`), like the C# path label. Hover shows all of it.
+                ui.add_space(12.0);
+                let room = ui.available_width();
+                if room > 20.0 && !self.folder.is_empty() {
+                    let font = egui::TextStyle::Body.resolve(ui.style());
+                    let shown = elide_left(ui, &self.folder, &font, room);
+                    ui.allocate_ui_with_layout(Vec2::new(room, ui.available_height()), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                        ui.add(egui::Label::new(RichText::new(shown).color(theme::TEXT_DIM)).wrap_mode(egui::TextWrapMode::Extend)).on_hover_text(&self.folder);
+                    });
                 }
             });
         });
@@ -1106,7 +1118,7 @@ impl App {
                     ("尺寸", e.dimensions_display()),
                     ("檔案大小", e.file_size_display()),
                 ];
-                egui::Grid::new("exif").num_columns(2).spacing([10.0, 3.0]).show(ui, |ui| {
+                egui::Grid::new("exif").num_columns(2).spacing([10.0, 1.0]).show(ui, |ui| {
                     for (k, v) in rows {
                         ui.label(RichText::new(k).size(12.5).color(theme::TEXT_DIM));
                         ui.add(egui::Label::new(v).truncate());
@@ -1128,14 +1140,19 @@ impl App {
         let on = self.has_photo();
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 2.0 * ui.spacing().item_spacing.x) / 3.0;
-            for (label, mode) in [("裁切", ToolMode::Crop), ("漸層", ToolMode::Gradient), ("修護", ToolMode::Heal)] {
+            let tabs = [
+                ("裁切", ToolMode::Crop, "拖曳邊、角或整個框；角度滑桿即時拉直"),
+                ("漸層", ToolMode::Gradient, "白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除"),
+                ("修護", ToolMode::Heal, "點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除"),
+            ];
+            for (label, mode, hint) in tabs {
                 let b = egui::Button::new(label).selected(self.tool == mode).min_size(Vec2::new(w, 28.0));
-                if ui.add_enabled(on, b).clicked() {
+                if ui.add_enabled(on, b).on_hover_text(hint).clicked() {
                     self.set_tool(if self.tool == mode { ToolMode::None } else { mode });
                 }
             }
         });
-        ui.add_space(6.0);
+        ui.add_space(4.0);
         let enabled = on && self.tool != ToolMode::None;
         match self.tool {
             ToolMode::Gradient => self.gradient_controls(ui, enabled),
@@ -1184,7 +1201,7 @@ impl App {
         let angle = SliderSpec { min: -45.0, max: 45.0, decimals: 1, wheel_step: 0.5, ..SliderSpec::pm100("角度") };
         self.slider_with(ui, angle, on, |a| 0.0 - a.crop_angle, |a, v| a.crop_angle = 0.0 - v);
         self.slider_with(ui, SliderSpec::pm100("廣角變形"), on, |a| a.distortion, |a, v| a.distortion = v);
-        ui.add_space(6.0);
+        ui.add_space(2.0);
         ui.horizontal(|ui| {
             let half = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
             if ui.add_enabled(on, egui::Button::new("照片左轉90度").min_size(Vec2::new(half, 28.0))).clicked() {
@@ -1226,7 +1243,6 @@ impl App {
         if ui.add_enabled(on, egui::Button::new("漸層重設（清除全部）").min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
             self.clear_gradients();
         }
-        ui.label(RichText::new("白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除").size(11.5).color(theme::TEXT_FAINT));
     }
 
     fn heal_controls(&mut self, ui: &mut egui::Ui, on: bool) {
@@ -1248,11 +1264,10 @@ impl App {
                 tools::resize_heal_spot(&mut a.heal_spots[i], v);
             }
         });
-        ui.add_space(6.0);
+        ui.add_space(2.0);
         if ui.add_enabled(on, egui::Button::new("修護重設").min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
             self.clear_heal();
         }
-        ui.label(RichText::new("點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除").size(11.5).color(theme::TEXT_FAINT));
     }
 
     fn right_bottom(&mut self, ui: &mut egui::Ui) {
@@ -1515,6 +1530,28 @@ fn truncate(s: &str, n: usize) -> String {
     } else {
         s.chars().take(n - 1).collect::<String>() + "…"
     }
+}
+
+/// `text` cut from the left ("…tail") to fit `max` points.
+fn elide_left(ui: &egui::Ui, text: &str, font: &egui::FontId, max: f32) -> String {
+    let width = |s: &str| ui.painter().layout_no_wrap(s.to_string(), font.clone(), Color32::WHITE).size().x;
+    if width(text) <= max {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    // The longest tail that fits after the ellipsis (binary search on its length).
+    let (mut lo, mut hi) = (0, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        let tail: String = chars[chars.len() - mid..].iter().collect();
+        if width(&format!("…{tail}")) <= max {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let tail: String = chars[chars.len() - lo..].iter().collect();
+    format!("…{tail}")
 }
 
 /// A stored "W:H" that is not one of the 比例 presets → the 自訂 numbers (1–99).

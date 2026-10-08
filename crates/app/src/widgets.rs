@@ -70,11 +70,12 @@ fn gradient_color(g: Gradient, t: f32) -> Color32 {
     }
 }
 
-/// One slider row: label and value on top, the track below (30 points tall).
+/// One slider row: label and value on top, the track below. 32 points + the 4 point
+/// item spacing = the C# 36-unit row pitch.
 pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enabled: bool) -> SliderResponse {
     let mut out = SliderResponse::default();
     let width = ui.available_width();
-    let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, 34.0), Sense::hover());
+    let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::hover());
     if !ui.is_rect_visible(outer) {
         return out;
     }
