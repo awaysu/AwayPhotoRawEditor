@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/libraw-sys", "crates/core", "crates/gpu", "crates/photo", "crates/cli", "crates/app"]
 
 [workspace.package]
-version = "2.0.0-dev"
+version = "2.0.0"
 edition = "2021"
 license = "BSD-3-Clause"
 authors = ["Chih-Wei Su (Awaysu)"]
