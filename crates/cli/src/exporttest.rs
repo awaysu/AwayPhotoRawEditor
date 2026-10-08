@@ -76,7 +76,9 @@ fn test(image_path: &str, out_dir: &str, r: &mut String) -> Result<bool, String>
     let _ = writeln!(r, "目標檔案: {}", paths::file_name(image_path));
 
     // A vivid edit so the output visibly differs (the C# test values, without its preset).
-    let adj = ImageAdjustments { contrast: 30.0, vibrance: 40.0, saturation: 12.0, exposure: 0.3, temperature: 6500.0, ..Default::default() };
+    let mut adj = ImageAdjustments { contrast: 30.0, vibrance: 40.0, saturation: 12.0, exposure: 0.3, temperature: 6500.0, ..Default::default() };
+    // 處理版本 3 遮罩 too: rasterized at full resolution on export, at proxy size in the editor.
+    adj.masks = crate::gputest::mask_cases().into_iter().flat_map(|(_, a)| a.masks).collect();
     let mut e = exif::read(&src);
     if e.camera.is_none() && paths::is_raw(&src) {
         e.camera = awpr_core::libraw::read_camera_color(&src);

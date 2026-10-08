@@ -8,7 +8,7 @@
 
 use awpr_core::color::{self, WhiteBalanceReference};
 use awpr_core::pipeline::white_balance_multipliers;
-use awpr_core::{CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, Rotation};
+use awpr_core::{CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, LocalMask, Rotation};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolMode {
@@ -16,6 +16,8 @@ pub enum ToolMode {
     Crop,
     Gradient,
     Heal,
+    /// 遮罩 (處理版本 3).
+    Mask,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -43,6 +45,11 @@ pub enum Drag {
     GradRange,
     HealTarget,
     HealSource,
+    MaskCenter,
+    MaskRadiusX,
+    MaskRadiusY,
+    MaskRotate,
+    MaskPaint,
 }
 
 /// Crop corner grab zone; corners are tested first (2026-08-31: 10 → 20 and priority over edges).
@@ -447,6 +454,98 @@ pub fn drag_gradient(g: &mut LinearGradient, drag: Drag, p: P, v: &View) {
     }
 }
 
+// ---- masks ---------------------------------------------------------------------------
+
+/// The rotate handle sits this far (points) beyond the radial's X-radius handle.
+pub const MASK_ROT_OFFSET: f64 = 40.0;
+
+/// The selected mask, a stale index clamped to the last one; None when there are none.
+pub fn active_mask(adj: &ImageAdjustments, index: &mut i32) -> Option<usize> {
+    if adj.masks.is_empty() {
+        return None;
+    }
+    if *index < 0 || *index as usize >= adj.masks.len() {
+        *index = adj.masks.len() as i32 - 1;
+    }
+    Some(*index as usize)
+}
+
+/// Screen points per unit of the image's long edge (mask radii are in those units).
+pub fn long_px(v: &View) -> f64 {
+    v.w.max(v.h) * v.scale
+}
+
+/// A radial's axes on screen: X-radius direction, Y-radius direction (unit vectors).
+fn radial_axes(m: &LocalMask) -> ((f64, f64), (f64, f64)) {
+    let (s, c) = m.angle.to_radians().sin_cos();
+    ((c, s), (-s, c))
+}
+
+/// Centre, X-radius, Y-radius and rotate handle positions of a radial mask.
+pub fn radial_handles(m: &LocalMask, v: &View) -> [P; 4] {
+    let c = v.norm_to_ctrl(m.center_x, m.center_y);
+    let ((ax, ay), (bx, by)) = radial_axes(m);
+    let (rx, ry) = (m.radius_x * long_px(v), m.radius_y * long_px(v));
+    [
+        c,
+        P::new(c.x + ax * rx, c.y + ay * rx),
+        P::new(c.x + bx * ry, c.y + by * ry),
+        P::new(c.x + ax * (rx + MASK_ROT_OFFSET), c.y + ay * (rx + MASK_ROT_OFFSET)),
+    ]
+}
+
+/// The radial handle under `p` (rotate, then the radii, then the centre).
+pub fn radial_hit(m: &LocalMask, v: &View, p: P) -> Drag {
+    let [c, hx, hy, rot] = radial_handles(m, v);
+    if dist(p, rot) < HANDLE_HIT_RADIUS {
+        Drag::MaskRotate
+    } else if dist(p, hx) < HANDLE_HIT_RADIUS {
+        Drag::MaskRadiusX
+    } else if dist(p, hy) < HANDLE_HIT_RADIUS {
+        Drag::MaskRadiusY
+    } else if dist(p, c) < HANDLE_HIT_RADIUS {
+        Drag::MaskCenter
+    } else {
+        Drag::None
+    }
+}
+
+/// The radial mask whose centre is under `p`.
+pub fn radial_at_point(adj: &ImageAdjustments, v: &View, p: P) -> Option<usize> {
+    adj.masks.iter().position(|m| m.kind == awpr_core::MaskKind::Radial && dist(p, v.norm_to_ctrl(m.center_x, m.center_y)) < HANDLE_HIT_RADIUS)
+}
+
+/// Move a radial handle to the pointer.
+pub fn drag_radial(m: &mut LocalMask, drag: Drag, p: P, v: &View) {
+    let c = v.norm_to_ctrl(m.center_x, m.center_y);
+    let ((ax, ay), (bx, by)) = radial_axes(m);
+    let (dx, dy) = (p.x - c.x, p.y - c.y);
+    match drag {
+        Drag::MaskCenter => {
+            let (nx, ny) = v.ctrl_to_norm(p);
+            (m.center_x, m.center_y) = (nx, ny);
+        }
+        Drag::MaskRadiusX => m.radius_x = ((dx * ax + dy * ay).abs() / long_px(v)).clamp(0.005, 2.0),
+        Drag::MaskRadiusY => m.radius_y = ((dx * bx + dy * by).abs() / long_px(v)).clamp(0.005, 2.0),
+        Drag::MaskRotate => m.angle = dy.atan2(dx).to_degrees(),
+        _ => {}
+    }
+}
+
+/// Points of a radial's outline at `scale` × its radii, on screen.
+pub fn radial_outline(m: &LocalMask, v: &View, scale: f64, n: usize) -> Vec<P> {
+    let c = v.norm_to_ctrl(m.center_x, m.center_y);
+    let ((ax, ay), (bx, by)) = radial_axes(m);
+    let (rx, ry) = (m.radius_x * long_px(v) * scale, m.radius_y * long_px(v) * scale);
+    (0..=n)
+        .map(|i| {
+            let t = i as f64 / n as f64 * std::f64::consts::TAU;
+            let (u, w) = (t.cos() * rx, t.sin() * ry);
+            P::new(c.x + ax * u + bx * w, c.y + ay * u + by * w)
+        })
+        .collect()
+}
+
 // ---- heal --------------------------------------------------------------------------
 
 /// A spot's radius on screen.
@@ -676,6 +775,29 @@ mod tests {
         assert!(approx(g2.range, 0.02));
         drag_gradient(&mut g2, Drag::GradCenter, P::new(0.0, 2000.0), &v);
         assert!(approx(g2.center_x, 0.0) && approx(g2.center_y, 1.0));
+    }
+
+    #[test]
+    fn radial_handles_follow_the_shape() {
+        let v = view();
+        let mut m = LocalMask { center_x: 0.5, center_y: 0.5, radius_x: 0.2, radius_y: 0.1, angle: 0.0, ..Default::default() };
+        let [c, hx, hy, rot] = radial_handles(&m, &v);
+        let lp = long_px(&v);
+        assert!(approx(hx.x - c.x, 0.2 * lp) && approx(hx.y, c.y));
+        assert!(approx(hy.y - c.y, 0.1 * lp) && approx(hy.x, c.x));
+        assert!(approx(rot.x - hx.x, MASK_ROT_OFFSET));
+        assert_eq!(radial_hit(&m, &v, hx), Drag::MaskRadiusX);
+        assert_eq!(radial_hit(&m, &v, rot), Drag::MaskRotate);
+        assert_eq!(radial_hit(&m, &v, c), Drag::MaskCenter);
+        // Dragging the X handle out doubles the radius; rotating puts the axis on the pointer.
+        drag_radial(&mut m, Drag::MaskRadiusX, P::new(c.x + 0.4 * lp, c.y), &v);
+        assert!(approx(m.radius_x, 0.4));
+        drag_radial(&mut m, Drag::MaskRotate, P::new(c.x, c.y + 100.0), &v);
+        assert!(approx(m.angle, 90.0));
+        let [_, hx2, _, _] = radial_handles(&m, &v);
+        assert!(approx(hx2.x, c.x) && hx2.y > c.y);
+        drag_radial(&mut m, Drag::MaskCenter, v.norm_to_ctrl(0.25, 0.75), &v);
+        assert!(approx(m.center_x, 0.25) && approx(m.center_y, 0.75));
     }
 
     #[test]

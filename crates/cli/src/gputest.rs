@@ -19,7 +19,7 @@
 
 use crate::hashtest::{self, to_byte};
 use awpr_core::color::WhiteBalanceReference;
-use awpr_core::{apply_to_float, libraw, resize, v3, FloatImage, HealSpot, ImageAdjustments, ProcessContext, SourceKind};
+use awpr_core::{apply_to_float, libraw, resize, v3, BrushStroke, FloatImage, HealSpot, ImageAdjustments, LocalMask, MaskKind, ProcessContext, SourceKind};
 use awpr_gpu::GpuPipeline;
 use std::path::Path;
 use std::time::Instant;
@@ -60,7 +60,37 @@ pub fn v3_cases() -> Vec<(String, ImageAdjustments)> {
         ..Default::default()
     });
     out.push(("v3｜曲線 RGB + 紅 + 藍".into(), curves));
+    out.extend(mask_cases());
     out
+}
+
+/// 遮罩: a radial pair (one inverted) and painted strokes with an erase.
+pub fn mask_cases() -> Vec<(String, ImageAdjustments)> {
+    let v3 = ImageAdjustments { pipeline_version: ImageAdjustments::V3_PIPELINE_VERSION, ..Default::default() };
+    let radial = ImageAdjustments {
+        masks: vec![
+            LocalMask { center_x: 0.45, center_y: 0.5, radius_x: 0.3, radius_y: 0.18, angle: 20.0, feather: 60.0, exposure: 0.8, saturation: 30.0, contrast: 15.0, ..Default::default() },
+            LocalMask { center_x: 0.5, center_y: 0.45, radius_x: 0.4, radius_y: 0.3, invert: true, exposure: -0.6, shadows: -20.0, ..Default::default() },
+        ],
+        ..v3.clone()
+    };
+    let stroke = |pts: &[(f64, f64)], erase: bool| BrushStroke { radius: 0.04, feather: 60.0, flow: if erase { 100.0 } else { 70.0 }, erase, points: pts.to_vec() };
+    let brush = ImageAdjustments {
+        masks: vec![LocalMask {
+            kind: MaskKind::Brush,
+            exposure: -0.7,
+            highlights: 25.0,
+            shadows: 30.0,
+            strokes: vec![
+                stroke(&[(0.1, 0.3), (0.4, 0.35), (0.7, 0.3), (0.9, 0.4)], false),
+                stroke(&[(0.2, 0.6), (0.5, 0.7), (0.8, 0.6)], false),
+                stroke(&[(0.45, 0.2), (0.5, 0.8)], true),
+            ],
+            ..Default::default()
+        }],
+        ..v3
+    };
+    vec![("v3｜放射狀遮罩 ×2（一個反轉）".into(), radial), ("v3｜筆刷遮罩（三筆含擦除）".into(), brush)]
 }
 
 /// The version-3 source gputest3 renders from: LibRaw's linear decode, highlights

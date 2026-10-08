@@ -16,6 +16,7 @@ use crate::buffer::{round_half_even, round_half_even_f32, FloatImage};
 use crate::color::{self, WhiteBalanceReference};
 use crate::model::{CameraColorInfo, ImageAdjustments, LinearGradient, Rotation};
 use crate::tone;
+use crate::masks::MaskParams;
 use crate::v3::V3Params;
 use std::f64::consts::PI;
 
@@ -102,6 +103,8 @@ pub trait StageTarget {
     fn pixel(&mut self, p: &PixelStageParams) -> Result<(), StageError>;
     /// 處理版本 3's colour pass (`v3.rs`).
     fn pixel_v3(&mut self, p: &V3Params) -> Result<(), StageError>;
+    /// 處理版本 3's 遮罩 pass (`masks.rs`).
+    fn masks(&mut self, p: &MaskParams) -> Result<(), StageError>;
     fn blur(&mut self, op: BlurOp) -> Result<(), StageError>;
     fn heal(&mut self, adj: &ImageAdjustments) -> Result<(), StageError>;
     fn resample(&mut self, p: ResampleParams, out_w: usize, out_h: usize) -> Result<(), StageError>;
@@ -122,6 +125,10 @@ pub fn run_pipeline<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &Proc
     if adj.is_v3() {
         // 處理版本 3: its own colour pass; the stages after it are version 1's.
         t.pixel_v3(&V3Params::new(adj, ctx))?;
+        if adj.has_active_mask() {
+            let p = MaskParams::new(adj, t.width(), t.height());
+            t.masks(&p)?;
+        }
         if grad_active && !blur_stages {
             t.pixel(&build_gradient_params(adj))?; // 7
         }
@@ -272,6 +279,11 @@ impl StageTarget for CpuTarget<'_> {
 
     fn pixel_v3(&mut self, p: &V3Params) -> Result<(), StageError> {
         crate::v3::apply(self.buf(), p);
+        Ok(())
+    }
+
+    fn masks(&mut self, p: &MaskParams) -> Result<(), StageError> {
+        crate::masks::apply(self.buf(), p);
         Ok(())
     }
 

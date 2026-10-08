@@ -28,6 +28,7 @@ use std::time::{Duration, Instant};
 
 mod dialogs;
 mod library;
+mod masks_ui;
 use dialogs::{SettingsDraft, UpdateState};
 use library::{Confirm, UndoStep};
 
@@ -137,6 +138,17 @@ pub struct App {
     /// 曲線 page: 0 RGB, 1 紅, 2 綠, 3 藍; the point being dragged.
     curve_channel: usize,
     curve_drag: Option<usize>,
+
+    // ---- 遮罩 tool (masks_ui.rs) ----
+    /// The selected mask (runtime only, like the gradient index).
+    active_mask: i32,
+    mask_overlay: bool,
+    /// 擦除: new brush strokes remove from the mask.
+    brush_erase: bool,
+    /// Last painted point (screen), so strokes are not oversampled.
+    paint_last: Option<P>,
+    /// The red overlay texture and the mask shape it shows.
+    mask_overlay_tex: Option<(u64, egui::TextureHandle)>,
 
     // ---- export ----
     export_settings: ExportSettings,
@@ -276,6 +288,11 @@ impl App {
             hsl_tab: 0,
             curve_channel: 0,
             curve_drag: None,
+            active_mask: -1,
+            mask_overlay: false,
+            brush_erase: false,
+            paint_last: None,
+            mask_overlay_tex: None,
             export_settings: ExportSettings::load(),
             export_dlg: None,
             export_job: None,
@@ -486,6 +503,8 @@ impl App {
         self.saved_adj = self.adj.clone();
         self.active_gradient = -1;
         self.active_spot = -1;
+        self.active_mask = -1;
+        self.mask_overlay_tex = None;
         self.drag = Drag::None;
         self.crop_custom = None;
         self.grad_menu = None;
@@ -828,6 +847,7 @@ impl App {
                 self.active_spot = i as i32;
                 self.edited();
             }
+            ToolMode::Mask => self.begin_mask_drag(p, v),
             ToolMode::None => {}
         }
     }
@@ -836,6 +856,7 @@ impl App {
         let (nx, ny) = v.ctrl_to_norm(p);
         match self.drag {
             Drag::None => return,
+            Drag::MaskCenter | Drag::MaskRadiusX | Drag::MaskRadiusY | Drag::MaskRotate | Drag::MaskPaint => return self.update_mask_drag(p, v),
             Drag::CropMove => tools::move_crop(&mut self.adj, self.crop_start, nx - self.drag_start.0, ny - self.drag_start.1),
             Drag::CropL | Drag::CropR | Drag::CropT | Drag::CropB | Drag::CropTL | Drag::CropTR | Drag::CropBL | Drag::CropBR => {
                 tools::drag_crop_handle(&mut self.adj, self.drag, nx, ny, v.w, v.h)
@@ -866,6 +887,7 @@ impl App {
             "crop" => ToolMode::Crop,
             "gradient" => ToolMode::Gradient,
             "heal" => ToolMode::Heal,
+            "mask-radial" | "mask-brush" => ToolMode::Mask,
             _ => return,
         };
         self.set_tool(mode);
@@ -879,6 +901,22 @@ impl App {
                 a.gradients.push(LinearGradient { center_y: 0.22, angle: 8.0, range: 0.2, exposure: -1.0, ..Default::default() });
                 a.gradients.push(LinearGradient { center_y: 0.85, angle: 180.0, exposure: 0.5, ..Default::default() });
                 self.active_gradient = 0;
+            }
+            ToolMode::Mask if a.masks.is_empty() => {
+                if name == "mask-radial" {
+                    a.masks.push(awpr_core::LocalMask { center_x: 0.42, center_y: 0.55, radius_x: 0.22, radius_y: 0.13, angle: -12.0, feather: 60.0, exposure: 0.9, saturation: 25.0, ..Default::default() });
+                } else {
+                    let stroke = |pts: &[(f64, f64)]| awpr_core::BrushStroke { radius: 0.035, feather: 60.0, flow: 100.0, erase: false, points: pts.to_vec() };
+                    a.masks.push(awpr_core::LocalMask {
+                        kind: awpr_core::MaskKind::Brush,
+                        exposure: -0.8,
+                        saturation: -40.0,
+                        strokes: vec![stroke(&[(0.08, 0.86), (0.3, 0.8), (0.55, 0.84), (0.8, 0.78), (0.95, 0.82)]), stroke(&[(0.15, 0.93), (0.6, 0.92), (0.9, 0.94)])],
+                        ..Default::default()
+                    });
+                }
+                self.active_mask = 0;
+                self.mask_overlay = std::env::var_os("AWPR_SHOT_NO_OVERLAY").is_none();
             }
             ToolMode::Heal if a.heal_spots.is_empty() => {
                 let mut s = tools::new_heal_spot(0.62, 0.45, 20.0, HealMode::Clone);
@@ -972,7 +1010,7 @@ impl App {
         ProcessContext {
             // Gradient / heal overlays live in the pre-geometry frame; the crop overlay
             // sees distortion, 90° rotation and the straighten angle but not the crop.
-            skip_geometry: matches!(self.tool, ToolMode::Gradient | ToolMode::Heal),
+            skip_geometry: matches!(self.tool, ToolMode::Gradient | ToolMode::Heal | ToolMode::Mask),
             skip_crop_rect: self.tool == ToolMode::Crop,
             camera: self.exif.as_ref().and_then(|e| e.camera.clone()),
             white_balance_reference: self.source.white_balance_reference(),
@@ -1141,6 +1179,7 @@ impl App {
             let taken = match self.tool {
                 ToolMode::Gradient => self.active_gradient().map(|i| self.delete_gradient(i)).is_some(),
                 ToolMode::Heal => self.active_spot().map(|i| self.delete_heal_spot(i)).is_some(),
+                ToolMode::Mask => self.active_mask().map(|i| self.delete_mask(i)).is_some(),
                 _ => false,
             };
             // Otherwise Delete = 隱藏且不輸出 (the C# key).
@@ -1487,11 +1526,12 @@ impl App {
     fn tools_panel(&mut self, ui: &mut egui::Ui) {
         let on = self.has_photo();
         ui.horizontal(|ui| {
-            let w = (ui.available_width() - 2.0 * ui.spacing().item_spacing.x) / 3.0;
+            let w = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0;
             let tabs = [
                 (t("裁切"), ToolMode::Crop, t("拖曳邊、角或整個框；角度滑桿即時拉直")),
                 (t("漸層"), ToolMode::Gradient, t("白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除")),
                 (t("修護"), ToolMode::Heal, t("點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除")),
+                (t("遮罩"), ToolMode::Mask, t("放射狀：白點移動、黃點半徑、藍點旋轉\n筆刷：在畫面上拖曳塗抹\nDelete：刪除選取的遮罩")),
             ];
             for (label, mode, hint) in tabs {
                 let sel = self.tool == mode;
@@ -1505,6 +1545,7 @@ impl App {
         match self.tool {
             ToolMode::Gradient => self.gradient_controls(ui, enabled),
             ToolMode::Heal => self.heal_controls(ui, enabled),
+            ToolMode::Mask => self.mask_controls(ui, enabled),
             // No tool: the crop controls stand in, locked.
             ToolMode::Crop | ToolMode::None => self.crop_controls(ui, enabled),
         }
@@ -1699,6 +1740,7 @@ impl App {
             ToolMode::Crop => self.paint_crop(&painter, &v, pl.image),
             ToolMode::Gradient => self.paint_gradients(&painter, &v, pl.view),
             ToolMode::Heal => self.paint_heal(&painter, &v),
+            ToolMode::Mask => self.paint_masks(ui, &painter, &v, pl.image),
             ToolMode::None => {}
         }
         // The export watermark, live (the C# preview drew it whenever it was enabled).

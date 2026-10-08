@@ -4,7 +4,7 @@
 
 use crate::paths;
 use crate::xml::{self, XmlNode, XmlStyle};
-use awpr_core::{color, CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, Rotation};
+use awpr_core::{color, BrushStroke, CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, LocalMask, MaskKind, Rotation};
 
 /// EXIF / photo metadata, cached inside the adjustment XML.
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -180,9 +180,97 @@ fn decode_curve(n: &XmlNode, name: &str) -> Vec<(f64, f64)> {
 }
 
 fn encode_v3(n: &mut XmlNode, a: &ImageAdjustments) {
-    if !a.has_v3_values() {
-        return;
+    let tools = ImageAdjustments { masks: Vec::new(), ..a.clone() };
+    if tools.has_v3_values() {
+        encode_v3_tools(n, a);
     }
+    if !a.masks.is_empty() {
+        encode_masks(n, &a.masks);
+    }
+}
+
+fn mask_kind_name(k: MaskKind) -> &'static str {
+    match k {
+        MaskKind::Radial => "Radial",
+        MaskKind::Brush => "Brush",
+    }
+}
+
+/// `<Masks>`, after the other version-3 elements.
+fn encode_masks(n: &mut XmlNode, masks: &[LocalMask]) {
+    let list = n.add(XmlNode::new("Masks"));
+    for m in masks {
+        let e = list.add(XmlNode::new("LocalMask"));
+        e.add_str("Kind", mask_kind_name(m.kind));
+        e.add_f64("Exposure", m.exposure);
+        e.add_f64("Contrast", m.contrast);
+        e.add_f64("Highlights", m.highlights);
+        e.add_f64("Shadows", m.shadows);
+        e.add_f64("Saturation", m.saturation);
+        e.add_bool("Invert", m.invert);
+        e.add_f64("Feather", m.feather);
+        e.add_f64("CenterX", m.center_x);
+        e.add_f64("CenterY", m.center_y);
+        e.add_f64("RadiusX", m.radius_x);
+        e.add_f64("RadiusY", m.radius_y);
+        e.add_f64("Angle", m.angle);
+        e.add_f64("BrushSize", m.brush_size);
+        e.add_f64("BrushFeather", m.brush_feather);
+        e.add_f64("BrushFlow", m.brush_flow);
+        let st = e.add(XmlNode::new("Strokes"));
+        for s in &m.strokes {
+            let se = st.add(XmlNode::new("BrushStroke"));
+            se.add_f64("Radius", s.radius);
+            se.add_f64("Feather", s.feather);
+            se.add_f64("Flow", s.flow);
+            se.add_bool("Erase", s.erase);
+            encode_curve(se, "Points", &s.points);
+        }
+    }
+}
+
+fn decode_masks(n: &XmlNode) -> Vec<LocalMask> {
+    let Some(list) = n.child("Masks") else { return Vec::new() };
+    list.children_named("LocalMask")
+        .map(|e| {
+            let d = LocalMask::default();
+            LocalMask {
+                kind: if e.string("Kind") == Some("Brush") { MaskKind::Brush } else { MaskKind::Radial },
+                exposure: e.f64_or("Exposure", d.exposure),
+                contrast: e.f64_or("Contrast", d.contrast),
+                highlights: e.f64_or("Highlights", d.highlights),
+                shadows: e.f64_or("Shadows", d.shadows),
+                saturation: e.f64_or("Saturation", d.saturation),
+                invert: e.bool_or("Invert", d.invert),
+                feather: e.f64_or("Feather", d.feather),
+                center_x: e.f64_or("CenterX", d.center_x),
+                center_y: e.f64_or("CenterY", d.center_y),
+                radius_x: e.f64_or("RadiusX", d.radius_x),
+                radius_y: e.f64_or("RadiusY", d.radius_y),
+                angle: e.f64_or("Angle", d.angle),
+                brush_size: e.f64_or("BrushSize", d.brush_size),
+                brush_feather: e.f64_or("BrushFeather", d.brush_feather),
+                brush_flow: e.f64_or("BrushFlow", d.brush_flow),
+                strokes: e
+                    .child("Strokes")
+                    .map(|st| {
+                        st.children_named("BrushStroke")
+                            .map(|se| BrushStroke {
+                                radius: se.f64_or("Radius", 0.04),
+                                feather: se.f64_or("Feather", 50.0),
+                                flow: se.f64_or("Flow", 100.0),
+                                erase: se.bool_or("Erase", false),
+                                points: decode_curve(se, "Points"),
+                            })
+                            .collect()
+                    })
+                    .unwrap_or_default(),
+            }
+        })
+        .collect()
+}
+
+fn encode_v3_tools(n: &mut XmlNode, a: &ImageAdjustments) {
     n.add_f64("HighlightRecovery", a.highlight_recovery);
     n.add_f64_array("HslHue", &a.hsl_hue);
     n.add_f64_array("HslSaturation", &a.hsl_saturation);
@@ -209,6 +297,7 @@ fn decode_v3(n: &XmlNode, a: &mut ImageAdjustments) {
     a.curve_red = decode_curve(n, "ToneCurveRed");
     a.curve_green = decode_curve(n, "ToneCurveGreen");
     a.curve_blue = decode_curve(n, "ToneCurveBlue");
+    a.masks = decode_masks(n);
 }
 
 fn decode_adjustments(n: &XmlNode) -> ImageAdjustments {
@@ -576,6 +665,21 @@ mod tests {
             let back = RawPipeDocument::parse(&xml).unwrap();
             assert_eq!(back.pipeline_version, 2);
             assert_eq!(back.adjustments, ImageAdjustments { pipeline_version: 2, ..a.clone() });
+        }
+        // Masks go after them, and only masks: no HSL / curve elements.
+        let mut m = ImageAdjustments::default();
+        m.masks.push(LocalMask { exposure: 0.5, invert: true, ..Default::default() });
+        m.masks.push(LocalMask {
+            kind: MaskKind::Brush,
+            shadows: 20.0,
+            strokes: vec![BrushStroke { radius: 0.03, feather: 40.0, flow: 80.0, erase: false, points: vec![(0.1, 0.2), (0.3, 0.25)] }, BrushStroke { radius: 0.05, erase: true, points: vec![(0.2, 0.2)], ..Default::default() }],
+            ..Default::default()
+        });
+        let md = RawPipeDocument { adjustments: m.clone(), pipeline_version: 2, ..Default::default() };
+        for style in [XmlStyle::DotNet, XmlStyle::Swift] {
+            let xml = md.to_xml(style);
+            assert!(xml.contains("<Masks>") && !xml.contains("Hsl") && xml.find("<HealSpots").unwrap() < xml.find("<Masks>").unwrap());
+            assert_eq!(RawPipeDocument::parse(&xml).unwrap().adjustments, ImageAdjustments { pipeline_version: 2, ..m.clone() });
         }
         // Nothing version-3-only set: nothing new written.
         let plain = RawPipeDocument { adjustments: ImageAdjustments::default(), pipeline_version: 2, ..Default::default() };

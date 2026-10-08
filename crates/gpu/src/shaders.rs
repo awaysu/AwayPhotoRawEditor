@@ -385,6 +385,87 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 }
 "#;
 
+/// 處理版本 3's 遮罩 pass: `awpr_core::masks::mask_px` for every active mask, with the
+/// weights the CPU rasterized (`masks::packed_weights`) and the parameter words of
+/// `masks::words`. Uses `module` (the LUT sizes and clamp0).
+pub const MASKS: &str = r#"
+@group(0) @binding(0) var<storage, read_write> img: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> w: array<f32>;
+@group(0) @binding(2) var<storage, read> weights: array<f32>;
+@group(0) @binding(3) var<storage, read> decode_lut: array<f32>;
+@group(0) @binding(4) var<storage, read> encode_lut: array<f32>;
+
+fn linearize(x: f32) -> f32 {
+    if (!(x > 0.0)) { return 0.0; }
+    if (x >= 1.0) { return decode_lut[DECODE_LUT_SIZE]; }
+    let f = x * f32(DECODE_LUT_SIZE);
+    let i = i32(f);
+    let t = f - f32(i);
+    return decode_lut[i] + (decode_lut[i + 1] - decode_lut[i]) * t;
+}
+
+fn encode_val(x: f32) -> f32 {
+    if (!(x > 0.0)) { return 0.0; }
+    if (x >= 1.0) { return encode_lut[ENCODE_LUT_SIZE]; }
+    let f = x * f32(ENCODE_LUT_SIZE);
+    let i = i32(f);
+    let t = f - f32(i);
+    return encode_lut[i] + (encode_lut[i + 1] - encode_lut[i]) * t;
+}
+
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let count = u32(w[0]);
+    let width = u32(w[1]);
+    let height = u32(w[2]);
+    if (gid.x >= width || gid.y >= height) { return; }
+    let idx = gid.y * width + gid.x;
+    let px = img[idx];
+    var r = px.r;
+    var g = px.g;
+    var b = px.b;
+    for (var k = 0u; k < count; k++) {
+        let m = weights[k * width * height + idx];
+        if (m <= 0.0) { continue; }
+        let o = 4u + k * 5u;
+        let exposure = w[o];
+        let contrast = w[o + 1u];
+        let highlights = w[o + 2u];
+        let shadows = w[o + 3u];
+        let saturation = w[o + 4u];
+        if (exposure != 0.0) {
+            let exp_mul = pow(2.0, exposure * m);
+            r = encode_val(linearize(r) * exp_mul);
+            g = encode_val(linearize(g) * exp_mul);
+            b = encode_val(linearize(b) * exp_mul);
+        }
+        let luma = 0.299 * r + 0.587 * g + 0.114 * b;
+        if (saturation != 0.0) {
+            let f = 1.0 + saturation * m;
+            r = luma + (r - luma) * f;
+            g = luma + (g - luma) * f;
+            b = luma + (b - luma) * f;
+        }
+        if (contrast != 0.0) {
+            let c = contrast * m;
+            r = 0.5 + (r - 0.5) * (1.0 + c);
+            g = 0.5 + (g - 0.5) * (1.0 + c);
+            b = 0.5 + (b - 0.5) * (1.0 + c);
+        }
+        if (highlights != 0.0) {
+            let w_h = luma * luma * highlights * 0.5 * m;
+            r += w_h; g += w_h; b += w_h;
+        }
+        if (shadows != 0.0) {
+            let w_s = (1.0 - luma) * (1.0 - luma) * shadows * 0.5 * m;
+            r += w_s; g += w_s; b += w_s;
+        }
+        r = clamp0(r); g = clamp0(g); b = clamp0(b);
+    }
+    img[idx] = vec4<f32>(r, g, b, px.a);
+}
+"#;
+
 const BLUR_PARAMS: &str = r#"
 struct BlurParams {
     width: u32, height: u32,

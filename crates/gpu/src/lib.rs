@@ -16,6 +16,7 @@ use awpr_core::color;
 use awpr_core::pipeline::{
     self, BlurOp, PixelStageParams, ProcessContext, ResampleParams, StageError, StageTarget,
 };
+use awpr_core::masks::{self, MaskParams};
 use awpr_core::v3::V3Params;
 use awpr_core::{FloatImage, ImageAdjustments, Rotation};
 use bytemuck::{Pod, Zeroable};
@@ -122,6 +123,7 @@ fn err(s: impl Into<String>) -> StageError {
 struct Kernels {
     pixel: wgpu::ComputePipeline,
     pixel_v3: wgpu::ComputePipeline,
+    masks: wgpu::ComputePipeline,
     blur_h: wgpu::ComputePipeline,
     blur_v: wgpu::ComputePipeline,
     blur_combine: wgpu::ComputePipeline,
@@ -250,6 +252,7 @@ impl GpuPipeline {
         let kernels = Kernels {
             pixel: make("pixelStage", shaders::PIXEL),
             pixel_v3: compute("pixelV3", shaders::PIXEL_V3.to_string()),
+            masks: make("masks", shaders::MASKS),
             blur_h: make("blurH", shaders::BLUR_H),
             blur_v: make("blurV", shaders::BLUR_V),
             blur_combine: make("blurCombine", shaders::BLUR_COMBINE),
@@ -783,6 +786,26 @@ impl<'a> StageTarget for GpuTarget<'a> {
             wgpu::BindGroupEntry { binding: 2, resource: luts.as_entire_binding() },
         ];
         self.dispatch("pixelV3", &gpu.kernels.pixel_v3, &entries, w, h);
+        Ok(())
+    }
+
+    fn masks(&mut self, p: &MaskParams) -> Result<(), StageError> {
+        let gpu = self.gpu;
+        let (w, h) = (self.width, self.height);
+        if (p.width, p.height) != (w, h) {
+            return Err(err("mask size mismatch"));
+        }
+        let words = gpu.storage(&masks::words(p));
+        let weights = gpu.storage(&masks::packed_weights(p));
+        let image = self.image().clone();
+        let entries = [
+            wgpu::BindGroupEntry { binding: 0, resource: image.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 1, resource: words.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 2, resource: weights.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 3, resource: gpu.decode_lut.as_entire_binding() },
+            wgpu::BindGroupEntry { binding: 4, resource: gpu.encode_lut.as_entire_binding() },
+        ];
+        self.dispatch("masks", &gpu.kernels.masks, &entries, w, h);
         Ok(())
     }
 

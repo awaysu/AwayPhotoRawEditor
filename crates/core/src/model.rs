@@ -54,6 +54,91 @@ impl LinearGradient {
     }
 }
 
+/// 遮罩 kinds (處理版本 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MaskKind {
+    /// 放射狀: an ellipse, effect inside (outside when inverted).
+    #[default]
+    Radial,
+    /// 筆刷: painted strokes.
+    Brush,
+}
+
+/// One painted stroke. Points in normalized image coordinates (pre-crop / pre-rotation,
+/// like gradients); the brush settings are the ones it was painted with.
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct BrushStroke {
+    /// Brush radius as a fraction of the image's long edge.
+    pub radius: f64,
+    /// 0..100: soft edge as a share of the radius.
+    pub feather: f64,
+    /// 0..100: opacity a stroke lays down.
+    pub flow: f64,
+    /// 擦除: removes from the mask instead of adding.
+    pub erase: bool,
+    pub points: Vec<(f64, f64)>,
+}
+
+/// A local adjustment through a mask (處理版本 3). The adjustment set is the linear
+/// gradient's.
+#[derive(Debug, Clone, PartialEq)]
+pub struct LocalMask {
+    pub kind: MaskKind,
+    pub exposure: f64,
+    pub contrast: f64,
+    pub highlights: f64,
+    pub shadows: f64,
+    pub saturation: f64,
+    /// 反轉: the effect where the mask is not.
+    pub invert: bool,
+    /// Radial: 0..100, the soft share of the ellipse's radius.
+    pub feather: f64,
+    /// Radial geometry. Centre in normalized image coordinates; radii as fractions of the
+    /// long edge (so a circle stays round whatever the aspect); angle in degrees.
+    pub center_x: f64,
+    pub center_y: f64,
+    pub radius_x: f64,
+    pub radius_y: f64,
+    pub angle: f64,
+    /// Brush settings for the next stroke (size as a fraction of the long edge).
+    pub brush_size: f64,
+    pub brush_feather: f64,
+    pub brush_flow: f64,
+    pub strokes: Vec<BrushStroke>,
+}
+
+impl Default for LocalMask {
+    fn default() -> Self {
+        Self {
+            kind: MaskKind::Radial,
+            exposure: 0.0,
+            contrast: 0.0,
+            highlights: 0.0,
+            shadows: 0.0,
+            saturation: 0.0,
+            invert: false,
+            feather: 50.0,
+            center_x: 0.5,
+            center_y: 0.5,
+            radius_x: 0.25,
+            radius_y: 0.18,
+            angle: 0.0,
+            brush_size: 0.04,
+            brush_feather: 50.0,
+            brush_flow: 100.0,
+            strokes: Vec::new(),
+        }
+    }
+}
+
+impl LocalMask {
+    /// True when this mask changes any pixels.
+    pub fn has_effect(&self) -> bool {
+        let adjusts = self.exposure != 0.0 || self.contrast != 0.0 || self.highlights != 0.0 || self.shadows != 0.0 || self.saturation != 0.0;
+        adjusts && (self.kind == MaskKind::Radial || self.invert || self.strokes.iter().any(|s| !s.points.is_empty()))
+    }
+}
+
 /// A single heal / clone point, in normalized image coordinates.
 #[derive(Debug, Clone, PartialEq)]
 pub struct HealSpot {
@@ -132,6 +217,8 @@ pub struct ImageAdjustments {
     pub curve_red: Vec<(f64, f64)>,
     pub curve_green: Vec<(f64, f64)>,
     pub curve_blue: Vec<(f64, f64)>,
+    /// 遮罩: radial and brush local adjustments.
+    pub masks: Vec<LocalMask>,
 }
 
 impl ImageAdjustments {
@@ -153,6 +240,12 @@ impl ImageAdjustments {
         self.highlight_recovery != 0.0
             || self.hsl_hue.iter().chain(&self.hsl_saturation).chain(&self.hsl_luminance).any(|&v| v != 0.0)
             || [&self.curve_rgb, &self.curve_red, &self.curve_green, &self.curve_blue].iter().any(|c| !crate::v3::curve_is_identity(c))
+            || !self.masks.is_empty()
+    }
+
+    /// True when at least one mask changes pixels (and the version has masks).
+    pub fn has_active_mask(&self) -> bool {
+        self.is_v3() && self.masks.iter().any(LocalMask::has_effect)
     }
 
     /// True when at least one gradient actually changes pixels.
@@ -197,6 +290,7 @@ impl Default for ImageAdjustments {
             curve_red: Vec::new(),
             curve_green: Vec::new(),
             curve_blue: Vec::new(),
+            masks: Vec::new(),
         }
     }
 }
