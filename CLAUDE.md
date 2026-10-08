@@ -33,6 +33,7 @@ cargo test --workspace
 ```
 - `AWPR_NO_GPU=1` 強制 CPU；`AWPR_TRACE=<檔案>` 執行軌跡；`AWPR_SHOT_ADJ=...`、`AWPR_SHOT_ZOOM=...` 截圖時套調整。
 - Windows 正式版沒有主控台，panic 寫到 `%TEMP%\awpr_crash.txt`；`--features console` 保留主控台。
+- ⚠️ 本機防毒軟體會擋新建置的 exe（無聲結束、沒有紀錄；2026-10-09 使用者確認）。`--shot` 失敗時先懷疑這個，不要花時間查程式；請使用者把 `target` 加入防毒排除清單。
 - 重建前先關掉殘留的 `AwayPhotoRawEditor.exe`（只砍自己啟動的 PID，不要用名稱砍）。
 
 ## 測試資料
