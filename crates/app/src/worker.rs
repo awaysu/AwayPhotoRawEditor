@@ -1,7 +1,7 @@
 //! Background work. Everything slow — LibRaw decodes, cache files, thumbnail renders —
 //! runs here and reports back over a channel; the UI thread only ever draws.
 
-use awpr_core::pipeline::{apply_to_float, ProcessContext, SourceKind};
+use awpr_core::pipeline::{apply_to_float, ProcessContext, SourceKind, SourcePrimaries};
 use awpr_core::{color::WhiteBalanceReference, libraw, FloatImage, ImageAdjustments};
 use awpr_photo::loader::{self, DecodeSource, LoaderOptions, ThumbnailBase};
 use awpr_photo::{codec, exif, paths, store, ExifData};
@@ -18,6 +18,18 @@ pub enum Msg {
     CpuRendered { version: u64, image: Arc<FloatImage> },
     /// A 處理版本 3 RAW's linear proxy is built (its photos can switch to it).
     ProxyV3Ready { path: String },
+    /// Nothing could decode this photo (a HEIC without a system decoder).
+    Undecodable { path: String },
+}
+
+/// Why a HEIC did not decode, in the interface language.
+pub fn heic_error_text(e: &awpr_photo::heic::HeicError) -> String {
+    use crate::i18n::{f, t};
+    match e {
+        awpr_photo::heic::HeicError::Unavailable(_) if cfg!(windows) => t("需要 Microsoft Store 的「HEIF 影像延伸模組」與「HEVC 視訊延伸模組」才能讀取 HEIC").to_string(),
+        awpr_photo::heic::HeicError::Unavailable(_) if cfg!(target_os = "linux") => t("需要安裝 libheif（libheif1 與 libheif-plugin-libde265）才能讀取 HEIC").to_string(),
+        awpr_photo::heic::HeicError::Unavailable(s) | awpr_photo::heic::HeicError::Failed(s) => f("HEIC 解碼失敗：{0}", &[s]),
+    }
 }
 
 pub struct Loaded {
@@ -28,6 +40,12 @@ pub struct Loaded {
     pub source: DecodeSource,
     /// The linear camera proxy (處理版本 3 RAW) or the usual encoded one.
     pub source_kind: SourceKind,
+    /// The source's primaries as delivered (Display P3 only for 處理版本 3).
+    pub source_primaries: SourcePrimaries,
+    /// The file itself is Display P3 (a HEIF), whatever was delivered.
+    pub p3_file: bool,
+    /// Why the photo could not be decoded (a missing HEIC decoder), for the info panel.
+    pub decode_error: Option<String>,
     /// A source reload for the photo already open (after 升級處理版本): keep its undo
     /// state and its saved values.
     pub reload: bool,
@@ -181,7 +199,9 @@ impl Worker {
                         return;
                     }
                     let Some(path) = queue.lock().unwrap().pop() else { return };
-                    loader::ensure_thumbnail_cache(&path, opt);
+                    if !loader::ensure_thumbnail_cache(&path, opt) {
+                        w.send(Msg::Undecodable { path: path.clone() });
+                    }
                     // Show the camera preview as soon as it exists, then the proxy cut.
                     for it in items.iter().filter(|i| i.path == path) {
                         w.thumbnail(it, None, 0);
@@ -286,9 +306,18 @@ impl Worker {
                     // Shown from the 8-bit proxy meanwhile; switched when it is built.
                     w.request_v3(&item.path, opt);
                 }
-                let (proxy, source, source_kind) = match proxy {
-                    Some((p, s, k)) => (Some(p), s, k),
-                    None => (None, DecodeSource::LibRaw, SourceKind::Encoded),
+                let (proxy, source, source_kind, source_primaries) = match proxy {
+                    Some((p, s, k, pr)) => (Some(p), s, k, pr),
+                    None => (None, DecodeSource::LibRaw, SourceKind::Encoded, SourcePrimaries::Srgb),
+                };
+                let p3_file = loader::source_primaries(&item.path) == SourcePrimaries::DisplayP3;
+                let decode_error = if proxy.is_none() && awpr_photo::heif::is_heif_path(&item.path) {
+                    Some(match awpr_photo::heic::decode(&item.path) {
+                        Err(e) => heic_error_text(&e),
+                        Ok(_) => String::new(),
+                    })
+                } else {
+                    None
                 };
                 w.send(Msg::Loaded(Box::new(Loaded {
                     version,
@@ -297,6 +326,9 @@ impl Worker {
                     proxy,
                     source,
                     source_kind,
+                    source_primaries,
+                    p3_file,
+                    decode_error,
                     reload,
                     millis: t0.elapsed().as_millis(),
                 })));
@@ -343,10 +375,19 @@ pub fn render_thumbnail(base: &ThumbnailBase, item: &Item, adjustments: Option<I
             return apply_to_float(&lin, &a, &ctx);
         }
     }
-    if store::is_default(&a) {
+    // A Display P3 HEIF: read as P3 by version 3, converted to sRGB for the others.
+    let p3 = loader::source_primaries(&item.path) == SourcePrimaries::DisplayP3;
+    if store::is_default(&a) && !(p3 && a.is_v3()) {
+        if p3 {
+            let mut b = base.buffer.clone();
+            awpr_core::v3::p3_to_srgb_encoded(&mut b);
+            return b;
+        }
         return base.buffer.clone();
     }
-    let mut ctx = ProcessContext { camera: exif.as_ref().and_then(|e| e.camera.clone()), ..Default::default() };
+    let mut buffer = std::borrow::Cow::Borrowed(&base.buffer);
+    let source_primaries = if p3 { loader::fit_primaries(buffer.to_mut(), &a, SourcePrimaries::DisplayP3) } else { SourcePrimaries::Srgb };
+    let mut ctx = ProcessContext { camera: exif.as_ref().and_then(|e| e.camera.clone()), source_primaries, ..Default::default() };
     if let Some(src) = base.proxy_source {
         ctx.white_balance_reference = src.white_balance_reference();
     } else if paths::is_raw(&item.path) {
@@ -359,7 +400,7 @@ pub fn render_thumbnail(base: &ThumbnailBase, item: &Item, adjustments: Option<I
             }
         }
     }
-    apply_to_float(&base.buffer, &a, &ctx)
+    apply_to_float(&buffer, &a, &ctx)
 }
 
 pub fn to_color_image(img: &FloatImage) -> egui::ColorImage {

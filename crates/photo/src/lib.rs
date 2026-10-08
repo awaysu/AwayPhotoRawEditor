@@ -2,6 +2,8 @@ pub mod codec;
 pub mod edits;
 pub mod exif;
 pub mod export;
+pub mod heic;
+pub mod heif;
 pub mod library;
 pub mod loader;
 pub mod paths;

@@ -40,6 +40,9 @@ section = "graphics"
 priority = "optional"
 # winit / wgpu open these at run time, so dpkg-shlibdeps cannot see them.
 depends = "$auto, libxkbcommon0, libvulkan1"
+# HEIC: the system's libheif, loaded at run time (the program runs without it). Ubuntu
+# 24.04 ships the HEVC decoder as a plugin; older releases build it into libheif1.
+recommends = "libheif1, libheif-plugin-libde265"
 assets = [
     ["target/release/AwayPhotoRawEditor", "usr/bin/AwayPhotoRawEditor", "755"],
     ["../../assets/linux/awayphotoraweditor.desktop", "usr/share/applications/awayphotoraweditor.desktop", "644"],
@@ -68,6 +71,12 @@ assets = [
 [package.metadata.generate-rpm.requires]
 libxkbcommon = "*"
 vulkan-loader = "*"
+
+# HEIC (loaded at run time). Fedora's libheif has no HEVC decoder; RPM Fusion's
+# libheif-freeworld adds it (a missing weak dependency is skipped).
+[package.metadata.generate-rpm.recommends]
+libheif = "*"
+libheif-freeworld = "*"
 
 [target.'cfg(windows)'.build-dependencies]
 winresource = "0.1"

@@ -32,7 +32,7 @@
 use crate::buffer::FloatImage;
 use crate::color;
 use crate::model::{CameraColorInfo, ImageAdjustments};
-use crate::pipeline::{white_balance_multipliers, ProcessContext, SourceKind};
+use crate::pipeline::{white_balance_multipliers, ProcessContext, SourceKind, SourcePrimaries};
 use crate::tone;
 use rayon::prelude::*;
 use std::f32::consts::{PI, TAU};
@@ -64,6 +64,13 @@ const LMS_TO_LAB: [f64; 9] = [
     0.2104542553, 0.7936177850, -0.0040720468, //
     1.9779984951, -2.4285922050, 0.4505937099, //
     0.0259040371, 0.7827717662, -0.8086757660,
+];
+
+/// Linear Display P3 → linear sRGB (D65; P3's primaries, sRGB's white).
+pub const P3_TO_SRGB: [f64; 9] = [
+    1.224940176, -0.224940176, 0.0, //
+    -0.042056955, 1.042056955, 0.0, //
+    -0.019637555, -0.078636046, 1.098273600,
 ];
 
 /// sRGB luminance weights: the gamut compression's grey axis.
@@ -450,6 +457,9 @@ impl V3Params {
             }
             (SourceKind::Encoded, None) => black_body(adj, exp),
         };
+        // A Display P3 source: its linear values go to linear sRGB first, which the white
+        // balance (defined on linear sRGB) and the Rec.2020 step then take as usual.
+        let m_src = if !linear_camera && ctx.source_primaries == SourcePrimaries::DisplayP3 { mat_mul(&m_src, &P3_TO_SRGB) } else { m_src };
         let m_in = to_f32(&mat_mul(&sp.srgb_to_2020, &m_src));
 
         let k = |v: f64| (v / 100.0) as f32;
@@ -671,6 +681,20 @@ pub fn pixel(p: &V3Params, px: &mut [f32]) {
     px[0] = oetf(s[0].clamp(0.0, 1.0));
     px[1] = oetf(s[1].clamp(0.0, 1.0));
     px[2] = oetf(s[2].clamp(0.0, 1.0));
+}
+
+/// A Display P3 source as sRGB for the older versions (which only read sRGB): decode,
+/// convert, clip to the sRGB gamut, encode — the transfer curve the pipeline assumes.
+pub fn p3_to_srgb_encoded(img: &mut FloatImage) {
+    let m = to_f32(&P3_TO_SRGB);
+    img.par_rows_mut(|_, row| {
+        for px in row.chunks_exact_mut(4) {
+            let s = mul3(&m, [eotf(px[0]), eotf(px[1]), eotf(px[2])]);
+            for c in 0..3 {
+                px[c] = oetf(s[c].clamp(0.0, 1.0));
+            }
+        }
+    });
 }
 
 /// The version-3 colour pass over a whole image, in place.
@@ -1051,6 +1075,40 @@ mod tests {
         pixel(&p, &mut red);
         pixel(&V3Params::new(&ImageAdjustments::default(), &ctx), &mut red0);
         assert!((red[0] - red0[0]).abs() < 1e-3 && (red[1] - red0[1]).abs() < 1e-3, "{red:?} vs {red0:?}");
+    }
+
+    /// A synthetic Display P3 colour through a version-3 render equals the formula:
+    /// sRGB = P3_TO_SRGB · P3 (linear), with neutral sliders and white balance.
+    #[test]
+    fn display_p3_source_converts_by_the_formula() {
+        let adj = ImageAdjustments::default(); // 5200 K / 0 → the black-body multipliers are 1
+        assert_eq!(white_balance_multipliers(adj.temperature, adj.tint), (1.0, 1.0, 1.0));
+        let p3 = ProcessContext { source_primaries: SourcePrimaries::DisplayP3, ..Default::default() };
+        let srgb = ProcessContext::default();
+        for lin in [[0.40f32, 0.30, 0.20], [0.10, 0.50, 0.30], [0.25, 0.25, 0.25]] {
+            let mut px = [oetf(lin[0]), oetf(lin[1]), oetf(lin[2]), 1.0];
+            pixel(&V3Params::new(&adj, &p3), &mut px);
+            let m = to_f32(&P3_TO_SRGB);
+            let want = mul3(&m, lin);
+            for c in 0..3 {
+                assert!((px[c] - oetf(want[c])).abs() < 2e-3, "{lin:?}: {} vs {}", px[c], oetf(want[c]));
+            }
+            // The same numbers read as sRGB give the plain values back.
+            let mut q = [oetf(lin[0]), oetf(lin[1]), oetf(lin[2]), 1.0];
+            pixel(&V3Params::new(&adj, &srgb), &mut q);
+            assert!((q[0] - oetf(lin[0])).abs() < 2e-3);
+        }
+        // A P3 primary red is outside sRGB: version 3 keeps it the most saturated red sRGB
+        // can show (gamut compression), more than reading the same numbers as sRGB red would.
+        let mut red = [1.0f32, 0.0, 0.0, 1.0];
+        pixel(&V3Params::new(&adj, &p3), &mut red);
+        assert!(red[0] > 0.95 && red[1] < 0.2 && red[2] < 0.2, "{red:?}");
+        // The older versions' conversion: P3 grey stays grey, P3 red clips to sRGB red.
+        let mut img = FloatImage::new(2, 1);
+        img.data.copy_from_slice(&[0.5, 0.5, 0.5, 1.0, 1.0, 0.0, 0.0, 1.0]);
+        p3_to_srgb_encoded(&mut img);
+        assert!((img.data[0] - 0.5).abs() < 2e-3 && (img.data[1] - 0.5).abs() < 2e-3);
+        assert!(img.data[4] > 0.99 && img.data[5] == 0.0 && img.data[6] == 0.0);
     }
 
     #[test]

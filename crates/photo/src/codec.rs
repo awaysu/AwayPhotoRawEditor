@@ -7,9 +7,16 @@ use image::{DynamicImage, ImageDecoder, ImageReader};
 use rayon::prelude::*;
 use std::io::Cursor;
 
-/// HEIC needs libheif, which this build does not link yet.
+/// Whether this machine has a HEIC decoder (`heic.rs`: ImageIO, WIC, system libheif).
 pub fn heic_supported() -> bool {
-    false
+    crate::heic::availability().is_ok()
+}
+
+/// Whether `load_float` turns this file by its EXIF orientation: only the formats the
+/// `image` crate decodes. A HEIF's orientation is its container's `irot` / `imir`
+/// (applied in `heic::decode`), never the EXIF tag beside it.
+pub fn applies_exif_orientation(path: &str) -> bool {
+    !crate::heif::is_heif_path(path)
 }
 
 fn to_float(img: DynamicImage) -> FloatImage {
@@ -47,8 +54,12 @@ fn to_float(img: DynamicImage) -> FloatImage {
     out
 }
 
-/// Decode a regular image with its EXIF orientation applied.
+/// Decode a regular image with its EXIF orientation applied (a HEIF: upright through its
+/// container, see `heic`).
 pub fn load_float(path: &str) -> Option<FloatImage> {
+    if crate::heif::is_heif_path(path) {
+        return crate::heic::decode(path).ok();
+    }
     let reader = ImageReader::open(path).ok()?.with_guessed_format().ok()?;
     decode(reader)
 }

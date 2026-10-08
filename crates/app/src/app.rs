@@ -96,6 +96,13 @@ pub struct App {
     source: DecodeSource,
     /// The open photo's source: LibRaw's linear camera RGB (處理版本 3 RAW) or encoded.
     source_kind: SourceKind,
+    /// The delivered source's primaries, and whether the file itself is Display P3.
+    source_primaries: awpr_core::SourcePrimaries,
+    p3_file: bool,
+    /// Why the open photo could not be decoded (shown in 照片資訊).
+    decode_error: Option<String>,
+    /// Photos nothing could decode (their strip tiles say so).
+    undecodable: std::collections::HashSet<String>,
     proxy: Option<Arc<FloatImage>>,
     proxy_gpu: Option<GpuFrame<'static>>,
     display: Display,
@@ -258,6 +265,10 @@ impl App {
             exif: None,
             source: DecodeSource::LibRaw,
             source_kind: SourceKind::Encoded,
+            source_primaries: awpr_core::SourcePrimaries::Srgb,
+            p3_file: false,
+            decode_error: None,
+            undecodable: Default::default(),
             proxy: None,
             proxy_gpu: None,
             display: Display::None,
@@ -470,6 +481,10 @@ impl App {
     /// on the linear one (pasted, undone).
     pub(crate) fn needs_source_reload(&self) -> bool {
         let Some(i) = self.current else { return false };
+        // A Display P3 file: version 3 reads it as P3, older versions as converted sRGB.
+        if self.p3_file && self.adj.is_v3() != (self.source_primaries == awpr_core::SourcePrimaries::DisplayP3) {
+            return true;
+        }
         match self.source_kind {
             // Only once the linear proxy exists (the background builder makes it; until then
             // version 3 renders from the 8-bit proxy).
@@ -551,9 +566,18 @@ impl App {
         self.exif = Some(l.exif);
         self.source = l.source;
         self.source_kind = l.source_kind;
+        self.source_primaries = l.source_primaries;
+        self.p3_file = l.p3_file;
+        self.decode_error = l.decode_error.clone().filter(|s| !s.is_empty());
         self.proxy_gpu = None;
         let Some(proxy) = l.proxy else {
-            self.status = t("無法讀取這張照片").into();
+            self.status = match &self.decode_error {
+                Some(reason) => format!("{} · {reason}", t("無法讀取這張照片")),
+                None => t("無法讀取這張照片").into(),
+            };
+            if let Some(i) = self.current {
+                self.undecodable.insert(self.items[i].path.clone());
+            }
             return;
         };
         if let Some(gpu) = self.gpu {
@@ -1031,6 +1055,7 @@ impl App {
             camera: self.exif.as_ref().and_then(|e| e.camera.clone()),
             white_balance_reference: self.source.white_balance_reference(),
             source_kind: self.source_kind,
+            source_primaries: self.source_primaries,
             ..Default::default()
         }
     }
@@ -1107,6 +1132,9 @@ impl App {
                     self.thumbs.insert(key, (tex, version));
                 }
                 Msg::Loaded(l) => self.on_loaded(*l),
+                Msg::Undecodable { path } => {
+                    self.undecodable.insert(path);
+                }
                 Msg::ProxyV3Ready { path } => {
                     crate::trace(&format!("ProxyV3Ready {}", paths::file_name(&path)));
                     // Its thumbnails now render from the linear source; the open photo
@@ -1541,6 +1569,9 @@ impl App {
                         ui.end_row();
                     }
                 });
+                if let Some(reason) = &self.decode_error {
+                    ui.add(egui::Label::new(RichText::new(format!("· {reason}")).size(theme::scaled(12.0)).color(theme::EDITED)).wrap());
+                }
                 // 處理版本 1 / 2 / 3 = pipeline_version 0 / 1 / 2; older than current is marked.
                 let old = self.adj.pipeline_version < ImageAdjustments::CURRENT_PIPELINE_VERSION;
                 let color = if old { theme::EDITED } else { theme::TEXT_FAINT };

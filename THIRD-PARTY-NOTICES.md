@@ -44,6 +44,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+## Used at run time, not included
+
+| Component | License | How |
+|---|---|---|
+| [libheif](https://github.com/strukturag/libheif) with [libde265](https://github.com/strukturag/libde265) (Linux) | LGPL-3.0 | HEIC decoding on Linux. The program loads the system's `libheif.so.1` at run time when a HEIC is opened (the `.deb` / `.rpm` only *recommend* the packages); nothing of either library is compiled into or shipped with AwayPhotoRawEditor, so the LGPL's terms stay with the user's own installation and its replaceability is untouched. |
+| Windows Imaging Component with Microsoft's HEIF / HEVC extensions (Windows), ImageIO (macOS) | Operating system components | HEIC decoding through the operating system. |
+
 ## Rust crates (direct dependencies)
 
 | Crate | Version | License |
@@ -67,7 +74,8 @@ SOFTWARE.
 | [libz-sys](https://github.com/rust-lang/libz-sys) | 1.1 | MIT OR Apache-2.0 |
 | [cc](https://github.com/rust-lang/cc-rs) (build only) | 1.2 | MIT OR Apache-2.0 |
 | [sha2](https://github.com/RustCrypto/hashes) (`awpr` CLI) | 0.10 | MIT OR Apache-2.0 |
-| [libloading](https://github.com/nagisa/rust_libloading) (`awpr` CLI, Windows) | 0.8 | ISC |
+| [libloading](https://github.com/nagisa/rust_libloading) (`awpr` CLI on Windows; libheif on Linux) | 0.8 | ISC |
+| [windows](https://github.com/microsoft/windows-rs) (WIC, Windows) | 0.62 | MIT OR Apache-2.0 |
 
 ## Fonts
 

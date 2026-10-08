@@ -524,6 +524,10 @@ impl App {
                         let copy_source = self.copy_source.as_deref() == Some(it.key.as_str());
                         let thumb = self.thumbs.get(&it.key).map(|(t, _)| t);
                         paint_thumb(ui.painter(), rect, it, thumb, selected, current, copy_source, self.settings.show_thumbnail_number);
+                        if thumb.is_none() && self.undecodable.contains(&it.path) {
+                            let area = egui::Rect::from_min_size(rect.min + Vec2::new(2.0, 2.0), Vec2::new(172.0, 115.0));
+                            ui.painter().text(area.center(), egui::Align2::CENTER_CENTER, t("無法解碼"), egui::FontId::proportional(theme::scaled(13.0)), theme::EDITED);
+                        }
                     }
                     if resp.clicked() {
                         clicked = Some(i);

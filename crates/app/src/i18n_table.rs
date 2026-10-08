@@ -400,4 +400,9 @@ pub static TABLE: &[(&str, [&str; 7])] = &[
     ("放射狀", ["Radial", "円形", "방사형", "径向", "Radial", "Radial", "Radial"]),
     ("筆刷", ["Brush", "ブラシ", "브러시", "画笔", "Pinsel", "Pinceau", "Pincel"]),
     ("刪除", ["Delete", "削除", "삭제", "删除", "Löschen", "Supprimer", "Eliminar"]),
+    // ---- HEIC (TASK-009) ----
+    ("需要 Microsoft Store 的「HEIF 影像延伸模組」與「HEVC 視訊延伸模組」才能讀取 HEIC", ["Reading HEIC needs the \"HEIF Image Extensions\" and \"HEVC Video Extensions\" from the Microsoft Store", "HEIC の読み込みには Microsoft Store の「HEIF 画像拡張機能」と「HEVC ビデオ拡張機能」が必要です", "HEIC를 읽으려면 Microsoft Store의 \"HEIF 이미지 확장\"과 \"HEVC 비디오 확장\"이 필요합니다", "需要 Microsoft Store 的「HEIF 图像扩展」与「HEVC 视频扩展」才能读取 HEIC", "Zum Lesen von HEIC werden die „HEIF-Bilderweiterungen“ und die „HEVC-Videoerweiterungen“ aus dem Microsoft Store benötigt", "La lecture des HEIC nécessite les « Extensions d'image HEIF » et les « Extensions vidéo HEVC » du Microsoft Store", "Para leer HEIC se necesitan las «Extensiones de imagen HEIF» y las «Extensiones de vídeo HEVC» de Microsoft Store"]),
+    ("需要安裝 libheif（libheif1 與 libheif-plugin-libde265）才能讀取 HEIC", ["Reading HEIC needs libheif (libheif1 and libheif-plugin-libde265)", "HEIC の読み込みには libheif（libheif1 と libheif-plugin-libde265）が必要です", "HEIC를 읽으려면 libheif(libheif1 및 libheif-plugin-libde265)를 설치해야 합니다", "需要安装 libheif（libheif1 与 libheif-plugin-libde265）才能读取 HEIC", "Zum Lesen von HEIC wird libheif benötigt (libheif1 und libheif-plugin-libde265)", "La lecture des HEIC nécessite libheif (libheif1 et libheif-plugin-libde265)", "Para leer HEIC se necesita libheif (libheif1 y libheif-plugin-libde265)"]),
+    ("HEIC 解碼失敗：{0}", ["HEIC decoding failed: {0}", "HEIC のデコードに失敗しました：{0}", "HEIC 디코딩 실패: {0}", "HEIC 解码失败：{0}", "HEIC-Dekodierung fehlgeschlagen: {0}", "Échec du décodage HEIC : {0}", "Error al decodificar HEIC: {0}"]),
+    ("無法解碼", ["Cannot decode", "デコードできません", "디코딩할 수 없음", "无法解码", "Nicht dekodierbar", "Décodage impossible", "No se puede decodificar"]),
 ];

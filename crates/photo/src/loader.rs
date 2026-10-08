@@ -7,7 +7,7 @@ use awpr_core::color::WhiteBalanceReference;
 use awpr_core::libraw::{self, Thumbnail};
 use awpr_core::pipeline::rotate_discrete;
 use awpr_core::resize::{resize_to_fit, resize_to_max_dim};
-use awpr_core::pipeline::{ProcessContext, SourceKind};
+use awpr_core::pipeline::{ProcessContext, SourceKind, SourcePrimaries};
 use awpr_core::{v3, CameraColorInfo, FloatImage, ImageAdjustments, Rotation};
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, OnceLock};
@@ -314,15 +314,39 @@ pub fn load_proxy_v3(path: &str, camera: &CameraColorInfo) -> Option<(FloatImage
 
 /// The editing proxy for these adjustments: the linear camera proxy for a version-3 RAW,
 /// otherwise the usual one. Falls back to the usual proxy when the linear one fails.
+/// The primaries of a gamma-encoded source: a Display P3 HEIF, else sRGB.
+pub fn source_primaries(path: &str) -> SourcePrimaries {
+    if crate::heif::is_heif_path(path) {
+        crate::heif::read(path).map(|i| i.primaries).unwrap_or_default()
+    } else {
+        SourcePrimaries::Srgb
+    }
+}
+
+/// Fit an encoded source's primaries to the version rendering it: 處理版本 3 reads Display
+/// P3 as it is (returned for its context); the older versions read sRGB only, so the
+/// pixels are converted (and clipped to sRGB) here.
+pub fn fit_primaries(img: &mut FloatImage, adj: &ImageAdjustments, primaries: SourcePrimaries) -> SourcePrimaries {
+    match primaries {
+        SourcePrimaries::DisplayP3 if !adj.is_v3() => {
+            v3::p3_to_srgb_encoded(img);
+            SourcePrimaries::Srgb
+        }
+        p => p,
+    }
+}
+
 /// The editor's: the linear proxy is used only once it is built (the background builder
 /// makes it); until then the usual proxy renders version 3 from its encoded pixels.
-pub fn load_proxy_for(path: &str, adj: &ImageAdjustments, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> Option<(FloatImage, DecodeSource, SourceKind)> {
+pub fn load_proxy_for(path: &str, adj: &ImageAdjustments, camera: Option<&CameraColorInfo>, opt: LoaderOptions) -> Option<(FloatImage, DecodeSource, SourceKind, SourcePrimaries)> {
     if adj.is_v3() && linear_capable(path, camera, opt) && proxy_v3_ready(path) {
         if let Some((p, gain)) = camera.and_then(|c| load_proxy_v3(path, c)) {
-            return Some((p, DecodeSource::LibRaw, SourceKind::LinearCamera { gain }));
+            return Some((p, DecodeSource::LibRaw, SourceKind::LinearCamera { gain }, SourcePrimaries::Srgb));
         }
     }
-    load_proxy(path, opt).map(|(p, s)| (p, s, SourceKind::Encoded))
+    let (mut p, s) = load_proxy(path, opt)?;
+    let prim = fit_primaries(&mut p, adj, source_primaries(path));
+    Some((p, s, SourceKind::Encoded, prim))
 }
 
 /// The full-resolution source to render `adj` from, with its context (export).
@@ -335,8 +359,9 @@ pub fn decode_for_render(path: &str, adj: &ImageAdjustments, camera: Option<&Cam
             }
         }
     }
-    let (full, source) = decode_full(path, opt)?;
-    let ctx = ProcessContext { camera: camera.cloned(), white_balance_reference: source.white_balance_reference(), ..Default::default() };
+    let (mut full, source) = decode_full(path, opt)?;
+    let source_primaries = fit_primaries(&mut full, adj, source_primaries(path));
+    let ctx = ProcessContext { camera: camera.cloned(), white_balance_reference: source.white_balance_reference(), source_primaries, ..Default::default() };
     Some((full, ctx))
 }
 

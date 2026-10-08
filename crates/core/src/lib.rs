@@ -16,4 +16,4 @@ pub mod v3;
 
 pub use buffer::FloatImage;
 pub use model::{BrushStroke, CameraColorInfo, HealSpot, ImageAdjustments, LinearGradient, LocalMask, MaskKind, Rotation};
-pub use pipeline::{apply_to_float, ProcessContext, SourceKind};
+pub use pipeline::{apply_to_float, ProcessContext, SourceKind, SourcePrimaries};

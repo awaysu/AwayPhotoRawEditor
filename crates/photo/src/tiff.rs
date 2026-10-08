@@ -55,6 +55,16 @@ impl TiffMeta {
 const HEAD_BYTES: u64 = 4 * 1024 * 1024;
 
 pub fn read(path: &str) -> Option<TiffMeta> {
+    if crate::heif::is_heif_path(path) {
+        // HEIF: the EXIF item can sit anywhere in the file; the container says where.
+        let info = crate::heif::read(path)?;
+        let mut m = info.exif_tiff.as_deref().and_then(read_bytes).unwrap_or_default();
+        let (w, h) = info.display_size();
+        if w > 0 && h > 0 {
+            (m.pixel_x, m.pixel_y) = (Some(w), Some(h));
+        }
+        return Some(m);
+    }
     let mut head = Vec::new();
     std::fs::File::open(path).ok()?.take(HEAD_BYTES).read_to_end(&mut head).ok()?;
     read_bytes(&head)

@@ -571,10 +571,12 @@ dependencies = [
  "chrono",
  "epaint_default_fonts",
  "image",
+ "libloading",
  "quick-xml 0.42.0",
  "rayon",
  "tiff",
  "trash",
+ "windows",
 ]
 
 [[package]]

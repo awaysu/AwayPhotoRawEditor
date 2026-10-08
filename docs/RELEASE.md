@@ -84,6 +84,17 @@ Get-AuthenticodeSignature dist\AwayPhotoRawEditor-Setup-v<版本>.exe | Format-L
 
 ⚠️ Git Bash 裡直接呼叫 ISCC 時要加 `MSYS_NO_PATHCONV=1`，否則 `/DMyAppVersion=…` 會被當成路徑轉換。
 
+### 給使用者的說明：Windows 讀 HEIC
+
+Windows 版用系統的 WIC 讀 HEIC（iPhone 照片），程式本身不帶 HEVC 解碼器。使用者電腦要有兩個
+Microsoft Store 元件：
+
+1. **HEIF 影像延伸模組**（HEIF Image Extensions，免費，Windows 10 1809 以後多半已預裝）
+2. **HEVC 視訊延伸模組**（HEVC Video Extensions，付費，約 US$0.99；部分品牌電腦出廠已附）
+
+缺任何一個時，縮圖顯示「無法解碼」，照片資訊寫出上面這句提示；裝好後重新整理資料夾（F5）即可。
+下載頁與 FAQ 請放這段說明。macOS 不需要任何安裝；Linux 見下方的 `Recommends`。
+
 ---
 
 ## 2. macOS（在 awpr-mac）
@@ -160,7 +171,10 @@ scripts/package-linux.sh
 ```
 
 相依：deb 由 `dpkg-shlibdeps` 自動算（libc6、libgomp1、libstdc++6），另外加 winit／wgpu 執行時才載入的
-`libxkbcommon0`、`libvulkan1`；rpm 寫 `libxkbcommon`、`vulkan-loader`。驗收：`dpkg -c`、`dpkg-deb --info`；
+`libxkbcommon0`、`libvulkan1`；rpm 寫 `libxkbcommon`、`vulkan-loader`。
+HEIC：deb `Recommends: libheif1, libheif-plugin-libde265`，rpm `Recommends: libheif, libheif-freeworld`
+（Fedora 的 libheif 不含 HEVC 解碼，RPM Fusion 的 libheif-freeworld 才有）。程式在打開 HEIC 時才
+`dlopen("libheif.so.1")`，沒裝也能正常啟動，只是 HEIC 顯示「無法解碼」。驗收：`dpkg -c`、`dpkg-deb --info`；
 rpm 用 `rpm -qlp`（awpr-linux 沒有 rpm 指令時腳本改用 7z＋zstd＋cpio 列內容）。
 
 ---

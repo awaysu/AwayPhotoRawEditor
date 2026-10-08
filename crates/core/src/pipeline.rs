@@ -32,6 +32,17 @@ pub struct ProcessContext {
     pub white_balance_reference: WhiteBalanceReference,
     /// What the source pixels are. Only 處理版本 3 reads linear camera sources.
     pub source_kind: SourceKind,
+    /// The encoded source's primaries (a Display P3 HEIC). Only 處理版本 3 reads it;
+    /// older versions get sRGB pixels from the loader.
+    pub source_primaries: SourcePrimaries,
+}
+
+/// Primaries of a gamma-encoded source.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SourcePrimaries {
+    #[default]
+    Srgb,
+    DisplayP3,
 }
 
 /// The kind of source a render starts from.
