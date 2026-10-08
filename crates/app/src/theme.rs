@@ -1,7 +1,9 @@
 //! Classic dark palette (the C# `Theme.ClassicDark` colours) and the CJK UI font.
 
 use eframe::egui::{self, Color32, FontData, FontDefinitions, FontFamily, FontId, TextStyle};
-use std::sync::Arc;
+use crate::i18n::Lang;
+use crate::settings::{FontKind, FontSizes};
+use std::sync::{Arc, RwLock};
 
 pub const WINDOW: Color32 = Color32::from_rgb(0x1E, 0x1E, 0x1E);
 pub const PANEL: Color32 = Color32::from_rgb(0x25, 0x25, 0x25);
@@ -17,62 +19,170 @@ pub const EDITED: Color32 = Color32::from_rgb(0xF2, 0xB1, 0x3D);
 pub const BUTTON: Color32 = Color32::from_rgb(0x38, 0x38, 0x3E);
 pub const BUTTON_HOVER: Color32 = Color32::from_rgb(0x46, 0x46, 0x4E);
 
-/// Candidate CJK fonts per platform (file, face index inside a .ttc). The first that
-/// exists wins; egui's built-in fonts have no Chinese glyphs.
-fn cjk_candidates() -> &'static [(&'static str, u32)] {
+/// One font face: file and face index inside a .ttc.
+type Face = (std::path::PathBuf, u32);
+
+/// macOS keeps PingFang in the font asset store under a hashed folder.
+fn pingfang() -> Option<std::path::PathBuf> {
+    let base = std::path::Path::new("/System/Library/AssetsV2");
+    for e in std::fs::read_dir(base).ok()?.flatten() {
+        if !e.file_name().to_string_lossy().starts_with("com_apple_MobileAsset_Font") {
+            continue;
+        }
+        for a in std::fs::read_dir(e.path()).ok()?.flatten() {
+            let p = a.path().join("AssetData/PingFang.ttc");
+            if p.exists() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
+/// The CJK faces for a language, best first (`Theme.FontFamily` per language: 微軟正黑體,
+/// 微軟雅黑, Yu Gothic UI, Malgun Gothic on Windows; 蘋方 / Hiragino / Apple SD Gothic
+/// Neo on macOS; Noto Sans CJK on Linux).
+fn faces_for(lang: Lang) -> Vec<Face> {
+    let p = |s: &str, i: u32| (std::path::PathBuf::from(s), i);
     if cfg!(windows) {
-        // Microsoft JhengHei UI (index 1 of msjh.ttc) — the C# build's UI font.
-        &[(r"C:\Windows\Fonts\msjh.ttc", 1), (r"C:\Windows\Fonts\msjh.ttf", 0), (r"C:\Windows\Fonts\mingliu.ttc", 0)]
+        let fonts = std::path::PathBuf::from(std::env::var("WINDIR").unwrap_or_else(|_| "C:/Windows".into())).join("Fonts");
+        let f = |n: &str, i: u32| (fonts.join(n), i);
+        match lang {
+            Lang::ZhCn => vec![f("msyh.ttc", 1), f("msyh.ttf", 0)],
+            Lang::Ja => vec![f("YuGothM.ttc", 1), f("meiryo.ttc", 0), f("msgothic.ttc", 0)],
+            Lang::Ko => vec![f("malgun.ttf", 0)],
+            _ => vec![f("msjh.ttc", 1), f("msjh.ttf", 0), f("mingliu.ttc", 0)],
+        }
     } else if cfg!(target_os = "macos") {
-        &[
-            ("/System/Library/Fonts/PingFang.ttc", 2),
-            ("/System/Library/Fonts/Hiragino Sans GB.ttc", 0),
-            ("/System/Library/Fonts/STHeiti Medium.ttc", 0),
-            ("/Library/Fonts/Arial Unicode.ttf", 0),
-            ("/System/Library/Fonts/Supplemental/Arial Unicode.ttf", 0),
-        ]
+        let pf = pingfang();
+        let mut v = Vec::new();
+        match lang {
+            Lang::Ja => v.push(p("/System/Library/Fonts/ヒラギノ角ゴシック W3.ttc", 0)), // i18n-ignore: not language text
+            Lang::Ko => v.push(p("/System/Library/Fonts/AppleSDGothicNeo.ttc", 0)),
+            Lang::ZhCn => {
+                v.extend(pf.map(|f| (f, 3)));
+                v.push(p("/System/Library/Fonts/STHeiti Medium.ttc", 1));
+            }
+            _ => {
+                v.extend(pf.map(|f| (f, 2)));
+                v.push(p("/System/Library/Fonts/STHeiti Medium.ttc", 0));
+            }
+        }
+        v.push(p("/System/Library/Fonts/Hiragino Sans GB.ttc", 0));
+        v
     } else {
-        &[
-            ("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", 3),
-            ("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", 3),
-            ("/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", 3),
-            ("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
-            ("/usr/share/fonts/truetype/wqy/wqy-zenhei.ttc", 0),
-            ("/usr/share/fonts/truetype/droid/DroidSansFallbackFull.ttf", 0),
+        let idx = match lang {
+            Lang::Ja => 0,
+            Lang::Ko => 1,
+            Lang::ZhCn => 2,
+            _ => 3,
+        };
+        vec![
+            p("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc", idx),
+            p("/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc", idx),
+            p("/usr/share/fonts/google-noto-cjk/NotoSansCJK-Regular.ttc", idx),
+            p("/usr/share/fonts/truetype/wqy/wqy-microhei.ttc", 0),
         ]
     }
 }
 
-/// Install the CJK font and the dark visuals. Returns the font file used (or None).
-pub fn install(ctx: &egui::Context) -> Option<String> {
+/// Install the UI fonts for a language: egui's Latin font first, then the language's CJK
+/// face, then one face of each other CJK script (the language lists and file names must
+/// still draw). Returns the main CJK file used. Callable at any time: switching language
+/// swaps the fonts without a restart.
+pub fn install_fonts(ctx: &egui::Context, lang: Lang) -> Option<String> {
     let mut fonts = FontDefinitions::default();
     let mut used = None;
-    for &(path, index) in cjk_candidates() {
-        if let Ok(bytes) = std::fs::read(path) {
-            let mut data = FontData::from_owned(bytes);
-            data.index = index;
-            fonts.font_data.insert("cjk".into(), Arc::new(data));
-            // Latin first (egui's font has nicer digits), CJK as the fallback for the rest.
-            fonts.families.entry(FontFamily::Proportional).or_default().push("cjk".into());
-            fonts.families.entry(FontFamily::Monospace).or_default().push("cjk".into());
-            used = Some(path.to_string());
-            break;
+    let mut files: Vec<std::path::PathBuf> = Vec::new();
+    let order = std::iter::once(lang).chain([Lang::ZhTw, Lang::ZhCn, Lang::Ja, Lang::Ko].into_iter().filter(move |l| *l != lang));
+    for (n, l) in order.enumerate() {
+        let Some((face, bytes)) = faces_for(l).into_iter().find_map(|f| std::fs::read(&f.0).ok().map(|b| (f, b))) else { continue };
+        // One file (Noto CJK, PingFang) holds every script: the first face of it is enough
+        // as a fallback.
+        if n > 0 && files.contains(&face.0) {
+            continue;
         }
+        let name = format!("cjk{n}");
+        let mut data = FontData::from_owned(bytes);
+        data.index = face.1;
+        fonts.font_data.insert(name.clone(), Arc::new(data));
+        fonts.families.entry(FontFamily::Proportional).or_default().push(name.clone());
+        fonts.families.entry(FontFamily::Monospace).or_default().push(name);
+        if used.is_none() {
+            used = Some(face.0.to_string_lossy().into_owned());
+        }
+        files.push(face.0);
     }
     ctx.set_fonts(fonts);
-
-    ctx.set_theme(egui::Theme::Dark);
-    ctx.all_styles_mut(|style| apply_style(style));
     used
+}
+
+/// Install fonts, the dark visuals and the type sizes.
+pub fn install(ctx: &egui::Context, lang: Lang, sizes: FontSizes) -> Option<String> {
+    let used = install_fonts(ctx, lang);
+    ctx.set_theme(egui::Theme::Dark);
+    set_font_sizes(ctx, sizes);
+    used
+}
+
+// ---- type sizes ------------------------------------------------------------------------
+
+static SIZES: RwLock<Option<FontSizes>> = RwLock::new(None);
+
+/// The look the layout was drawn for, in points, at the default sizes.
+fn base_points(k: FontKind) -> f32 {
+    match k {
+        FontKind::Small | FontKind::Mono => 12.0,
+        FontKind::Normal | FontKind::AboutBody | FontKind::FolderGlyph | FontKind::IconGlyph => 14.0,
+        FontKind::SectionTitle => 15.0,
+        FontKind::ProgressTitle => 16.0,
+        FontKind::DialogTitle => 18.0,
+        FontKind::Logo | FontKind::MenuGlyph => 20.0,
+        FontKind::AboutTitle => 22.0,
+    }
+}
+
+/// A size category in points: the base look scaled by the user's pixel size against the
+/// default one (字體大小… tunes each category; 介面大小 scales everything on top).
+pub fn fs(k: FontKind) -> f32 {
+    let s = SIZES.read().ok().and_then(|g| *g).unwrap_or_default();
+    base_points(k) * s.get(k) as f32 / FontSizes::default().get(k) as f32
+}
+
+/// A literal size from the layout code, mapped to its category and scaled with it.
+pub fn scaled(points: f32) -> f32 {
+    let k = if points < 13.0 {
+        FontKind::Small
+    } else if points < 14.6 {
+        FontKind::Normal
+    } else if points < 15.6 {
+        FontKind::SectionTitle
+    } else if points < 17.0 {
+        FontKind::ProgressTitle
+    } else if points < 19.0 {
+        FontKind::DialogTitle
+    } else if points < 21.0 {
+        FontKind::Logo
+    } else {
+        FontKind::AboutTitle
+    };
+    points * fs(k) / base_points(k)
+}
+
+pub fn set_font_sizes(ctx: &egui::Context, sizes: FontSizes) {
+    if let Ok(mut g) = SIZES.write() {
+        *g = Some(sizes);
+    }
+    ctx.all_styles_mut(apply_style);
 }
 
 fn apply_style(style: &mut egui::Style) {
     style.text_styles = [
-        (TextStyle::Small, FontId::proportional(12.0)),
-        (TextStyle::Body, FontId::proportional(14.0)),
-        (TextStyle::Button, FontId::proportional(14.0)),
-        (TextStyle::Heading, FontId::proportional(16.0)),
-        (TextStyle::Monospace, FontId::monospace(12.0)),
+        (TextStyle::Small, FontId::proportional(fs(FontKind::Small))),
+        (TextStyle::Body, FontId::proportional(fs(FontKind::Normal))),
+        (TextStyle::Button, FontId::proportional(fs(FontKind::Normal))),
+        (TextStyle::Heading, FontId::proportional(fs(FontKind::ProgressTitle))),
+        (TextStyle::Monospace, FontId::monospace(fs(FontKind::Mono))),
     ]
     .into();
     style.spacing.item_spacing = egui::vec2(6.0, 4.0);
@@ -101,7 +211,7 @@ pub fn section<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::U
         .inner_margin(egui::Margin { left: 10, right: 10, top: 6, bottom: 8 })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(egui::RichText::new(title).strong().size(15.0));
+            ui.label(egui::RichText::new(title).strong().size(fs(FontKind::SectionTitle)));
             ui.add_space(2.0);
             body(ui)
         })

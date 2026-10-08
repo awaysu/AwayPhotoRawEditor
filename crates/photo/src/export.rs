@@ -762,7 +762,7 @@ pub struct Written {
 /// Export one photo under `base` (`ExportOne`): full decode → pipeline → watermark at
 /// full resolution → long-edge resize → encode → write.
 pub fn export_one(item: &ExportItem, s: &ExportSettings, opt: LoaderOptions, base: &str, render: &Render) -> Result<Written, String> {
-    let (full, source) = loader::decode_full(&item.path, opt).ok_or("無法解碼影像")?;
+    let (full, source) = loader::decode_full(&item.path, opt).ok_or_else(|| crate::text::tr("無法解碼影像", &[]))?;
     let (adj, exif, _) = store::load_all(&item.path, item.copy);
     let adj = adj.unwrap_or_default();
     let mut exif = exif.unwrap_or_else(|| crate::exif::read(&item.path));
@@ -782,7 +782,7 @@ pub fn export_one(item: &ExportItem, s: &ExportSettings, opt: LoaderOptions, bas
         out = resize::resize(&out, w, h);
     }
 
-    let dir = s.resolve_output_dir(&item.path).map_err(|e| format!("無法建立資料夾：{e}"))?;
+    let dir = s.resolve_output_dir(&item.path).map_err(|e| crate::text::tr("無法建立資料夾：{0}", &[&e]))?;
     let ext = s.format.extension();
     let path = match s.conflict {
         ConflictMode::Overwrite => dir.join(format!("{base}{ext}")),
@@ -792,7 +792,7 @@ pub fn export_one(item: &ExportItem, s: &ExportSettings, opt: LoaderOptions, bas
     let info = ShotInfo::read(&item.path);
     let exif_block = (s.preserve_exif && s.format != ExportFormat::Bmp).then(|| build_exif(&info, out.width, out.height, s.resolution));
     let bytes = encode(&out, s.format, sixteen, s.jpeg_quality, s.resolution, exif_block.as_deref(), &info).map_err(|e| e.to_string())?;
-    std::fs::write(&path, &bytes).map_err(|e| format!("無法寫入 {}：{e}", path.display()))?;
+    std::fs::write(&path, &bytes).map_err(|e| crate::text::tr("無法寫入 {0}：{1}", &[&path.display(), &e]))?;
     Ok(Written { path, width: out.width, height: out.height, sixteen, bytes: bytes.len() })
 }
 
@@ -808,7 +808,7 @@ pub fn export_all(items: &[ExportItem], s: &ExportSettings, opt: LoaderOptions, 
             break;
         }
         let base = base_name(s.rename, &item.path, item.copy, || capture_time(&item.path, item.copy), &mut st);
-        let w = export_one(item, s, opt, &base, render).map_err(|e| format!("匯出「{name}」失敗：{e}"))?;
+        let w = export_one(item, s, opt, &base, render).map_err(|e| crate::text::tr("匯出「{0}」失敗：{1}", &[&name, &e]))?;
         written.push(w);
         progress(done + 1, total, &name);
     }

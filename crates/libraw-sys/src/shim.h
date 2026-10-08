@@ -85,6 +85,10 @@ int awpr_decode_thumb(const char *path, awpr_image *out, int *flip);
 
 void awpr_free_image(awpr_image *img);
 
+/* The cameras this LibRaw build supports (libraw_cameraList). */
+int awpr_camera_count(void);
+const char *awpr_camera_name(int index);
+
 #ifdef __cplusplus
 }
 #endif

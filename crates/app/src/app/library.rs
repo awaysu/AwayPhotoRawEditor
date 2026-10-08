@@ -2,6 +2,7 @@
 //! behind it): multi-selection and the batch edit session, the thumbnail menu, hiding,
 //! virtual copies, deleting, copy / paste settings, 升級處理版本 and the preset panel.
 
+use crate::i18n::{f, t, tr};
 use super::App;
 use crate::theme;
 use crate::worker::Item;
@@ -23,6 +24,8 @@ const UNDO_LIMIT: usize = 80;
 pub(super) enum Confirm {
     DeleteFile(Item),
     Upgrade(Vec<Item>),
+    /// 關閉資料夾並刪除快取縮圖.
+    ClearCache,
 }
 
 /// What a thumbnail-menu click asks for (run after the menu is drawn).
@@ -130,7 +133,7 @@ impl App {
     fn write_other(&mut self, it: &Item, a: &ImageAdjustments) {
         if !self.headless() {
             if let Err(e) = store::save(&it.path, a, it.copy, None) {
-                self.status = format!("無法儲存 {}：{e}", it.name());
+                self.status = f("無法儲存 {0}：{1}", &[&it.name(), &e]);
                 return;
             }
         }
@@ -195,18 +198,18 @@ impl App {
         }
         self.sync = None;
         self.edited();
-        self.status = format!("已套用風格檔：{name}");
+        self.status = f("已套用風格檔：{0}", &[&tr(name)]);
     }
 
     /// 風格檔種類: the list, 套用該風格檔 and 編輯風格檔….
     pub(super) fn preset_panel(&mut self, ui: &mut egui::Ui) {
         let on = self.has_photo();
-        theme::section(ui, "風格檔種類", |ui| {
+        theme::section(ui, t("風格檔種類"), |ui| {
             let names: Vec<String> = presets::BUILT_IN_NAMES.iter().map(|s| s.to_string()).chain(self.presets.custom_names()).collect();
             if !names.contains(&self.preset_choice) {
                 self.preset_choice = presets::DEFAULT_NAME.to_string();
             }
-            let label = |n: &str| if presets::is_builtin(n) { n.to_string() } else { format!("{n}（自訂）") };
+            let label = |n: &str| if presets::is_builtin(n) { tr(n) } else { format!("{n}{}", t("（自訂）")) };
             egui::ComboBox::from_id_salt("preset_choice").width(ui.available_width()).selected_text(label(&self.preset_choice)).show_ui(ui, |ui| {
                 for n in &names {
                     ui.selectable_value(&mut self.preset_choice, n.clone(), label(n));
@@ -214,12 +217,11 @@ impl App {
             });
             ui.horizontal(|ui| {
                 let w = ui.available_width() - 110.0;
-                let apply = egui::Button::new(RichText::new("套用該風格檔").color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(w, 28.0));
-                if ui.add_enabled(on, apply).clicked() {
+                if crate::widgets::fixed_button(ui, on, Vec2::new(w, 28.0), RichText::new(t("套用該風格檔")).color(Color32::WHITE), |b| b.fill(theme::ACCENT)).clicked() {
                     let n = self.preset_choice.clone();
                     self.apply_preset_to_selection(&n);
                 }
-                if ui.add(egui::Button::new("編輯風格檔…").min_size(Vec2::new(104.0, 28.0))).clicked() {
+                if crate::widgets::fixed_button(ui, true, Vec2::new(104.0, 28.0), t("編輯風格檔…"), |b| b).clicked() {
                     self.preset_editor = Some(crate::presets_ui::PresetEditor::new(&self.presets));
                 }
             });
@@ -234,13 +236,13 @@ impl App {
         let a = if Some(i) == self.current { Some(self.adj.clone()) } else { store::load_all(&it.path, it.copy).0 };
         self.copied = a;
         self.copy_source = Some(it.key.clone());
-        self.status = "已複製相片設定".into();
+        self.status = t("已複製相片設定").into();
     }
 
     /// 貼上照片設定 onto every selected photo.
     fn paste_settings(&mut self) {
         let Some(src) = self.copied.clone() else {
-            self.status = "尚未複製任何設定".into();
+            self.status = t("尚未複製任何設定").into();
             return;
         };
         for it in self.selected_items() {
@@ -253,7 +255,7 @@ impl App {
             }
         }
         self.sync = None;
-        self.status = "已貼上相片設定".into();
+        self.status = t("已貼上相片設定").into();
     }
 
     // ---- virtual copies, hiding, deleting ---------------------------------------------
@@ -263,7 +265,7 @@ impl App {
         library::rewrite_virtual_copies(&mut self.preview_list, &copies);
         if !self.headless() {
             if let Err(e) = self.preview_list.save(&self.folder) {
-                self.status = format!("無法儲存 preview_list.xml：{e}");
+                self.status = f("無法儲存 {0}：{1}", &[&"preview_list.xml", &e]);
             }
         }
     }
@@ -277,7 +279,7 @@ impl App {
         let a = a.unwrap_or_default();
         if !self.headless() {
             if let Err(e) = store::save(&src.path, &a, next, exif.as_ref()) {
-                self.status = format!("無法建立副本：{e}");
+                self.status = f("無法建立副本：{0}", &[&e]);
                 return;
             }
         }
@@ -285,7 +287,7 @@ impl App {
         self.items.insert(i + 1, copy);
         self.save_preview_list();
         self.refresh_items_keep_selection();
-        self.status = "已建立虛擬副本".into();
+        self.status = t("已建立虛擬副本").into();
     }
 
     /// 隱藏且不輸出 for the selection (also the Delete key).
@@ -299,7 +301,7 @@ impl App {
         }
         self.save_preview_list();
         self.refresh_items_keep_selection();
-        self.status = format!("已隱藏 {} 張（不輸出）", sel.len());
+        self.status = f("已隱藏 {0} 張（不輸出）", &[&sel.len()]);
     }
 
     fn unhide_selected(&mut self) {
@@ -309,7 +311,7 @@ impl App {
         }
         self.save_preview_list();
         self.refresh_items_keep_selection();
-        self.status = "已取消隱藏".into();
+        self.status = t("已取消隱藏").into();
     }
 
     /// 不顯示隱藏 / 顯示全部.
@@ -337,7 +339,7 @@ impl App {
             self.items.remove(i);
             self.save_preview_list();
             self.refresh_items_keep_selection();
-            self.status = "已刪除虛擬副本".into();
+            self.status = t("已刪除虛擬副本").into();
         } else {
             self.confirm = Some(Confirm::DeleteFile(it));
         }
@@ -357,9 +359,9 @@ impl App {
                 self.items.retain(|x| x.path != it.path);
                 self.save_preview_list();
                 self.refresh_items_keep_selection();
-                self.status = format!("已刪除 {}（已移到資源回收筒）", it.name());
+                self.status = f("已刪除 {0}（已移到資源回收筒）", &[&it.name()]);
             }
-            Err(e) => self.status = format!("刪除失敗：{e}"),
+            Err(e) => self.status = format!("{}{e}", t("刪除失敗：")),
         }
     }
 
@@ -399,7 +401,7 @@ impl App {
                 }
             }
         }
-        self.status = if n == 0 { "選取的照片已是最新處理版本".into() } else { format!("已升級 {n} 張照片的處理版本") };
+        self.status = if n == 0 { t("選取的照片已是最新處理版本").into() } else { f("已升級 {0} 張照片的處理版本", &[&n]) };
     }
 
     /// Rebuild the strip (after hiding, copies, deletes, the show-hidden switch) keeping
@@ -442,7 +444,7 @@ impl App {
     pub(super) fn strip(&mut self, ui: &mut egui::Ui) {
         if self.items.is_empty() {
             ui.centered_and_justified(|ui| {
-                ui.label(RichText::new("開啟一個相片資料夾開始編輯（Ctrl+O）").color(theme::TEXT_FAINT));
+                ui.label(RichText::new(t("開啟一個相片資料夾開始編輯（Ctrl+O）")).color(theme::TEXT_FAINT));
             });
             return;
         }
@@ -460,7 +462,7 @@ impl App {
                         let current = self.current == Some(i);
                         let copy_source = self.copy_source.as_deref() == Some(it.key.as_str());
                         let thumb = self.thumbs.get(&it.key).map(|(t, _)| t);
-                        paint_thumb(ui.painter(), rect, it, thumb, selected, current, copy_source);
+                        paint_thumb(ui.painter(), rect, it, thumb, selected, current, copy_source, self.settings.show_thumbnail_number);
                     }
                     if resp.clicked() {
                         clicked = Some(i);
@@ -509,34 +511,34 @@ impl App {
                         action = Some(a);
                     }
                 };
-                item(ui, "全選", true, MenuAction::SelectAll);
-                item(ui, "反向選擇", true, MenuAction::Invert);
-                item(ui, "取消全選", true, MenuAction::DeselectAll);
+                item(ui, t("全選"), true, MenuAction::SelectAll);
+                item(ui, t("反向選擇"), true, MenuAction::Invert);
+                item(ui, t("取消全選"), true, MenuAction::DeselectAll);
                 ui.separator();
-                egui::CollapsingHeader::new("套用風格檔").id_salt("menu_presets").show(ui, |ui| {
+                egui::CollapsingHeader::new(t("套用風格檔")).id_salt("menu_presets").show(ui, |ui| {
                     for n in presets::BUILT_IN_NAMES.iter().map(|s| s.to_string()).chain(self.presets.custom_names()) {
-                        item(ui, &n, true, MenuAction::ApplyPreset(n.clone()));
+                        item(ui, &tr(&n), true, MenuAction::ApplyPreset(n.clone()));
                     }
                 });
                 // Copying only makes sense for one photo.
-                item(ui, "複製照片設定", sel.len() <= 1, MenuAction::Copy(i));
-                item(ui, "貼上照片設定", self.copied.is_some(), MenuAction::Paste);
-                item(ui, "升級處理版本", true, MenuAction::Upgrade);
+                item(ui, t("複製照片設定"), sel.len() <= 1, MenuAction::Copy(i));
+                item(ui, t("貼上照片設定"), self.copied.is_some(), MenuAction::Paste);
+                item(ui, t("升級處理版本"), true, MenuAction::Upgrade);
                 ui.separator();
-                item(ui, "建立副本", true, MenuAction::VirtualCopy(i));
-                item(ui, "隱藏且不輸出", any_shown, MenuAction::Hide);
-                item(ui, "取消隱藏", any_hidden, MenuAction::Unhide);
-                item(ui, if is_copy { "刪除副本" } else { "刪除檔案" }, true, MenuAction::Delete(i));
+                item(ui, t("建立副本"), true, MenuAction::VirtualCopy(i));
+                item(ui, t("隱藏且不輸出"), any_shown, MenuAction::Hide);
+                item(ui, t("取消隱藏"), any_hidden, MenuAction::Unhide);
+                item(ui, if is_copy { t("刪除副本") } else { t("刪除檔案") }, true, MenuAction::Delete(i));
                 ui.separator();
                 let show = self.settings.show_hidden;
-                if ui.radio(!show, "不顯示隱藏").clicked() {
+                if ui.radio(!show, t("不顯示隱藏")).clicked() {
                     item_pick = Some(MenuAction::ShowHidden(false));
                 }
-                if ui.radio(show, "顯示全部").clicked() {
+                if ui.radio(show, t("顯示全部")).clicked() {
                     item_pick = Some(MenuAction::ShowHidden(true));
                 }
                 ui.separator();
-                item(ui, "匯出照片…", true, MenuAction::Export);
+                item(ui, t("匯出照片…"), true, MenuAction::Export);
             });
         });
         // A click anywhere else closes it (not the click that opened it).
@@ -569,8 +571,9 @@ impl App {
     pub(super) fn confirm_ui(&mut self, ctx: &egui::Context) {
         let Some(c) = &self.confirm else { return };
         let (title, text) = match c {
-            Confirm::DeleteFile(it) => ("刪除照片檔案".to_string(), format!("確定刪除檔案？（會移到資源回收筒）\n{}", it.name())),
-            Confirm::Upgrade(v) => ("升級處理版本".to_string(), format!("升級後曝光與白平衡改以線性光計算，畫面可能略有變化。要升級選取的 {} 張照片嗎？", v.len())),
+            Confirm::DeleteFile(it) => (t("刪除照片檔案").to_string(), f("確定刪除檔案？（會移到資源回收桶）\n{0}", &[&it.name()])),
+            Confirm::Upgrade(v) => (t("升級處理版本").to_string(), f("升級後曝光與白平衡改以線性光計算，畫面可能略有變化。要升級選取的 {0} 張照片嗎？", &[&v.len()])),
+            Confirm::ClearCache => (t("刪除快取縮圖").to_string(), t("關閉資料夾並刪除此資料夾的快取與縮圖檔案？\n（編輯設定會保留，下次開啟會重新產生快取）").to_string()),
         };
         let mut answer = None;
         egui::Window::new(title).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
@@ -578,10 +581,10 @@ impl App {
             ui.label(text);
             ui.add_space(8.0);
             ui.horizontal(|ui| {
-                if ui.add(egui::Button::new(RichText::new("確定").color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(90.0, 28.0))).clicked() {
+                if ui.add(egui::Button::new(RichText::new(t("確定")).color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(90.0, 28.0))).clicked() {
                     answer = Some(true);
                 }
-                if ui.add(egui::Button::new("取消").min_size(Vec2::new(90.0, 28.0))).clicked() {
+                if ui.add(egui::Button::new(t("取消")).min_size(Vec2::new(90.0, 28.0))).clicked() {
                     answer = Some(false);
                 }
             });
@@ -590,6 +593,7 @@ impl App {
             Some(true) => match self.confirm.take() {
                 Some(Confirm::DeleteFile(it)) => self.delete_file_confirmed(it),
                 Some(Confirm::Upgrade(v)) => self.upgrade_confirmed(v),
+                Some(Confirm::ClearCache) => self.clear_cache_confirmed(),
                 None => {}
             },
             Some(false) => self.confirm = None,
@@ -599,7 +603,8 @@ impl App {
 }
 
 /// One strip cell: thumbnail, #number, badges (hidden eye, copy, edited), selection.
-fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&egui::TextureHandle>, selected: bool, current: bool, copy_source: bool) {
+#[allow(clippy::too_many_arguments)]
+fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&egui::TextureHandle>, selected: bool, current: bool, copy_source: bool, show_number: bool) {
     let fill = if current {
         Color32::from_rgb(0x2F, 0x3E, 0x52)
     } else if selected {
@@ -619,10 +624,12 @@ fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&eg
         p.rect_filled(img_area, 2.0, theme::PANEL);
     }
     // #number counts hidden photos too, so it skips when one is hidden.
-    let tag = p.layout_no_wrap(format!("#{}", it.number), egui::FontId::proportional(12.0), Color32::WHITE);
-    let tag_rect = egui::Rect::from_min_size(photo.min + Vec2::new(3.0, 3.0), tag.size() + Vec2::new(8.0, 2.0));
-    p.rect_filled(tag_rect, 3.0, Color32::from_rgba_unmultiplied(90, 90, 98, 185));
-    p.galley(tag_rect.min + Vec2::new(4.0, 1.0), tag, Color32::WHITE);
+    if show_number {
+        let tag = p.layout_no_wrap(format!("#{}", it.number), egui::FontId::proportional(theme::scaled(12.0)), Color32::WHITE);
+        let tag_rect = egui::Rect::from_min_size(photo.min + Vec2::new(3.0, 3.0), tag.size() + Vec2::new(8.0, 2.0));
+        p.rect_filled(tag_rect, 3.0, Color32::from_rgba_unmultiplied(90, 90, 98, 185));
+        p.galley(tag_rect.min + Vec2::new(4.0, 1.0), tag, Color32::WHITE);
+    }
 
     // Badges, right-aligned from the top-right corner.
     let mut rx = photo.max.x - 4.0;
@@ -640,7 +647,7 @@ fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&eg
     if it.copy > 0 {
         let r = egui::Rect::from_min_size(egui::pos2(rx - 30.0, ry), Vec2::new(30.0, 13.0));
         p.rect_filled(r, 3.0, Color32::from_rgb(0xE6, 0xC8, 0x4C));
-        p.text(r.center(), egui::Align2::CENTER_CENTER, "copy", egui::FontId::proportional(10.5), Color32::BLACK);
+        p.text(r.center(), egui::Align2::CENTER_CENTER, "copy", egui::FontId::proportional(theme::scaled(10.5)), Color32::BLACK);
         rx -= 34.0;
     }
     if it.edited {
@@ -655,7 +662,7 @@ fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&eg
         egui::pos2(rect.center().x, rect.max.y - 9.0),
         egui::Align2::CENTER_CENTER,
         super::truncate(&it.name(), 26),
-        egui::FontId::proportional(11.5),
+        egui::FontId::proportional(theme::scaled(11.5)),
         if selected { theme::TEXT } else { theme::TEXT_DIM },
     );
     if selected {

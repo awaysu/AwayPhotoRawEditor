@@ -7,6 +7,7 @@ pub mod loader;
 pub mod paths;
 pub mod presets;
 pub mod store;
+pub mod text;
 pub mod tiff;
 pub mod watermark;
 pub mod xml;

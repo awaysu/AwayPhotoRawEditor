@@ -26,6 +26,18 @@ pub fn available() -> bool {
     unsafe { sys::awpr_libraw_available() != 0 }
 }
 
+/// Every camera this LibRaw build supports ("Make Model"), in LibRaw's order.
+pub fn camera_list() -> Vec<String> {
+    unsafe {
+        (0..sys::awpr_camera_count())
+            .filter_map(|i| {
+                let p = sys::awpr_camera_name(i);
+                (!p.is_null()).then(|| CStr::from_ptr(p).to_string_lossy().into_owned())
+            })
+            .collect()
+    }
+}
+
 pub fn version() -> String {
     unsafe {
         let p = sys::awpr_libraw_version();

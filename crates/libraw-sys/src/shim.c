@@ -38,6 +38,14 @@ int awpr_libraw_available(void)
 
 const char *awpr_libraw_version(void) { return libraw_version(); }
 
+int awpr_camera_count(void) { return libraw_cameraCount(); }
+
+const char *awpr_camera_name(int index)
+{
+    const char **list = libraw_cameraList();
+    return (list && index >= 0 && index < libraw_cameraCount()) ? list[index] : 0;
+}
+
 awpr_raw awpr_open(const char *path)
 {
     libraw_data_t *lr = libraw_init(0);

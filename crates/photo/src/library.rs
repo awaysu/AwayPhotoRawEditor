@@ -73,6 +73,22 @@ fn delete_photo_with(list: &mut PreviewList, path: &str, remove: impl FnOnce(&st
     Ok(())
 }
 
+/// 關閉資料夾並刪除快取縮圖: the regenerable caches in a folder's RAW_TEMP (thumbnails and
+/// proxies, also the C# `.f32` ones); edit XMLs and preview_list.xml stay. Returns how many
+/// files went.
+pub fn delete_cache_files(folder: &str) -> usize {
+    const SUFFIXES: [&str; 7] = ["_thumb.jpg", ".rawpipe.png", ".rawpipe.png.f16", ".rawpipe.png.src", ".rawpipe.png.thumb.jpg", ".rawpipe.f32", ".f32"];
+    let Ok(rd) = std::fs::read_dir(paths::raw_temp_dir(folder)) else { return 0 };
+    let mut n = 0;
+    for e in rd.flatten() {
+        let name = e.file_name().to_string_lossy().to_lowercase();
+        if SUFFIXES.iter().any(|s| name.ends_with(s)) && std::fs::remove_file(e.path()).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -103,6 +119,22 @@ mod tests {
         remove_virtual_copy(&mut l, r"D:\p\a.ARW", 1);
         assert!(l.hidden.is_empty());
         assert_eq!(l.virtual_copies.len(), 2);
+    }
+
+    #[test]
+    fn clearing_the_cache_keeps_edits() {
+        let dir = std::env::temp_dir().join(format!("awpr_cache_{}", std::process::id()));
+        let rt = dir.join(paths::RAW_TEMP);
+        std::fs::create_dir_all(&rt).unwrap();
+        let keep = ["a.ARW.rawpipe.xml", "a.ARW.copy1.rawpipe.xml", "preview_list.xml"];
+        let gone = ["a.ARW_thumb.jpg", "a.ARW.rawpipe.png", "a.ARW.rawpipe.png.src", "a.ARW.rawpipe.png.thumb.jpg", "a.ARW.rawpipe.png.f16", "b.JPG.rawpipe.f32"];
+        for f in keep.iter().chain(&gone) {
+            std::fs::write(rt.join(f), b"x").unwrap();
+        }
+        assert_eq!(delete_cache_files(&dir.to_string_lossy()), gone.len());
+        assert!(keep.iter().all(|f| rt.join(f).exists()));
+        assert!(gone.iter().all(|f| !rt.join(f).exists()));
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

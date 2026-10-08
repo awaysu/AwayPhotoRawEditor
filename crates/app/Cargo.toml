@@ -22,4 +22,7 @@ egui-wgpu = "0.36"
 wgpu = { version = "30", default-features = false, features = ["std", "parking_lot", "wgsl", "dx12", "metal", "vulkan"] }
 bytemuck = { version = "1.25", features = ["derive"] }
 rfd = "0.17"
+sys-locale = "0.3"
+ureq = "3"
+serde_json = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }

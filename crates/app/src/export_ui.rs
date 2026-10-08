@@ -1,6 +1,7 @@
 //! 匯出設定 window (the C# `ExportForm`), the background export job with its progress
 //! window, and the live watermark overlay on the viewer.
 
+use crate::i18n::{f, t, tr};
 use crate::theme;
 use awpr_core::{apply_to_float, FloatImage, ImageAdjustments, ProcessContext};
 use awpr_gpu::GpuPipeline;
@@ -64,7 +65,7 @@ impl ExportDialog {
         let [current, selected, all] = counts;
         let mut action = DialogAction::None;
         let mut open = true;
-        egui::Window::new("匯出設定")
+        egui::Window::new(t("匯出設定"))
             .open(&mut open)
             .collapsible(false)
             .resizable(false)
@@ -74,21 +75,21 @@ impl ExportDialog {
                 ui.set_width(1016.0);
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
-                        ui.label(RichText::new("匯出照片").strong().size(18.0));
+                        ui.label(RichText::new(t("匯出照片")).strong().size(theme::scaled(18.0)));
                         let n = match self.scope {
                             Scope::Current => current,
                             Scope::Selected => selected,
                             Scope::All => all,
                         };
-                        ui.label(RichText::new(format!("共 {n} 張相片將被轉存")).color(theme::TEXT_DIM));
+                        ui.label(RichText::new(f("共 {0} 張相片將被轉存", &[&n])).color(theme::TEXT_DIM));
                     });
                     ui.add_space(40.0);
-                    ui.label(RichText::new("範圍").color(theme::TEXT_DIM));
-                    ui.radio_value(&mut self.scope, Scope::Current, "目前這張");
+                    ui.label(RichText::new(t("範圍")).color(theme::TEXT_DIM));
+                    ui.radio_value(&mut self.scope, Scope::Current, t("目前這張"));
                     if selected > 1 || self.scope == Scope::Selected {
-                        ui.radio_value(&mut self.scope, Scope::Selected, format!("選取的照片（{selected} 張）"));
+                        ui.radio_value(&mut self.scope, Scope::Selected, f("選取的照片（{0} 張）", &[&selected]));
                     }
-                    ui.radio_value(&mut self.scope, Scope::All, format!("資料夾全部（{all} 張，不含隱藏）"));
+                    ui.radio_value(&mut self.scope, Scope::All, f("資料夾全部（{0} 張，不含隱藏）", &[&all]));
                 });
                 ui.separator();
                 ui.columns(2, |cols| {
@@ -97,14 +98,14 @@ impl ExportDialog {
                 });
                 ui.add_space(8.0);
                 ui.horizontal(|ui| {
-                    if ui.add(egui::Button::new("儲存設定").min_size(Vec2::new(100.0, 32.0))).clicked() {
+                    if ui.add(egui::Button::new(t("儲存設定")).min_size(Vec2::new(100.0, 32.0))).clicked() {
                         action = DialogAction::Save;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.add(egui::Button::new("取消").min_size(Vec2::new(92.0, 32.0))).clicked() {
+                        if ui.add(egui::Button::new(t("取消")).min_size(Vec2::new(92.0, 32.0))).clicked() {
                             action = DialogAction::Cancel;
                         }
-                        let start = egui::Button::new(RichText::new("儲存設定並開始轉存").color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(168.0, 32.0));
+                        let start = egui::Button::new(RichText::new(t("儲存設定並開始轉存")).color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(168.0, 32.0));
                         if ui.add(start).clicked() {
                             action = DialogAction::Start;
                         }
@@ -151,15 +152,15 @@ impl ExportDialog {
 
     fn left_column(&mut self, ui: &mut egui::Ui) {
         let s = &mut self.draft;
-        card(ui, "儲存位置", |ui| {
-            ui.radio_value(&mut s.location, ExportLocation::Desktop, "桌面");
-            ui.radio_value(&mut s.location, ExportLocation::SameAsSource, "同原始照片目錄");
-            ui.radio_value(&mut s.location, ExportLocation::Custom, "自己選擇");
+        card(ui, t("儲存位置"), |ui| {
+            ui.radio_value(&mut s.location, ExportLocation::Desktop, t("桌面"));
+            ui.radio_value(&mut s.location, ExportLocation::SameAsSource, t("同原始照片目錄"));
+            ui.radio_value(&mut s.location, ExportLocation::Custom, t("自己選擇"));
             ui.horizontal(|ui| {
                 ui.add_space(20.0);
                 ui.add(egui::TextEdit::singleline(&mut s.custom_path).desired_width(ui.available_width() - 96.0));
-                if ui.add(egui::Button::new("瀏覽").min_size(Vec2::new(84.0, 24.0))).clicked() {
-                    let mut dlg = rfd::FileDialog::new().set_title("選擇儲存位置");
+                if ui.add(egui::Button::new(t("瀏覽")).min_size(Vec2::new(84.0, 24.0))).clicked() {
+                    let mut dlg = rfd::FileDialog::new().set_title(t("選擇儲存位置"));
                     if !s.custom_path.trim().is_empty() {
                         dlg = dlg.set_directory(s.custom_path.trim());
                     }
@@ -170,14 +171,14 @@ impl ExportDialog {
                 }
             });
         });
-        card(ui, "次資料夾", |ui| {
+        card(ui, t("次資料夾"), |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut s.use_sub_folder, "儲存至次資料夾");
+                ui.checkbox(&mut s.use_sub_folder, t("儲存至次資料夾"));
                 ui.add(egui::TextEdit::singleline(&mut s.sub_folder).desired_width(ui.available_width()));
             });
         });
-        card(ui, "重新命名", |ui| {
-            let names = ["按照原始檔案", "日期時間（IMG 年月日時分秒＋序號）", "數字開始（IMG00001）"];
+        card(ui, t("重新命名"), |ui| {
+            let names = [t("按照原始檔案"), t("日期時間（IMG 年月日時分秒＋序號）"), t("數字開始（IMG00001）")];
             let modes = [RenameMode::Original, RenameMode::DateTime, RenameMode::Sequence];
             let cur = modes.iter().position(|m| *m == s.rename).unwrap_or(0);
             egui::ComboBox::from_id_salt("rename").width(ui.available_width()).selected_text(names[cur]).show_ui(ui, |ui| {
@@ -186,27 +187,27 @@ impl ExportDialog {
                 }
             });
         });
-        card(ui, "存檔遇到相同檔名", |ui| {
-            ui.radio_value(&mut s.conflict, ConflictMode::AppendNumber, "檔名接續 \"_數字\"，例如 _1, _2...");
-            ui.radio_value(&mut s.conflict, ConflictMode::Overwrite, "直接覆蓋");
+        card(ui, t("存檔遇到相同檔名"), |ui| {
+            ui.radio_value(&mut s.conflict, ConflictMode::AppendNumber, t("檔名接續 \"_數字\"，例如 _1, _2..."));
+            ui.radio_value(&mut s.conflict, ConflictMode::Overwrite, t("直接覆蓋"));
         });
     }
 
     fn right_column(&mut self, ui: &mut egui::Ui) {
         let max_edge = &mut self.max_edge;
         let s = &mut self.draft;
-        card(ui, "格式與尺寸", |ui| {
+        card(ui, t("格式與尺寸"), |ui| {
             ui.horizontal(|ui| {
                 egui::ComboBox::from_id_salt("format").width(110.0).selected_text(s.format.label()).show_ui(ui, |ui| {
                     for f in ExportFormat::ALL {
                         ui.selectable_value(&mut s.format, f, f.label());
                     }
                 });
-                ui.label(RichText::new("符合寬度高度(像素)").color(theme::TEXT_DIM));
-                ui.add(egui::TextEdit::singleline(max_edge).desired_width(72.0)).on_hover_text("長邊上限；0 = 原尺寸");
+                ui.label(RichText::new(t("符合寬度高度(像素)")).color(theme::TEXT_DIM));
+                ui.add(egui::TextEdit::singleline(max_edge).desired_width(72.0)).on_hover_text(t("長邊上限；0 = 原尺寸"));
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("解析度（像素/英寸）").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("解析度（像素/英寸）")).color(theme::TEXT_DIM));
                 egui::ComboBox::from_id_salt("dpi").width(80.0).selected_text(s.resolution.to_string()).show_ui(ui, |ui| {
                     for v in [100, 200, 300, 400, 500, 600] {
                         ui.selectable_value(&mut s.resolution, v, v.to_string());
@@ -214,23 +215,23 @@ impl ExportDialog {
                 });
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("JPEG 品質").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("JPEG 品質")).color(theme::TEXT_DIM));
                 ui.add_enabled(s.format == ExportFormat::Jpeg, egui::Slider::new(&mut s.jpeg_quality, 50..=100));
             });
-            ui.checkbox(&mut s.preserve_exif, "保存 EXIF（相機 / 鏡頭 / 拍攝資訊）");
-            ui.checkbox(&mut s.open_explorer_after, "轉檔完成後開啟檔案總管顯示");
+            ui.checkbox(&mut s.preserve_exif, t("保存 EXIF（相機 / 鏡頭 / 拍攝資訊）"));
+            ui.checkbox(&mut s.open_explorer_after, t("轉檔完成後開啟檔案總管顯示"));
             if matches!(s.format, ExportFormat::Tiff | ExportFormat::Png) {
-                ui.label(RichText::new("TIFF / PNG 在「RAW 處理精度 16-bit」時輸出 16-bit；全部格式（BMP 除外）嵌入 sRGB 描述檔").size(11.5).color(theme::TEXT_FAINT));
+                ui.label(RichText::new(t("TIFF / PNG 在「RAW 處理精度 16-bit」時輸出 16-bit；全部格式（BMP 除外）嵌入 sRGB 描述檔")).size(theme::scaled(11.5)).color(theme::TEXT_FAINT));
             }
         });
-        card(ui, "浮水印", |ui| {
+        card(ui, t("浮水印"), |ui| {
             ui.horizontal(|ui| {
-                ui.checkbox(&mut s.watermark_enabled, "啟用浮水印");
-                ui.label(RichText::new("文字").color(theme::TEXT_DIM));
+                ui.checkbox(&mut s.watermark_enabled, t("啟用浮水印"));
+                ui.label(RichText::new(t("文字")).color(theme::TEXT_DIM));
                 ui.add(egui::TextEdit::singleline(&mut s.watermark_text).desired_width(ui.available_width()));
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("字體").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("字體")).color(theme::TEXT_DIM));
                 egui::ComboBox::from_id_salt("wm_font").width(150.0).selected_text(s.watermark_font_name.clone()).show_ui(ui, |ui| match font_list() {
                     Some(list) => {
                         for f in list {
@@ -238,28 +239,28 @@ impl ExportDialog {
                         }
                     }
                     None => {
-                        ui.label("讀取字型中…");
+                        ui.label(t("讀取字型中…"));
                     }
                 });
-                ui.label(RichText::new("大小").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("大小")).color(theme::TEXT_DIM));
                 ui.add(egui::DragValue::new(&mut s.watermark_font_size).range(6.0..=300.0).max_decimals(0));
-                ui.label(RichText::new("顏色").color(theme::TEXT_DIM));
-                egui::ComboBox::from_id_salt("wm_color").width(80.0).selected_text(s.watermark_color.label()).show_ui(ui, |ui| {
+                ui.label(RichText::new(t("顏色")).color(theme::TEXT_DIM));
+                egui::ComboBox::from_id_salt("wm_color").width(80.0).selected_text(tr(s.watermark_color.label())).show_ui(ui, |ui| {
                     for c in WatermarkColor::ALL {
-                        ui.selectable_value(&mut s.watermark_color, c, c.label());
+                        ui.selectable_value(&mut s.watermark_color, c, tr(c.label()));
                     }
                 });
             });
             ui.horizontal(|ui| {
-                ui.label(RichText::new("透明度").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("透明度")).color(theme::TEXT_DIM));
                 ui.add(egui::DragValue::new(&mut s.watermark_transparency).range(0..=100));
-                ui.label(RichText::new("位置").color(theme::TEXT_DIM));
-                egui::ComboBox::from_id_salt("wm_pos").width(80.0).selected_text(s.watermark_position.label()).show_ui(ui, |ui| {
+                ui.label(RichText::new(t("位置")).color(theme::TEXT_DIM));
+                egui::ComboBox::from_id_salt("wm_pos").width(80.0).selected_text(tr(s.watermark_position.label())).show_ui(ui, |ui| {
                     for p in WatermarkPosition::ALL {
-                        ui.selectable_value(&mut s.watermark_position, p, p.label());
+                        ui.selectable_value(&mut s.watermark_position, p, tr(p.label()));
                     }
                 });
-                ui.label(RichText::new("邊緣").color(theme::TEXT_DIM));
+                ui.label(RichText::new(t("邊緣")).color(theme::TEXT_DIM));
                 ui.add(egui::DragValue::new(&mut s.watermark_margin).range(0..=9999));
             });
         });
@@ -344,13 +345,13 @@ impl ExportJob {
 
     /// The progress window (第 n / 總數、檔名、取消).
     pub fn show(&mut self, ctx: &egui::Context) {
-        egui::Window::new("匯出中").collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
+        egui::Window::new(t("匯出中")).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
             ui.set_width(420.0);
             let n = (self.done + 1).min(self.total.max(1));
-            ui.label(format!("第 {n} / {} 張　{}", self.total, self.name));
+            ui.label(f("第 {0} / {1} 張　{2}", &[&n, &self.total, &self.name]));
             ui.add(egui::ProgressBar::new(self.done as f32 / self.total.max(1) as f32).show_percentage());
             ui.add_space(4.0);
-            let label = if self.cancelled() { "取消中…（目前這張完成後停止）" } else { "取消" };
+            let label = if self.cancelled() { t("取消中…（目前這張完成後停止）") } else { t("取消") };
             if ui.add_enabled(!self.cancelled(), egui::Button::new(label)).clicked() {
                 self.cancel.store(true, Ordering::SeqCst);
             }

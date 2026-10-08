@@ -8,7 +8,10 @@
 //!                                              diagnostics: screenshot and quit
 //!   env AWPR_SHOT_ADJ="exposure=0.5,..."       (shot) adjustments applied in memory
 //!   env AWPR_SHOT_TOOL=crop|gradient|heal      (shot) open that tool (sample spots if none)
-//!   env AWPR_SHOT_DLG=export|presets           (shot) open the 匯出設定 / 編輯風格檔 window
+//!   env AWPR_SHOT_DLG=export|presets|settings|fonts|about|firstrun|cameras
+//!                                              (shot) open that window
+//!   env AWPR_LANG=zh-TW|en|ja|ko|zh-CN|de|fr|es  interface language for this run
+//!   env AWPR_UI_SCALE=1.5                      force the interface size
 //!   env AWPR_SHOT_SELECT=1,2                   (shot) select these strip positions (1-based)
 //!   env AWPR_SHOT_MENU=1                       (shot) open the thumbnail menu
 //!   env AWPR_SHOT_SHOW_HIDDEN=1                (shot) show hidden photos
@@ -19,10 +22,12 @@
 
 mod app;
 mod export_ui;
+mod i18n;
 mod presets_ui;
 mod settings;
 mod theme;
 mod tools;
+mod update;
 mod viewer;
 mod widgets;
 mod worker;
@@ -50,7 +55,7 @@ fn pick_adapter(adapters: &[wgpu::Adapter], _surface: Option<&wgpu::Surface<'_>>
         };
         (backend, kind)
     };
-    adapters.iter().min_by_key(|a| rank(a)).cloned().ok_or_else(|| "找不到 GPU".to_string())
+    adapters.iter().min_by_key(|a| rank(a)).cloned().ok_or_else(|| crate::i18n::t("找不到 GPU").to_string())
 }
 
 fn wgpu_options() -> egui_wgpu::WgpuConfiguration {

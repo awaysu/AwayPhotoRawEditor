@@ -84,7 +84,7 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     // Label (double-click → default, like double-clicking the slider).
     let label_rect = Rect::from_min_size(outer.min, Vec2::new(width - 70.0, 16.0));
     let label_resp = ui.interact(label_rect, ui.id().with((spec.label, "label")), Sense::click());
-    ui.painter().text(label_rect.left_center(), egui::Align2::LEFT_CENTER, spec.label, egui::FontId::proportional(14.0), text_col);
+    ui.painter().text(label_rect.left_center(), egui::Align2::LEFT_CENTER, spec.label, egui::FontId::proportional(theme::scaled(14.0)), text_col);
 
     // Editable value on the right.
     let value_rect = Rect::from_min_size(Pos2::new(outer.max.x - 64.0, outer.min.y - 1.0), Vec2::new(64.0, 18.0));
@@ -197,6 +197,20 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
         }
     }
     out
+}
+
+/// A button of exactly `size` whose text is cut with "…" when it does not fit: words go into
+/// the fixed box instead of widening the column (the C# rule for long translations). The
+/// full text shows on hover.
+pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: impl Into<egui::WidgetText>, f: impl FnOnce(egui::Button) -> egui::Button) -> egui::Response {
+    let text: egui::WidgetText = text.into();
+    let full = text.text().to_string();
+    ui.add_enabled_ui(enabled, |ui| {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+        let r = ui.add_sized(size, f(egui::Button::new(text).min_size(size)));
+        r.on_hover_text(full)
+    })
+    .inner
 }
 
 /// 256-bin RGB histogram (R, G, B in `bins[0..256]`, `[256..512]`, `[512..768]`).

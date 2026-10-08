@@ -27,6 +27,9 @@ the full dependency tree (transitive crates included) can be listed with
 | [rayon](https://github.com/rayon-rs/rayon) | 1.12 | MIT OR Apache-2.0 |
 | [chrono](https://github.com/chronotope/chrono) | 0.4 | MIT OR Apache-2.0 |
 | [trash](https://github.com/Byron/trash-rs) | 5 | MIT |
+| [ureq](https://github.com/algesten/ureq) (update check) | 3 | MIT OR Apache-2.0 |
+| [serde_json](https://github.com/serde-rs/json) | 1 | MIT OR Apache-2.0 |
+| [sys-locale](https://github.com/1Password/sys-locale) | 0.3 | MIT OR Apache-2.0 |
 | [bytemuck](https://github.com/Lokathor/bytemuck) | 1.25 | Zlib OR Apache-2.0 OR MIT |
 | [pollster](https://github.com/zesterer/pollster) | 0.4 | Apache-2.0 OR MIT |
 | [libz-sys](https://github.com/rust-lang/libz-sys) | 1.1 | MIT OR Apache-2.0 |

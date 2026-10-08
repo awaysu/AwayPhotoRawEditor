@@ -1,6 +1,7 @@
 //! The main window: folder → thumbnail strip → photo, with the C# layout (top bar,
 //! strip, left adjustments, centre viewer, right histogram / info / tools).
 
+use crate::i18n::{self, f, t, Lang};
 use crate::export_ui::{DialogAction, ExportDialog, ExportJob, Scope, WatermarkOverlay};
 use crate::settings::Settings;
 use crate::theme;
@@ -25,7 +26,9 @@ use std::sync::mpsc::Receiver;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+mod dialogs;
 mod library;
+use dialogs::{SettingsDraft, UpdateState};
 use library::{Confirm, UndoStep};
 
 /// What the viewer currently shows.
@@ -51,10 +54,9 @@ pub struct ShotPlan {
 
 /// Points of height the full layout needs (top bar + strip + left column + margins);
 /// the C# build's `Ui.DesignClientHeight`.
-const DESIGN_HEIGHT: f32 = 1010.0;
+pub(crate) const DESIGN_HEIGHT: f32 = 1010.0;
 
 pub struct App {
-    zoom_fitted: bool,
     rs: Option<egui_wgpu::RenderState>,
     gpu: Option<&'static GpuPipeline>,
     gpu_status: String,
@@ -139,12 +141,40 @@ pub struct App {
     /// The thumbnail menu: item, position, opened this frame.
     strip_menu: Option<(usize, egui::Pos2, bool)>,
     confirm: Option<Confirm>,
+
+    // ---- settings, language, about (dialogs.rs) ----
+    /// The first-run language choice, with the language picked so far.
+    first_run: Option<Lang>,
+    settings_dlg: Option<SettingsDraft>,
+    about: Option<UpdateState>,
+    /// 支援RAW檔相機列表: filter text and the list.
+    cameras: Option<(String, Vec<String>)>,
+    /// The ☰ menu: position, opened this frame.
+    app_menu: Option<(egui::Pos2, bool)>,
+    /// The interface size last applied (percent setting, AWPR_UI_SCALE in percent).
+    applied_scale: Option<(i64, Option<i64>)>,
+    /// The interface is bigger than the screen: the columns must scroll.
+    force_scroll: bool,
+    /// What 自動 gives on this screen, in percent.
+    auto_percent: i64,
 }
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>, shot: Option<ShotPlan>) -> Self {
-        let font = theme::install(&cc.egui_ctx);
+        let first_run = Settings::is_first_run();
         let mut settings = Settings::load();
+        if let Ok(code) = std::env::var("AWPR_LANG") {
+            // Memory only: one run in another language (screenshots).
+            settings.language = Lang::from_locale(&code);
+        }
+        let first_run = if shot.is_some() {
+            (std::env::var("AWPR_SHOT_DLG").as_deref() == Ok("firstrun")).then(Lang::guess_from_system)
+        } else {
+            first_run.then(Lang::guess_from_system)
+        };
+        i18n::set_lang(settings.language);
+        awpr_photo::text::set_translator(i18n::tr);
+        let font = theme::install(&cc.egui_ctx, settings.language, settings.font_sizes);
         if std::env::var_os("AWPR_NO_GPU").is_some() {
             settings.use_gpu = false;
         }
@@ -152,7 +182,7 @@ impl App {
             settings.show_hidden = true; // memory only: the hidden badge in a screenshot
         }
         let rs = cc.wgpu_render_state.clone();
-        let (mut gpu, mut gpu_status) = (None, "沒有 GPU".to_string());
+        let (mut gpu, mut gpu_status) = (None, t("沒有 GPU").to_string());
         if let Some(rs) = &rs {
             DisplayPipeline::install(rs);
             crate::trace(&format!("adapter {:?}, surface format {:?}", rs.adapter.get_info().name, rs.target_format));
@@ -163,15 +193,14 @@ impl App {
                         // Lives as long as the program; frames borrow it.
                         gpu = Some(&*Box::leak(Box::new(p)));
                     }
-                    Err(e) => gpu_status = format!("GPU 無法使用，改用 CPU：{e}"),
+                    Err(e) => gpu_status = f("GPU 無法使用，改用 CPU：{0}", &[&e]),
                 }
             } else {
-                gpu_status = "已關閉 GPU 加速（CPU 算圖）".into();
+                gpu_status = t("已關閉 GPU 加速（CPU 算圖）").into();
             }
         }
         let (worker, rx) = Worker::new(cc.egui_ctx.clone());
         let mut app = Self {
-            zoom_fitted: false,
             rs,
             gpu,
             gpu_status,
@@ -235,6 +264,14 @@ impl App {
             preset_editor: None,
             strip_menu: None,
             confirm: None,
+            first_run,
+            settings_dlg: None,
+            about: None,
+            cameras: None,
+            app_menu: None,
+            applied_scale: None,
+            force_scroll: false,
+            auto_percent: 100,
         };
         crate::export_ui::font_list();
         if let Some(s) = &app.shot {
@@ -251,6 +288,15 @@ impl App {
         self.shot.is_some()
     }
 
+    /// 顯示捲軸, or forced when the interface is bigger than the screen.
+    fn scroll_bars(&self) -> egui::scroll_area::ScrollBarVisibility {
+        if self.settings.show_column_scroll_bars || self.force_scroll {
+            egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded
+        } else {
+            egui::scroll_area::ScrollBarVisibility::AlwaysHidden
+        }
+    }
+
     fn has_photo(&self) -> bool {
         self.current.is_some() && self.proxy.is_some()
     }
@@ -258,7 +304,7 @@ impl App {
     // ---- folder -------------------------------------------------------------------
 
     fn pick_folder(&mut self) {
-        let mut dlg = rfd::FileDialog::new().set_title("選擇相片資料夾");
+        let mut dlg = rfd::FileDialog::new().set_title(t("選擇相片資料夾"));
         if !self.folder.is_empty() {
             dlg = dlg.set_directory(&self.folder);
         }
@@ -281,6 +327,7 @@ impl App {
         self.folder = path.to_string();
         if !self.headless() {
             self.settings.last_folder = path.to_string();
+            dialogs::remember_folder(&mut self.settings, path);
             self.settings.save();
         }
         paths::cleanup_stale_temp(path);
@@ -288,7 +335,7 @@ impl App {
         self.thumbs.clear();
         self.rebuild_items();
         if self.items.is_empty() {
-            self.status = "此資料夾沒有支援的影像".into();
+            self.status = t("此資料夾沒有支援的影像").into();
             self.cache_progress = None;
             return;
         }
@@ -371,7 +418,7 @@ impl App {
         self.loading = true;
         self.load_version += 1;
         let item = self.items[index].clone();
-        self.status = format!("載入 {}…", item.name());
+        self.status = format!("{}{}", t("載入中… "), item.name());
         self.worker.load_photo(item, self.load_version, self.settings.loader_options());
     }
 
@@ -416,18 +463,18 @@ impl App {
         self.source = l.source;
         self.viewer.reset_fit();
         let Some(proxy) = l.proxy else {
-            self.status = "無法讀取這張照片".into();
+            self.status = t("無法讀取這張照片").into();
             return;
         };
         if let Some(gpu) = self.gpu {
             if gpu.can_host(proxy.width, proxy.height) {
                 match gpu.upload(&proxy) {
                     Ok(f) => self.proxy_gpu = Some(f),
-                    Err(e) => self.status = format!("GPU 上傳失敗，改用 CPU：{e}"),
+                    Err(e) => self.status = f("GPU 上傳失敗，改用 CPU：{0}", &[&e]),
                 }
             }
         }
-        self.status = format!("{} · {} x {} · 載入 {} ms", self.items[self.current.unwrap_or(0)].name(), proxy.width, proxy.height, l.millis);
+        self.status = f("{0} · {1} x {2} · 載入 {3} ms", &[&self.items[self.current.unwrap_or(0)].name(), &proxy.width, &proxy.height, &l.millis]);
         self.proxy = Some(Arc::new(proxy));
         self.needs_render = true;
         if let Some(s) = &self.shot {
@@ -460,6 +507,11 @@ impl App {
             match std::env::var("AWPR_SHOT_DLG").as_deref() {
                 Ok("export") => self.open_export(false),
                 Ok("presets") => self.preset_editor = Some(crate::presets_ui::PresetEditor::new(&self.presets)),
+                Ok("settings") => self.settings_dlg = Some(SettingsDraft::new(&self.settings, false)),
+                Ok("fonts") => self.settings_dlg = Some(SettingsDraft::new(&self.settings, true)),
+                Ok("about") => self.about = Some(UpdateState::Idle),
+                Ok("cameras") => self.cameras = Some((String::new(), awpr_core::libraw::camera_list())),
+                Ok("menu") => self.app_menu = Some((egui::pos2(8.0, 46.0), true)),
                 _ => {}
             }
         }
@@ -478,7 +530,7 @@ impl App {
         }
         let item = self.items[i].clone();
         if let Err(e) = store::save(&item.path, &self.adj, item.copy, None) {
-            self.status = format!("無法儲存編輯：{e}");
+            self.status = format!("{}{e}", t("儲存調整失敗："));
             return;
         }
         self.saved_adj = self.adj.clone();
@@ -806,11 +858,11 @@ impl App {
             match job.result.take() {
                 Some(r) => {
                     self.status = match r {
-                        Ok(w) if w.is_empty() => "匯出已取消".into(),
+                        Ok(w) if w.is_empty() => t("匯出已取消").into(),
                         Ok(w) => {
                             let dir = w[0].path.parent().map(|p| p.display().to_string()).unwrap_or_default();
-                            let note = if job.cancelled() { "（已取消其餘）" } else { "" };
-                            format!("已匯出 {} 張到 {dir}{note}", w.len())
+                            let note = if job.cancelled() { t("（已取消其餘）") } else { "" };
+                            format!("{}{note}", f("已匯出 {0} 張到 {1}", &[&w.len(), &dir]))
                         }
                         Err(e) => e,
                     };
@@ -826,7 +878,7 @@ impl App {
         self.save_current_if_dirty();
         let items = self.export_items(all);
         if items.is_empty() {
-            self.status = "沒有可匯出的照片（隱藏的照片不會匯出）".into();
+            self.status = t("沒有可匯出的照片（隱藏的照片不會匯出）").into();
             return;
         }
         self.export_job = Some(ExportJob::start(ctx.clone(), items, self.export_settings.clone(), self.settings.loader_options(), self.gpu));
@@ -881,7 +933,7 @@ impl App {
                     return;
                 }
                 Err(e) => {
-                    self.status = format!("GPU 算圖失敗，改用 CPU：{e}");
+                    self.status = f("GPU 算圖失敗，改用 CPU：{0}", &[&e]);
                     self.proxy_gpu = None;
                 }
             }
@@ -894,7 +946,7 @@ impl App {
         }
         self.cpu_inflight = true;
         self.render_version += 1;
-        self.render_note = "CPU 算圖中…".into();
+        self.render_note = t("CPU 算圖中…").into();
         self.worker.cpu_render(proxy, adj, ctx, self.render_version);
     }
 
@@ -925,7 +977,7 @@ impl App {
                         let filter = if matches!(self.viewer.mode, ZoomMode::Actual100 | ZoomMode::Actual200) { egui::TextureOptions::NEAREST } else { egui::TextureOptions::LINEAR };
                         let tex = ctx.load_texture("photo", worker::to_color_image(&image), filter);
                         self.display = Display::Cpu { tex, size };
-                        self.render_note = "CPU 算圖".into();
+                        self.render_note = t("CPU 算圖").into();
                     }
                 }
             }
@@ -935,7 +987,7 @@ impl App {
             if let Some((job, t0)) = &self.hist_job {
                 if let Some(bins) = job.take() {
                     // Submit → histogram ready: how long the GPU took for this render.
-                    self.render_note = format!("GPU 算圖 {} ms", t0.elapsed().as_millis());
+                    self.render_note = f("GPU 算圖 {0} ms", &[&t0.elapsed().as_millis()]);
                     self.hist = Some(Histogram { bins });
                     self.hist_job = None;
                 } else {
@@ -1038,35 +1090,36 @@ impl App {
     fn top_bar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal_centered(|ui| {
             ui.add_space(8.0);
-            ui.label(RichText::new("AwayPhotoRawEditor").strong().size(20.0));
-            ui.label(RichText::new("Rust 預覽版").size(12.0).color(theme::TEXT_FAINT));
+            self.app_menu_button(ui);
+            ui.label(RichText::new("AwayPhotoRawEditor").strong().size(theme::fs(crate::settings::FontKind::Logo)));
+            ui.label(RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).size(theme::scaled(12.0)).color(theme::TEXT_FAINT));
             ui.add_space(16.0);
-            if ui.button("📁 開啟資料夾").clicked() {
+            if ui.button(t("📁  開啟資料夾")).clicked() {
                 self.pick_folder();
             }
             let has_folder = !self.folder.is_empty();
-            if ui.add_enabled(has_folder, egui::Button::new("重新整理")).clicked() {
+            if ui.add_enabled(has_folder, egui::Button::new(t("重新整理"))).clicked() {
                 let f = self.folder.clone();
                 self.open_folder(&f);
             }
-            if ui.add_enabled(has_folder, egui::Button::new("關閉資料夾")).clicked() {
+            if ui.add_enabled(has_folder, egui::Button::new(t("關閉資料夾"))).clicked() {
                 self.close_folder();
             }
             let can_export = self.has_photo() && self.export_job.is_none() && self.export_dlg.is_none();
-            if ui.add_enabled(can_export, egui::Button::new("匯出…")).clicked() {
+            if ui.add_enabled(can_export, egui::Button::new(t("匯出…"))).clicked() {
                 self.open_export(false);
             }
             let show = self.settings.show_hidden;
-            if ui.add_enabled(has_folder, egui::Button::new("顯示隱藏的照片").selected(show)).on_hover_text("不顯示隱藏／顯示全部").clicked() {
+            if ui.add_enabled(has_folder, egui::Button::new(t("顯示隱藏的照片")).selected(show)).on_hover_text(t("不顯示隱藏／顯示全部")).clicked() {
                 self.set_show_hidden(!show);
             }
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(10.0);
-                ui.label(RichText::new(&self.gpu_status).size(12.0).color(theme::TEXT_FAINT));
+                ui.label(RichText::new(&self.gpu_status).size(theme::scaled(12.0)).color(theme::TEXT_FAINT));
                 if let Some((done, total, name)) = &self.cache_progress {
                     ui.add(egui::ProgressBar::new(*done as f32 / (*total).max(1) as f32).desired_width(140.0).show_percentage());
-                    ui.label(RichText::new(format!("產生快取 {done}/{total} {name}")).size(12.0).color(theme::TEXT_DIM));
+                    ui.label(RichText::new(f("產生快取 {0}/{1} {2}", &[done, total, name])).size(theme::scaled(12.0)).color(theme::TEXT_DIM));
                 }
                 // The folder path gets whatever the status leaves; a long one keeps its
                 // end (`…/photos/2026`), like the C# path label. Hover shows all of it.
@@ -1111,47 +1164,49 @@ impl App {
     }
 
     fn left_column(&mut self, ui: &mut egui::Ui) {
+        // Long translations are cut, never widen the column.
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
         let legacy = self.adj.is_legacy_pipeline();
-        theme::section(ui, "基本調整", |ui| {
+        theme::section(ui, t("基本調整"), |ui| {
             // v1 exposure is ±5 true EV; legacy photos keep their ±2 slider.
             let lim = if legacy { 2.0 } else { 5.0 };
-            let exposure = SliderSpec { min: -lim, max: lim, decimals: 2, wheel_step: 0.05, ..SliderSpec::pm100("曝光") };
+            let exposure = SliderSpec { min: -lim, max: lim, decimals: 2, wheel_step: 0.05, ..SliderSpec::pm100(t("曝光")) };
             self.slider(ui, exposure, |a| &mut a.exposure);
-            self.slider(ui, SliderSpec::pm100("對比"), |a| &mut a.contrast);
-            self.slider(ui, SliderSpec::pm100("亮部"), |a| &mut a.highlights);
-            self.slider(ui, SliderSpec::pm100("暗部"), |a| &mut a.shadows);
-            self.slider(ui, SliderSpec::pm100("白色"), |a| &mut a.whites);
-            self.slider(ui, SliderSpec::pm100("黑色"), |a| &mut a.blacks);
+            self.slider(ui, SliderSpec::pm100(t("對比")), |a| &mut a.contrast);
+            self.slider(ui, SliderSpec::pm100(t("亮部")), |a| &mut a.highlights);
+            self.slider(ui, SliderSpec::pm100(t("暗部")), |a| &mut a.shadows);
+            self.slider(ui, SliderSpec::pm100(t("白色")), |a| &mut a.whites);
+            self.slider(ui, SliderSpec::pm100(t("黑色")), |a| &mut a.blacks);
         });
         ui.add_space(4.0);
-        theme::section(ui, "色彩", |ui| {
+        theme::section(ui, t("色彩"), |ui| {
             ui.horizontal(|ui| {
-                ui.label(RichText::new("白平衡").color(theme::TEXT_DIM));
-                let picker = egui::Button::new("滴管").selected(self.wb_picker);
-                if ui.add_enabled(self.has_photo(), picker).on_hover_text("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）").clicked() {
+                ui.label(RichText::new(t("白平衡")).color(theme::TEXT_DIM));
+                let picker = egui::Button::new(t("滴管")).selected(self.wb_picker);
+                if ui.add_enabled(self.has_photo(), picker).on_hover_text(t("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）")).clicked() {
                     self.wb_picker = !self.wb_picker;
                 }
-                if ui.add_enabled(self.has_photo(), egui::Button::new("拍攝時設定")).clicked() {
+                if ui.add_enabled(self.has_photo(), egui::Button::new(t("拍攝時設定"))).clicked() {
                     self.as_shot();
                 }
             });
             if self.is_raw() {
-                let t = SliderSpec {
+                let temp = SliderSpec {
                     min: color::MIN_KELVIN,
                     max: color::MAX_KELVIN,
                     default: 5200.0,
                     bipolar: false,
                     wheel_step: 50.0,
-                    ..SliderSpec::pm100("色溫")
+                    ..SliderSpec::pm100(t("色溫"))
                 }
                 .gradient(Gradient::Temperature);
-                self.slider(ui, t, |a| &mut a.temperature);
+                self.slider(ui, temp, |a| &mut a.temperature);
             } else {
                 // No camera Kelvin scale: a 0-centred ±100 warm/cool scale (±3000 K).
                 let enabled = self.has_photo();
                 let mut v = (self.adj.temperature - 5200.0) / 30.0;
-                let spec = SliderSpec::pm100("色溫").gradient(Gradient::Temperature);
+                let spec = SliderSpec::pm100(t("色溫")).gradient(Gradient::Temperature);
                 let r = widgets::adjust_slider(ui, &spec, &mut v, enabled);
                 if r.began {
                     self.edit_begin();
@@ -1161,19 +1216,19 @@ impl App {
                     self.edited();
                 }
             }
-            self.slider(ui, SliderSpec::pm100("色調").gradient(Gradient::Tint), |a| &mut a.tint);
-            self.slider(ui, SliderSpec::pm100("鮮豔度").gradient(Gradient::Saturation), |a| &mut a.vibrance);
-            self.slider(ui, SliderSpec::pm100("飽和度").gradient(Gradient::Saturation), |a| &mut a.saturation);
+            self.slider(ui, SliderSpec::pm100(t("色調")).gradient(Gradient::Tint), |a| &mut a.tint);
+            self.slider(ui, SliderSpec::pm100(t("鮮豔度")).gradient(Gradient::Saturation), |a| &mut a.vibrance);
+            self.slider(ui, SliderSpec::pm100(t("飽和度")).gradient(Gradient::Saturation), |a| &mut a.saturation);
         });
         ui.add_space(4.0);
-        theme::section(ui, "細節", |ui| {
-            self.slider(ui, SliderSpec::pm100("銳利度"), |a| &mut a.sharpening);
-            self.slider(ui, SliderSpec::pm100("暗角"), |a| &mut a.vignette);
-            let nr = SliderSpec { min: 0.0, bipolar: false, ..SliderSpec::pm100("降噪") };
+        theme::section(ui, t("細節"), |ui| {
+            self.slider(ui, SliderSpec::pm100(t("銳利度")), |a| &mut a.sharpening);
+            self.slider(ui, SliderSpec::pm100(t("暗角")), |a| &mut a.vignette);
+            let nr = SliderSpec { min: 0.0, bipolar: false, ..SliderSpec::pm100(t("降噪")) };
             self.slider(ui, nr, |a| &mut a.noise_reduction);
         });
         ui.add_space(8.0);
-        if ui.add_enabled(self.has_photo(), egui::Button::new("基本／色彩／細節 重設").min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
+        if ui.add_enabled(self.has_photo(), egui::Button::new(t("基本／色彩／細節 重設")).min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
             self.reset_basic_color_detail();
         }
         ui.add_space(8.0);
@@ -1181,42 +1236,45 @@ impl App {
     }
 
     fn right_column(&mut self, ui: &mut egui::Ui) {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
-        theme::section(ui, "直方圖", |ui| widgets::histogram(ui, self.hist.as_ref()));
+        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref()));
         ui.add_space(4.0);
-        theme::section(ui, "照片資訊", |ui| match &self.exif {
+        theme::section(ui, t("照片資訊"), |ui| match &self.exif {
             None => {
-                ui.label(RichText::new("尚未選擇照片").color(theme::TEXT_FAINT));
+                ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
             }
             Some(e) => {
                 let rows = [
-                    ("相機", format!("{} {}", e.camera_make, e.camera_model).trim().to_string()),
-                    ("鏡頭", e.lens.clone()),
+                    (t("相機"), format!("{} {}", e.camera_make, e.camera_model).trim().to_string()),
+                    (t("鏡頭"), e.lens.clone()),
                     ("ISO", e.iso.clone()),
-                    ("光圈", e.aperture.clone()),
-                    ("快門", e.shutter.clone()),
-                    ("焦段", e.focal_length.clone()),
-                    ("曝光補償", e.exposure_bias.clone()),
-                    ("白平衡", e.white_balance.clone()),
-                    ("測光", e.metering_mode.clone()),
-                    ("日期", e.date_taken.clone()),
-                    ("尺寸", e.dimensions_display()),
-                    ("檔案大小", e.file_size_display()),
+                    (t("光圈"), e.aperture.clone()),
+                    (t("快門"), e.shutter.clone()),
+                    (t("焦段"), e.focal_length.clone()),
+                    (t("曝光補償"), e.exposure_bias.clone()),
+                    (t("白平衡"), e.white_balance.clone()),
+                    (t("測光"), e.metering_mode.clone()),
+                    (t("日期"), e.date_taken.clone()),
+                    (t("尺寸"), e.dimensions_display()),
+                    (t("檔案大小"), e.file_size_display()),
                 ];
+                // The label column is measured (the C# ExifView); only the values are cut.
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                 egui::Grid::new("exif").num_columns(2).spacing([10.0, 1.0]).show(ui, |ui| {
                     for (k, v) in rows {
-                        ui.label(RichText::new(k).size(12.5).color(theme::TEXT_DIM));
+                        ui.label(RichText::new(k).size(theme::scaled(12.5)).color(theme::TEXT_DIM));
                         ui.add(egui::Label::new(v).truncate());
                         ui.end_row();
                     }
                 });
                 if self.adj.is_legacy_pipeline() {
-                    ui.label(RichText::new("· 舊版處理").size(12.0).color(theme::EDITED));
+                    ui.label(RichText::new(format!("· {}", t("舊版處理"))).size(theme::scaled(12.0)).color(theme::EDITED));
                 }
             }
         });
         ui.add_space(4.0);
-        theme::section(ui, "工具", |ui| self.tools_panel(ui));
+        theme::section(ui, t("工具"), |ui| self.tools_panel(ui));
     }
 
     /// 工具: 裁切／漸層／修護 tabs (click the open one again to close it) over the
@@ -1226,13 +1284,13 @@ impl App {
         ui.horizontal(|ui| {
             let w = (ui.available_width() - 2.0 * ui.spacing().item_spacing.x) / 3.0;
             let tabs = [
-                ("裁切", ToolMode::Crop, "拖曳邊、角或整個框；角度滑桿即時拉直"),
-                ("漸層", ToolMode::Gradient, "白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除"),
-                ("修護", ToolMode::Heal, "點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除"),
+                (t("裁切"), ToolMode::Crop, t("拖曳邊、角或整個框；角度滑桿即時拉直")),
+                (t("漸層"), ToolMode::Gradient, t("白點：選取／移動　黃點：範圍　藍點：旋轉\nDelete 或右鍵白點：刪除")),
+                (t("修護"), ToolMode::Heal, t("點擊加入修護點，拖曳圓圈移動（虛線圈＝取樣處）\nDelete 或右鍵：刪除")),
             ];
             for (label, mode, hint) in tabs {
-                let b = egui::Button::new(label).selected(self.tool == mode).min_size(Vec2::new(w, 28.0));
-                if ui.add_enabled(on, b).on_hover_text(hint).clicked() {
+                let sel = self.tool == mode;
+                if widgets::fixed_button(ui, on, Vec2::new(w, 28.0), label, |b| b.selected(sel)).on_hover_text(hint).clicked() {
                     self.set_tool(if self.tool == mode { ToolMode::None } else { mode });
                 }
             }
@@ -1251,13 +1309,13 @@ impl App {
         const NAMES: [&str; 6] = ["原始", "3:2", "4:3", "16:9", "1:1", "自訂"];
         const VALUES: [&str; 6] = ["Original", "3:2", "4:3", "16:9", "1:1", "Custom"];
         ui.horizontal(|ui| {
-            ui.label(RichText::new("比例").color(theme::TEXT_DIM));
+            ui.add_sized([62.0, 20.0], egui::Label::new(RichText::new(t("比例")).color(theme::TEXT_DIM)).truncate());
             let cur = if self.crop_custom.is_some() { 5 } else { tools::aspect_index(&self.adj.crop_aspect_ratio) };
             let mut sel = cur;
             ui.add_enabled_ui(on, |ui| {
-                egui::ComboBox::from_id_salt("crop_aspect").width(72.0).selected_text(NAMES[cur]).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("crop_aspect").width(72.0).selected_text(t(NAMES[cur])).show_ui(ui, |ui| {
                     for (i, name) in NAMES.iter().enumerate() {
-                        ui.selectable_value(&mut sel, i, *name);
+                        ui.selectable_value(&mut sel, i, t(name));
                     }
                 });
             });
@@ -1283,20 +1341,20 @@ impl App {
         });
         // 角度 shows −CropAngle (the user wanted the direction flipped; the stored value
         // keeps its meaning, so old XML is unaffected). 0.0 − x keeps −0 out.
-        let angle = SliderSpec { min: -45.0, max: 45.0, decimals: 1, wheel_step: 0.5, ..SliderSpec::pm100("角度") };
+        let angle = SliderSpec { min: -45.0, max: 45.0, decimals: 1, wheel_step: 0.5, ..SliderSpec::pm100(t("角度")) };
         self.slider_with(ui, angle, on, |a| 0.0 - a.crop_angle, |a, v| a.crop_angle = 0.0 - v);
-        self.slider_with(ui, SliderSpec::pm100("廣角變形"), on, |a| a.distortion, |a, v| a.distortion = v);
+        self.slider_with(ui, SliderSpec::pm100(t("廣角變形")), on, |a| a.distortion, |a, v| a.distortion = v);
         ui.add_space(2.0);
         ui.horizontal(|ui| {
             let half = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-            if ui.add_enabled(on, egui::Button::new("照片左轉90度").min_size(Vec2::new(half, 28.0))).clicked() {
+            if widgets::fixed_button(ui, on, Vec2::new(half, 28.0), t("照片左轉90度"), |b| b).clicked() {
                 self.rotate(false);
             }
-            if ui.add_enabled(on, egui::Button::new("照片右轉90度").min_size(Vec2::new(half, 28.0))).clicked() {
+            if widgets::fixed_button(ui, on, Vec2::new(half, 28.0), t("照片右轉90度"), |b| b).clicked() {
                 self.rotate(true);
             }
         });
-        if ui.add_enabled(on, egui::Button::new("裁切重設").min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if ui.add_enabled(on, egui::Button::new(t("裁切重設")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
             self.reset_crop();
         }
     }
@@ -1307,11 +1365,11 @@ impl App {
         let has = on && active.is_some();
         let lim = if self.adj.is_legacy_pipeline() { 2.0 } else { 5.0 };
         let fields: [(SliderSpec, fn(&LinearGradient) -> f64, fn(&mut LinearGradient, f64)); 5] = [
-            (SliderSpec { min: -lim, max: lim, decimals: 2, wheel_step: 0.05, ..SliderSpec::pm100("曝光") }, |g| g.exposure, |g, v| g.exposure = v),
-            (SliderSpec::pm100("對比"), |g| g.contrast, |g, v| g.contrast = v),
-            (SliderSpec::pm100("亮部"), |g| g.highlights, |g, v| g.highlights = v),
-            (SliderSpec::pm100("暗部"), |g| g.shadows, |g, v| g.shadows = v),
-            (SliderSpec::pm100("飽和度").gradient(Gradient::Saturation), |g| g.saturation, |g, v| g.saturation = v),
+            (SliderSpec { min: -lim, max: lim, decimals: 2, wheel_step: 0.05, ..SliderSpec::pm100(t("曝光")) }, |g| g.exposure, |g, v| g.exposure = v),
+            (SliderSpec::pm100(t("對比")), |g| g.contrast, |g, v| g.contrast = v),
+            (SliderSpec::pm100(t("亮部")), |g| g.highlights, |g, v| g.highlights = v),
+            (SliderSpec::pm100(t("暗部")), |g| g.shadows, |g, v| g.shadows = v),
+            (SliderSpec::pm100(t("飽和度")).gradient(Gradient::Saturation), |g| g.saturation, |g, v| g.saturation = v),
         ];
         for (spec, get, set) in fields {
             self.slider_with(ui, spec, has, |a| active.map_or(spec.default, |i| get(&a.gradients[i])), |a, v| {
@@ -1321,11 +1379,11 @@ impl App {
             });
         }
         ui.add_space(6.0);
-        let add = egui::Button::new(RichText::new("新增線性漸層").color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(ui.available_width(), 28.0));
+        let add = egui::Button::new(RichText::new(t("新增線性漸層")).color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(ui.available_width(), 28.0));
         if ui.add_enabled(on, add).clicked() {
             self.add_gradient();
         }
-        if ui.add_enabled(on, egui::Button::new("漸層重設（清除全部）").min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if ui.add_enabled(on, egui::Button::new(t("漸層重設（清除全部）")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
             self.clear_gradients();
         }
     }
@@ -1333,15 +1391,15 @@ impl App {
     fn heal_controls(&mut self, ui: &mut egui::Ui, on: bool) {
         ui.horizontal(|ui| {
             let half = (ui.available_width() - ui.spacing().item_spacing.x) / 2.0;
-            for (label, mode) in [("仿製", HealMode::Clone), ("修補", HealMode::Inpaint)] {
-                let b = egui::Button::new(label).selected(self.heal_mode == mode).min_size(Vec2::new(half, 28.0));
-                if ui.add_enabled(on, b).clicked() {
+            for (label, mode) in [(t("仿製"), HealMode::Clone), (t("修補"), HealMode::Inpaint)] {
+                let sel = self.heal_mode == mode;
+                if widgets::fixed_button(ui, on, Vec2::new(half, 28.0), label, |b| b.selected(sel)).clicked() {
                     self.set_heal_mode(mode);
                 }
             }
         });
         // 大小 sets the brush for new spots and live-resizes the active one.
-        let size = SliderSpec { min: 0.0, max: 50.0, default: 10.0, bipolar: false, ..SliderSpec::pm100("大小") };
+        let size = SliderSpec { min: 0.0, max: 50.0, default: 10.0, bipolar: false, ..SliderSpec::pm100(t("大小")) };
         let spot = self.active_spot();
         self.slider_with(ui, size, on, |a| a.heal_size, |a, v| {
             a.heal_size = v;
@@ -1350,24 +1408,25 @@ impl App {
             }
         });
         ui.add_space(2.0);
-        if ui.add_enabled(on, egui::Button::new("修護重設").min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if ui.add_enabled(on, egui::Button::new(t("修護重設")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
             self.clear_heal();
         }
     }
 
     fn right_bottom(&mut self, ui: &mut egui::Ui) {
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         let on = self.has_photo();
         let w = ui.available_width();
         ui.add_space(6.0);
-        if ui.add_enabled(on, egui::Button::new("全部重設").min_size(Vec2::new(w, 30.0))).clicked() {
+        if ui.add_enabled(on, egui::Button::new(t("全部重設")).min_size(Vec2::new(w, 30.0))).clicked() {
             self.reset_all();
         }
         ui.horizontal(|ui| {
             let half = (w - 6.0) / 2.0;
-            if ui.add_enabled(on && !self.undo.is_empty(), egui::Button::new("恢復上一步").min_size(Vec2::new(half, 30.0))).clicked() {
+            if widgets::fixed_button(ui, on && !self.undo.is_empty(), Vec2::new(half, 30.0), t("恢復上一步"), |b| b).clicked() {
                 self.do_undo();
             }
-            if ui.add_enabled(on && !self.redo.is_empty(), egui::Button::new("重做").min_size(Vec2::new(half, 30.0))).clicked() {
+            if widgets::fixed_button(ui, on && !self.redo.is_empty(), Vec2::new(half, 30.0), t("重做"), |b| b).clicked() {
                 self.do_redo();
             }
         });
@@ -1377,12 +1436,12 @@ impl App {
         ui.horizontal_centered(|ui| {
             ui.add_space(6.0);
             let on = self.has_photo();
-            for (label, mode) in [("適合", ZoomMode::Fit), ("100%", ZoomMode::Actual100), ("200%", ZoomMode::Actual200)] {
+            for (label, mode) in [(t("適合"), ZoomMode::Fit), ("100%", ZoomMode::Actual100), ("200%", ZoomMode::Actual200)] {
                 if ui.add_enabled(on, egui::Button::new(label).selected(self.viewer.mode == mode)).clicked() {
                     self.viewer.set_mode(mode);
                 }
             }
-            if ui.add_enabled(on, egui::Button::new("對照原圖").selected(self.show_original)).clicked() {
+            if ui.add_enabled(on, egui::Button::new(t("對照原圖")).selected(self.show_original)).clicked() {
                 self.show_original = !self.show_original;
                 self.needs_render = true;
             }
@@ -1392,8 +1451,8 @@ impl App {
             ui.add_space(12.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.add_space(8.0);
-                ui.label(RichText::new(&self.render_note).size(12.0).color(theme::TEXT_FAINT));
-                ui.add(egui::Label::new(RichText::new(&self.status).size(12.0).color(theme::TEXT_DIM)).truncate());
+                ui.label(RichText::new(&self.render_note).size(theme::scaled(12.0)).color(theme::TEXT_FAINT));
+                ui.add(egui::Label::new(RichText::new(&self.status).size(theme::scaled(12.0)).color(theme::TEXT_DIM)).truncate());
             });
         });
     }
@@ -1408,8 +1467,8 @@ impl App {
             Display::Cpu { size, .. } => Some(*size),
         };
         let Some(size) = size else {
-            let msg = if self.loading { "載入中…" } else if self.items.is_empty() { "" } else { "沒有可顯示的照片" };
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(16.0), theme::TEXT_FAINT);
+            let msg = if self.loading { t("載入中…") } else if self.items.is_empty() { "" } else { t("沒有可顯示的照片") };
+            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, msg, egui::FontId::proportional(theme::scaled(16.0)), theme::TEXT_FAINT);
             return;
         };
         // A tool or the picker owns the left button; the middle button still pans.
@@ -1444,10 +1503,10 @@ impl App {
             self.wm_overlay.paint(ui, &painter, &self.export_settings, pl.image, (size.x as usize, size.y as usize), ratio, pl.scale_px as f64);
         }
         if self.wb_picker {
-            painter.text(egui::pos2(rect.center().x, rect.min.y + 10.0), egui::Align2::CENTER_TOP, "點擊中性灰色區域設定白平衡", egui::FontId::proportional(14.0), theme::TEXT);
+            painter.text(egui::pos2(rect.center().x, rect.min.y + 10.0), egui::Align2::CENTER_TOP, t("點擊中性灰色區域設定白平衡"), egui::FontId::proportional(theme::scaled(14.0)), theme::TEXT);
         }
         if self.show_original {
-            ui.painter().text(rect.left_top() + Vec2::new(12.0, 10.0), egui::Align2::LEFT_TOP, "原圖", egui::FontId::proportional(14.0), Color32::WHITE);
+            ui.painter().text(rect.left_top() + Vec2::new(12.0, 10.0), egui::Align2::LEFT_TOP, t("原圖"), egui::FontId::proportional(theme::scaled(14.0)), Color32::WHITE);
         }
     }
 
@@ -1487,7 +1546,7 @@ impl App {
         if self.tool == ToolMode::Gradient {
             resp.context_menu(|ui| match self.grad_menu {
                 Some(i) => {
-                    if ui.button("刪除此線性漸層").clicked() {
+                    if ui.button(t("刪除此線性漸層")).clicked() {
                         self.delete_gradient(i);
                         self.grad_menu = None;
                         ui.close();
@@ -1736,19 +1795,7 @@ fn apply_adjust_spec(a: &mut ImageAdjustments, spec: &str) {
 impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
-        if !self.zoom_fitted {
-            if let Some(m) = ctx.input(|i| i.viewport().monitor_size) {
-                self.zoom_fitted = true;
-                let native_ppp = ctx.pixels_per_point() / ctx.zoom_factor();
-                // monitor_size is in points at the current zoom; convert to native points.
-                let height = m.y * ctx.zoom_factor();
-                let zoom = (height / DESIGN_HEIGHT).clamp(0.6, 1.0);
-                if (zoom - ctx.zoom_factor()).abs() > 0.01 {
-                    ctx.set_zoom_factor(zoom);
-                }
-                crate::trace(&format!("monitor {:?} native ppp {native_ppp} zoom {zoom}", m));
-            }
-        }
+        self.update_ui_scale(&ctx);
         crate::trace(&format!(
             "frame: loading={} proxy={} hist={} cache={:?}",
             self.loading,
@@ -1771,7 +1818,13 @@ impl eframe::App for App {
             .exact_size(330.0)
             .resizable(false)
             .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(10, 0)))
-            .show(ui, |ui| self.left_column(ui));
+            .show(ui, |ui| {
+                let bars = self.scroll_bars();
+                if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
+                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
+                }
+                egui::ScrollArea::vertical().id_salt("left_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.left_column(ui));
+            });
         egui::Panel::right("right")
             .exact_size(320.0)
             .resizable(false)
@@ -1779,7 +1832,11 @@ impl eframe::App for App {
             .show(ui, |ui| {
                 egui::Panel::bottom("right_bottom").exact_size(80.0).frame(egui::Frame::new().fill(theme::WINDOW)).show(ui, |ui| self.right_bottom(ui));
                 egui::CentralPanel::no_frame().show(ui, |ui| {
-                    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| self.right_column(ui));
+                    let bars = self.scroll_bars();
+                    if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
+                        ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
+                    }
+                    egui::ScrollArea::vertical().id_salt("right_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.right_column(ui));
                 });
             });
         egui::CentralPanel::no_frame().show(ui, |ui| {
@@ -1788,7 +1845,12 @@ impl eframe::App for App {
         });
         self.export_windows(&ctx);
         self.strip_menu_ui(&ctx);
+        self.app_menu_ui(&ctx);
+        self.settings_ui(&ctx);
+        self.about_ui(&ctx);
+        self.cameras_ui(&ctx);
         self.confirm_ui(&ctx);
+        self.first_run_ui(&ctx);
         if let Some(mut ed) = self.preset_editor.take() {
             let headless = self.headless();
             let keep = ed.show(&ctx, &mut self.presets, &mut |p: &PresetCollection| {
