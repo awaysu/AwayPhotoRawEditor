@@ -5,3 +5,5 @@ tests/fixtures/** -text
 # hashtest reference reports are compared byte-for-byte; keep them exactly as committed.
 tests/results/** -text
 tests/reference/** -text
+# Inno Setup translations, UTF-8 with BOM; keep them byte for byte.
+installer/*.isl -text

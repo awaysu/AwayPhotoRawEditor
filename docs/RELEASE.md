@@ -62,11 +62,11 @@ dist\SHA256SUMS.txt
 |---|---|
 | 安裝範圍 | 每使用者（`PrivilegesRequired=lowest`），`%LOCALAPPDATA%\Programs\AwayPhotoRawEditor 2`，免 UAC |
 | AppId | **新的** `{9063DED4-6DA5-4A20-933D-AC78F788359C}`（1.x 是 `{8E1A2C64-…-AWPRE0100001}`），2.x 之後每一版沿用 |
-| 已裝 C# 1.x | **不移除**：資料夾、AppId、捷徑名稱都不同，兩版並存；設定檔與 RAW_TEMP 兩版互通 |
-| 開始功能表 | `AwayPhotoRawEditor 2` |
+| 已裝 C# 1.x | **不移除**：資料夾與 AppId 不同，兩版並存；設定檔與 RAW_TEMP 兩版互通 |
+| 開始功能表 | `AwayPhotoRawEditor`（顯示名稱一律 AwayPhotoRawEditor）。會蓋掉 C# 1.x 的同名捷徑，這是接受的：1.x 仍可從它自己的資料夾啟動，也仍可從「設定 > 應用程式」解除安裝 |
 | 桌面捷徑 | 提供，**預設不勾** |
 | 授權頁 | 顯示 LICENSE（BSD-3） |
-| 安裝檔語言 | 英、日、韓、德、法、西（Inno 6 沒有官方中文語言檔，中文系統顯示英文） |
+| 安裝檔語言 | 繁中（排第一）、簡中、英、日、韓、德、法、西。中文語言檔取自 Inno Setup 官方 issrc `Files/Languages/`，存成 UTF-8 含 BOM 放在 `installer/`（沒 BOM 時 ISCC 會用系統碼頁讀成亂碼） |
 | 解除安裝 | 只刪安裝的檔案；`%APPDATA%\AwayPhotoRawEditor` 的設定與照片旁的 `RAW_TEMP` 都保留 |
 
 ### 驗收（不必安裝）
@@ -103,7 +103,10 @@ Get-AuthenticodeSignature dist\AwayPhotoRawEditor-Setup-v<版本>.exe | Format-L
 
 ⚠️ **登入鑰匙圈在 SSH 工作階段是鎖著的**：`security show-keychain-info ~/Library/Keychains/login.keychain-db`
 回 `User interaction is not allowed`，codesign 會報 `errSecInternalComponent`（2026-10-09 實測）。
-簽章與公證要在 Mac 本機的終端機（已登入的 GUI 工作階段）跑，或先在那裡 `security unlock-keychain`。
+從別的 SSH 工作階段 `security unlock-keychain` 也不會帶過來。所以從 SSH 打包時設
+`AWPR_KEYCHAIN_PASSWORD`，腳本會在同一個工作階段先 `security unlock-keychain -p` 解鎖登入鑰匙圈；
+或在 Mac 本機的終端機（已登入的 GUI 工作階段）跑。**密碼只能從環境變數帶入，絕不可寫進 repo、腳本或任何檔案**
+（例如 `read -s AWPR_KEYCHAIN_PASSWORD; export AWPR_KEYCHAIN_PASSWORD`）。
 
 ### 打包
 

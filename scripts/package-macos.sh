@@ -14,6 +14,9 @@
 # Keychains: codesign only ever looks in the login keychain (AWPR_KEYCHAIN). Other
 # keychains on the build Mac may be locked, and touching one stops at an unlock dialog.
 # Every signing / notarization command is killed after AWPR_STEP_TIMEOUT seconds (180).
+# Over SSH the login keychain is locked in that session (codesign: errSecInternalComponent),
+# and an unlock from another session does not carry over: set AWPR_KEYCHAIN_PASSWORD to have
+# this script unlock it first. The password only ever comes from the environment.
 # AWPR_LIBRAW_OPENMP=0 builds LibRaw single-threaded without libomp (CI has no universal
 # libomp; decoding is ~2.5x slower, the pixels are identical).
 set -euo pipefail
@@ -59,6 +62,11 @@ notarize() { # notarize <file>
     [ -n "$IDENTITY" ] && [ -n "$PROFILE" ] || return 0
     bounded xcrun notarytool submit "$1" --keychain-profile "$PROFILE" --wait
 }
+
+if [ -n "$IDENTITY" ] && [ -n "${AWPR_KEYCHAIN_PASSWORD:-}" ]; then
+    echo "    unlocking $KEYCHAIN (AWPR_KEYCHAIN_PASSWORD)"
+    security unlock-keychain -p "$AWPR_KEYCHAIN_PASSWORD" "$KEYCHAIN"
+fi
 
 USE_OMP=1
 [ "${AWPR_LIBRAW_OPENMP:-1}" = 0 ] && USE_OMP=0

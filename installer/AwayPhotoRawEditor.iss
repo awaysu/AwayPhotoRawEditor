@@ -3,9 +3,11 @@
 ;   ISCC /DMyAppVersion=2.0.0 /DMyFileVersion=2.0.0.0 /DSourceDir=<staged files> /DOutputDir=<dist> AwayPhotoRawEditor.iss
 ; Per-user install (no administrator rights, no UAC): {localappdata}\Programs\AwayPhotoRawEditor 2.
 ;
-; Side by side with the C# 1.x build: a new AppId, its own folder and its own shortcut, so
-; installing 2.x neither replaces nor uninstalls 1.x. Both read the same settings and
-; RAW_TEMP files, so a user can keep both. The uninstaller only removes what it installed:
+; Side by side with the C# 1.x build: a new AppId and its own folder, so installing 2.x
+; neither replaces nor uninstalls 1.x. Both read the same settings and RAW_TEMP files, so a
+; user can keep both. The shortcut is called "AwayPhotoRawEditor" like 1.x's (the display
+; name is always AwayPhotoRawEditor), so it takes over 1.x's Start menu shortcut; 1.x still
+; starts from its own folder and uninstalls from Settings > Apps. The uninstaller only removes what it installed:
 ; settings (%AppData%\AwayPhotoRawEditor) and the RAW_TEMP folders beside the photos stay.
 
 #ifndef MyAppVersion
@@ -22,7 +24,6 @@
 #endif
 
 #define MyAppName "AwayPhotoRawEditor"
-#define MyShortcutName "AwayPhotoRawEditor 2"
 #define MyAppPublisher "Awaysu"
 #define MyAppURL "https://www.awaysu.cc/software/awayphotoraweditor"
 #define MyAppExeName "AwayPhotoRawEditor.exe"
@@ -42,7 +43,7 @@ VersionInfoProductName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
 DefaultDirName={autopf}\AwayPhotoRawEditor 2
-DefaultGroupName={#MyShortcutName}
+DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir={#OutputDir}
@@ -58,6 +59,10 @@ ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 
 [Languages]
+; Chinese: the official Inno Setup translations (issrc Files/Languages), kept here with a
+; UTF-8 BOM so ISCC reads them as UTF-8 whatever the build machine's code page.
+Name: "chinesetraditional"; MessagesFile: "ChineseTraditional.isl"
+Name: "chinesesimplified"; MessagesFile: "ChineseSimplified.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "korean"; MessagesFile: "compiler:Languages\Korean.isl"
@@ -73,8 +78,8 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 Source: "{#SourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 
 [Icons]
-Name: "{autoprograms}\{#MyShortcutName}"; Filename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyShortcutName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
