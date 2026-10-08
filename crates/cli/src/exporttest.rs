@@ -88,8 +88,8 @@ fn test(image_path: &str, out_dir: &str, r: &mut String) -> Result<bool, String>
     let gpu = GpuPipeline::new().ok();
     let used_gpu = std::sync::atomic::AtomicBool::new(false);
     let render = |img: &awpr_core::FloatImage, a: &ImageAdjustments, ctx: &ProcessContext| {
-        if let Some(g) = gpu.as_ref().filter(|g| g.can_host(img.width, img.height)) {
-            if let Ok(o) = g.apply(img, a, ctx) {
+        if let Some(g) = gpu.as_ref() {
+            if let Ok(o) = g.apply_any(img, a, ctx) {
                 used_gpu.store(true, std::sync::atomic::Ordering::Relaxed);
                 return o;
             }
@@ -189,5 +189,10 @@ fn test(image_path: &str, out_dir: &str, r: &mut String) -> Result<bool, String>
             let _ = writeln!(r, "8-bit 比對: 尺寸不同（PNG {} 位元組 vs 參考 {}）→ 未通過", png.as_raw().len(), reference.len());
         }
     }
+    // Full-size renders over the GPU cap: in strips, against the CPU on the whole image.
+    let (tiled, tiled_ok) = crate::tiletest::compare(image_path);
+    let _ = write!(r, "
+{tiled}");
+    ok &= tiled_ok;
     Ok(ok)
 }

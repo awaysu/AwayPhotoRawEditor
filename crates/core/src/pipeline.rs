@@ -121,6 +121,12 @@ pub trait StageTarget {
     fn resample(&mut self, p: ResampleParams, out_w: usize, out_h: usize) -> Result<(), StageError>;
     fn rotate(&mut self, rot: Rotation) -> Result<(), StageError>;
     fn result(self) -> Result<Self::Output, StageError>;
+    /// The whole image this target holds part of: (width, height, first row). A strip of
+    /// a larger image (the GPU's tiled export) says where it sits, so position-dependent
+    /// stages (masks, gradients) see whole-image coordinates.
+    fn frame(&self) -> (usize, usize, usize) {
+        (self.width(), self.height(), 0)
+    }
 }
 
 /// Run steps 1-10 on the CPU, producing a new buffer (geometry may change the size).
@@ -130,6 +136,17 @@ pub fn apply_to_float(src: &FloatImage, adj: &ImageAdjustments, ctx: &ProcessCon
 
 /// The pipeline, written once.
 pub fn run_pipeline<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<T::Output, StageError> {
+    run_local(&mut t, adj, ctx)?;
+    if !adj.heal_spots.is_empty() {
+        t.heal(adj)?; // 8
+    }
+    run_tail(t, adj, ctx)
+}
+
+/// Steps 1-7: the colour pass, masks, noise reduction / sharpening and gradients — what
+/// keeps the size and reads at most a few rows around each pixel, so a strip of a large
+/// image (with a margin for the blurs, `BLUR_MARGIN`) renders like the whole.
+pub fn run_local<T: StageTarget>(t: &mut T, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<(), StageError> {
     let blur_stages = adj.noise_reduction > 0.0 || adj.sharpening != 0.0;
     let grad_active = adj.has_active_gradient();
 
@@ -137,7 +154,8 @@ pub fn run_pipeline<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &Proc
         // 處理版本 3: its own colour pass; the stages after it are version 1's.
         t.pixel_v3(&V3Params::new(adj, ctx))?;
         if adj.has_active_mask() {
-            let p = MaskParams::new(adj, t.width(), t.height());
+            let (fw, fh, y0) = t.frame();
+            let p = MaskParams::window(adj, fw, fh, y0, t.height());
             t.masks(&p)?;
         }
         if grad_active && !blur_stages {
@@ -159,11 +177,15 @@ pub fn run_pipeline<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &Proc
             t.pixel(&build_gradient_params(adj))?; // 7
         }
     }
+    Ok(())
+}
 
-    if !adj.heal_spots.is_empty() {
-        t.heal(adj)?; // 8
-    }
+/// Rows a strip needs above and below what it keeps: the two blur stages read at most
+/// 3 rows each (radius 1 + round(2 × strength)), one after the other.
+pub const BLUR_MARGIN: usize = 8;
 
+/// Steps 9-10c: distortion, rotation, crop and the vignette on the finished frame.
+pub fn run_tail<T: StageTarget>(mut t: T, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<T::Output, StageError> {
     // 10c vignette — post-crop, so it always hugs the frame actually shown/exported.
     let finish = |mut t: T| -> Result<T::Output, StageError> {
         if adj.vignette != 0.0 {

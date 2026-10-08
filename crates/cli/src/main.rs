@@ -10,6 +10,7 @@ mod gputest;
 mod hashtest;
 mod heictest;
 mod stages;
+mod tiletest;
 mod viewtest;
 
 use awpr_core::color::{self, WhiteBalanceReference};
@@ -24,6 +25,7 @@ usage:
   awpr gputest3 <raw> [report]    the same for 處理版本 3 (14 cases + highlights / HSL / curves + encoded source)
   awpr v3cmp <raw> <outDir>       a photo as 處理版本 2 and upgraded to 3 (PNGs + mean difference)
   awpr heictest <file>...         HEIC through the system decoder (size, orientation, EXIF)
+  awpr tiletest <raw> [report]    full-size export render: GPU in strips vs CPU (版本 2 and 3)
   awpr viewtest <raw> [report]    the editor's viewer shader vs a CPU reference (offscreen, any backend)
   awpr exporttest <image> <outDir> <report>  export JPEG / PNG / TIFF (8 / 16-bit, ICC, watermark) and check them
   awpr bench <raw>                decode / proxy / pipeline timings
@@ -43,6 +45,7 @@ fn main() {
         Some("gputest3") if args.len() >= 2 => gputest::run_v3(&args[1], args.get(2).map(String::as_str)),
         Some("v3cmp") if args.len() >= 3 => gputest::compare_versions(&args[1], &args[2]),
         Some("heictest") if args.len() >= 2 => heictest::run(&args[1..]),
+        Some("tiletest") if args.len() >= 2 => tiletest::run(&args[1], args.get(2).map(String::as_str)),
         Some("viewtest") if args.len() >= 2 => viewtest::run(&args[1], args.get(2).map(String::as_str)),
         Some("exporttest") if args.len() >= 4 => exporttest::run(&args[1], &args[2], &args[3]),
         Some("bench") if args.len() >= 2 => bench::run(&args[1]),

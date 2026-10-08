@@ -205,15 +205,32 @@ pub struct MaskParams {
     pub masks: Vec<(MaskAdjust, Arc<Vec<f32>>)>,
     pub width: usize,
     pub height: usize,
+    /// Identifies every weight raster above, in order (a GPU keeps the uploaded weights
+    /// while this stays the same: adjustment sliders do not change it).
+    pub shape: u64,
 }
 
 impl MaskParams {
+    /// Rows `y0 .. y0 + rows` of a `width × height` image (a strip of a tiled render).
+    pub fn window(adj: &ImageAdjustments, width: usize, height: usize, y0: usize, rows: usize) -> Self {
+        let full = Self::new(adj, width, height);
+        if y0 == 0 && rows == height {
+            return full;
+        }
+        let mut hs = DefaultHasher::new();
+        (full.shape, y0, rows).hash(&mut hs);
+        let masks = full.masks.into_iter().map(|(a, w)| (a, Arc::new(w[y0 * width..(y0 + rows) * width].to_vec()))).collect();
+        Self { masks, width, height: rows, shape: hs.finish() }
+    }
+
     pub fn new(adj: &ImageAdjustments, width: usize, height: usize) -> Self {
+        let mut hs = DefaultHasher::new();
         let masks = adj
             .masks
             .iter()
             .filter(|m| m.has_effect())
             .map(|m| {
+                shape_key(m, width, height).hash(&mut hs);
                 let a = MaskAdjust {
                     exposure: m.exposure as f32,
                     contrast: (m.contrast / 100.0) as f32,
@@ -224,7 +241,7 @@ impl MaskParams {
                 (a, weights(m, width, height))
             })
             .collect();
-        Self { masks, width, height }
+        Self { masks, width, height, shape: hs.finish() }
     }
 }
 

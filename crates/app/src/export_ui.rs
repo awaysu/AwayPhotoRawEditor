@@ -309,10 +309,11 @@ impl ExportJob {
         std::thread::Builder::new()
             .name("export".into())
             .spawn(move || {
-                // Full resolution: the GPU only when the whole frame fits (16 MP), else CPU.
+                // Full resolution on the GPU: whole up to the size cap, in strips above it
+                // (`apply_tiled`); the CPU if the GPU fails.
                 let render = |img: &FloatImage, a: &ImageAdjustments, c: &ProcessContext| {
-                    if let Some(g) = gpu.filter(|g| g.can_host(img.width, img.height)) {
-                        if let Ok(o) = g.apply(img, a, c) {
+                    if let Some(g) = gpu {
+                        if let Ok(o) = g.apply_any(img, a, c) {
                             return o;
                         }
                     }

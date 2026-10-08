@@ -163,6 +163,9 @@ pub struct GpuPipeline {
     pub device_max_pixels: usize,
     pool: Mutex<HashMap<u64, Vec<wgpu::Buffer>>>,
     readback_pool: Mutex<HashMap<u64, Vec<wgpu::Buffer>>>,
+    /// The last mask weights uploaded and the shapes they belong to (`MaskParams::shape`):
+    /// an adjustment slider re-renders without re-uploading them.
+    mask_weights: Mutex<Option<(u64, wgpu::Buffer)>>,
     profile: bool,
 }
 
@@ -289,6 +292,7 @@ impl GpuPipeline {
             device_max_pixels,
             pool: Mutex::new(HashMap::new()),
             readback_pool: Mutex::new(HashMap::new()),
+            mask_weights: Mutex::new(None),
             profile,
         })
     }
@@ -358,6 +362,71 @@ impl GpuPipeline {
         width * height <= self.max_pixels
     }
 
+    /// Any size: whole on the device when it fits, else in strips (`apply_tiled`).
+    pub fn apply_any(&self, src: &FloatImage, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<FloatImage, StageError> {
+        if self.can_host(src.width, src.height) {
+            self.apply(src, adj, ctx)
+        } else {
+            self.apply_tiled(src, adj, ctx)
+        }
+    }
+
+    /// An image over the size cap (a full-resolution export): steps 1-7 — the colour
+    /// pass, masks, blurs, gradients, nearly all the work — on the GPU in horizontal
+    /// strips with `BLUR_MARGIN` rows of overlap, each strip told where it sits so masks
+    /// and gradients see whole-image coordinates; then heal (which may copy from anywhere),
+    /// the geometry and the vignette on the CPU, on the reassembled image, with the CPU
+    /// pipeline's own code.
+    pub fn apply_tiled(&self, src: &FloatImage, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<FloatImage, StageError> {
+        let (w, h) = (src.width, src.height);
+        let m = pipeline::BLUR_MARGIN;
+        let rows = (self.max_pixels / w.max(1)).saturating_sub(2 * m).min(4096);
+        if rows < 64 {
+            return Err(err(format!("{w} px wide is too wide to tile")));
+        }
+        let trace = std::env::var_os("AWPR_TILE_TRACE").is_some();
+        let t0 = std::time::Instant::now();
+        let (mut t_copy, mut t_gpu, mut t_back) = (0.0, 0.0, 0.0);
+        let mut out = FloatImage::new(w, h);
+        let stride = w * 4;
+        let mut y = 0;
+        while y < h {
+            let keep = rows.min(h - y);
+            let (a, b) = (y.saturating_sub(m), (y + keep + m).min(h));
+            let tc = std::time::Instant::now();
+            // Straight from the source rows: no copy of the strip on the CPU side.
+            let buffer = self.borrow(w, b - a);
+            self.queue.write_buffer(&buffer, 0, bytemuck::cast_slice(&src.data[a * stride..b * stride]));
+            let frame = GpuFrame { gpu: self, buffer: Some(buffer), width: w, height: b - a };
+            t_copy += tc.elapsed().as_secs_f64();
+            let tg = std::time::Instant::now();
+            let scope = self.device.push_error_scope(wgpu::ErrorFilter::Validation);
+            let oom = self.device.push_error_scope(wgpu::ErrorFilter::OutOfMemory);
+            let mut t = GpuTarget::new(self, &frame);
+            t.strip = Some((w, h, a));
+            let r = pipeline::run_local(&mut t, adj, ctx).and_then(|_| t.result());
+            if let Some(e) = pollster::block_on(oom.pop()).or(pollster::block_on(scope.pop())) {
+                return Err(err(format!("GPU 錯誤：{e}")));
+            }
+            let res = r?;
+            res.wait()?;
+            t_gpu += tg.elapsed().as_secs_f64();
+            let tb = std::time::Instant::now();
+            self.read_rows_into(res.buffer(), w, y - a, keep, &mut out.data[y * stride..(y + keep) * stride])?;
+            t_back += tb.elapsed().as_secs_f64();
+            y += keep;
+        }
+        let tt = std::time::Instant::now();
+        if !adj.heal_spots.is_empty() {
+            pipeline::heal(&mut out, adj); // 8
+        }
+        let r = pipeline::run_tail(pipeline::CpuTarget::new(&out), adj, ctx);
+        if trace {
+            eprintln!("tiled: copy+upload {:.0} ms, gpu {:.0} ms, readback {:.0} ms, cpu tail {:.0} ms, total {:.0} ms", t_copy * 1e3, t_gpu * 1e3, t_back * 1e3, tt.elapsed().as_secs_f64() * 1e3, t0.elapsed().as_secs_f64() * 1e3);
+        }
+        r
+    }
+
     /// Run steps 1-10 on the GPU and read the result back (export, diagnostics).
     /// Err → the caller renders on the CPU; `src` is untouched.
     pub fn apply(&self, src: &FloatImage, adj: &ImageAdjustments, ctx: &ProcessContext) -> Result<FloatImage, StageError> {
@@ -404,6 +473,29 @@ impl GpuPipeline {
             .poll(wgpu::PollType::wait_indefinitely())
             .map(|_| ())
             .map_err(|e| err(format!("GPU 等待失敗：{e}")))
+    }
+
+    /// Read rows `row0 .. row0 + rows` of a `width`-wide frame straight into `out`
+    /// (the tiled export's strips: only the rows kept, no intermediate copy).
+    fn read_rows_into(&self, buffer: &wgpu::Buffer, width: usize, row0: usize, rows: usize, out: &mut [f32]) -> Result<(), StageError> {
+        let size = (width * rows * 16) as u64;
+        let staging = self.borrow_readback(size);
+        let mut enc = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("readback rows") });
+        enc.copy_buffer_to_buffer(buffer, (width * row0 * 16) as u64, &staging, 0, size);
+        self.queue.submit([enc.finish()]);
+        let slice = staging.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+        slice.map_async(wgpu::MapMode::Read, move |r| {
+            let _ = tx.send(r);
+        });
+        self.wait()?;
+        rx.recv().map_err(|e| err(e.to_string()))?.map_err(|e| err(format!("讀回失敗：{e}")))?;
+        let view = slice.get_mapped_range().map_err(|e| err(format!("讀回失敗：{e}")))?;
+        out.copy_from_slice(bytemuck::cast_slice::<u8, f32>(&view));
+        drop(view);
+        staging.unmap();
+        self.give_back_readback(staging);
+        Ok(())
     }
 
     /// Submit `encoder` (if any) and read `buffer` back.
@@ -483,6 +575,7 @@ impl GpuPipeline {
     pub fn flush_pool(&self) {
         self.pool.lock().unwrap().clear();
         self.readback_pool.lock().unwrap().clear();
+        *self.mask_weights.lock().unwrap() = None;
     }
 
     fn uniform<T: Pod>(&self, v: &T) -> wgpu::Buffer {
@@ -548,6 +641,8 @@ pub struct GpuTarget<'a> {
     retired: Vec<wgpu::Buffer>,
     /// AWPR_GPU_PROFILE: a timestamp pair per dispatch, and its label.
     queries: Option<(wgpu::QuerySet, Vec<&'static str>)>,
+    /// A strip of a larger image (tiled export): whole width, whole height, first row.
+    strip: Option<(usize, usize, usize)>,
 }
 
 const MAX_PROFILED_PASSES: u32 = 32;
@@ -562,7 +657,7 @@ impl<'a> GpuTarget<'a> {
             });
             (set, Vec::new())
         });
-        let mut t = Self { gpu, image: None, width: src.width, height: src.height, encoder: None, retired: Vec::new(), queries };
+        let mut t = Self { gpu, image: None, width: src.width, height: src.height, encoder: None, retired: Vec::new(), queries, strip: None };
         // The pipeline must not modify the resident source, so it works on a device-side
         // copy (the CPU path clones for the same reason).
         let image = gpu.borrow(src.width, src.height);
@@ -716,11 +811,20 @@ impl<'a> StageTarget for GpuTarget<'a> {
             .filter(|g| g.has_effect())
             .map(|gr| {
                 let a = gr.angle * std::f64::consts::PI / 180.0;
+                // In a strip the kernel's y runs 0..1 over the strip: rescale the y term so
+                // the line sits where it does in the whole image.
+                let (cos_k, center_y) = match self.strip {
+                    Some((_, fh, y0)) => {
+                        let k = self.height as f64 / fh as f64;
+                        (k, (gr.center_y - y0 as f64 / fh as f64) / k)
+                    }
+                    None => (1.0, gr.center_y),
+                };
                 GpuGradient {
                     sin_a: a.sin() as f32,
-                    cos_a: a.cos() as f32,
+                    cos_a: (a.cos() * cos_k) as f32,
                     center_x: gr.center_x as f32,
-                    center_y: gr.center_y as f32,
+                    center_y: center_y as f32,
                     inv2_range: (1.0 / (2.0 * gr.range.max(1e-3))) as f32,
                     exposure: gr.exposure as f32,
                     contrast: (gr.contrast / 100.0) as f32,
@@ -796,7 +900,17 @@ impl<'a> StageTarget for GpuTarget<'a> {
             return Err(err("mask size mismatch"));
         }
         let words = gpu.storage(&masks::words(p));
-        let weights = gpu.storage(&masks::packed_weights(p));
+        let weights = {
+            let mut cached = gpu.mask_weights.lock().unwrap();
+            match cached.as_ref() {
+                Some((k, b)) if *k == p.shape => b.clone(),
+                _ => {
+                    let b = gpu.storage(&masks::packed_weights(p));
+                    *cached = Some((p.shape, b.clone()));
+                    b
+                }
+            }
+        };
         let image = self.image().clone();
         let entries = [
             wgpu::BindGroupEntry { binding: 0, resource: image.as_entire_binding() },
@@ -890,6 +1004,10 @@ impl<'a> StageTarget for GpuTarget<'a> {
         self.width = out_w;
         self.height = out_h;
         Ok(())
+    }
+
+    fn frame(&self) -> (usize, usize, usize) {
+        self.strip.unwrap_or((self.width, self.height, 0))
     }
 
     fn result(mut self) -> Result<GpuFrame<'a>, StageError> {
