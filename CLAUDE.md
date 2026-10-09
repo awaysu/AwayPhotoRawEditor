@@ -15,7 +15,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過），已不再使用。
 
 ## 工作方式（Multi-Agent）
-- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-013），信箱 `.ai/bus/`（最後一封 0051）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
+- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-014），信箱 `.ai/bus/`（最後一封 0055）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
 - PM 不改程式碼，但可以跑打包腳本、上傳、建 Release、改文件。
 - 處理版本對照：XML `PipelineVersion` 0／1／2 ＝ 使用者看到的「處理版本 1／2／3」；版本 3 走 `crates/core/src/v3.rs`，GPU 對照用 `awpr gputest3`。
 - 大項目完成時更新本檔的「目前狀態」與 `docs/ROADMAP.md`，並在 `CHANGELOG.md` 記錄（新版在上）。
@@ -45,8 +45,8 @@ cargo test --workspace                   # 1.1.0：73 項
 - 重建前先關掉殘留的 `AwayPhotoRawEditor.exe`（只砍自己啟動的 PID）。
 - Linux 截圖：建置機上 `xvfb-run -a -s "-screen 0 1920x1080x24" target/release/AwayPhotoRawEditor --shot …`。Mac 在 SSH 下 **無法** `--shot`（沒有 GUI session，建不出 Metal 裝置，2026-10-10 實測卡死）；Mac 畫面要請使用者在機器前看。
 
-## 介面版面（1.1.0）
-頂部工具列（大按鈕，「匯出…」在最右、藍色）→ 右欄從工具列下方到視窗底（直方圖、照片資訊、工具四分頁；底部固定：全部重設／恢復上一步／重做）；縮圖列（144）只橫跨左欄與影像區；左欄（基本調整、色彩三分頁、細節、風格檔）；影像區底部檢視工具列。側欄寬 `SIDE_W = 312`；每個滑桿「名稱｜滑桿｜數值」一列不換行；開工具時照片資訊縮一行、直方圖變矮；沒開工具時工具區只有四個分頁按鈕。1920×1080／150% 下右欄不出現捲軸。
+## 介面版面（1.1.1）
+頂部工具列（大按鈕，「匯出…」在最右、藍色）→ 右欄從工具列下方到視窗底（直方圖、照片資訊、工具四分頁；底部固定：全部重設／恢復上一步／重做）；縮圖列（144）只橫跨左欄與影像區；左欄（基本調整、色彩三分頁、細節、風格檔）；影像區底部檢視工具列。側欄寬 `SIDE_W = 312`；每個滑桿「名稱｜滑桿｜數值」一列不換行；開工具時照片資訊維持完整表格（1.1.1）、直方圖變矮（32）；沒開工具時工具區只有四個分頁按鈕。1920×1080／150% 下，沒開工具、裁切、修護時右欄不出現捲軸；漸層與遮罩會出現捲軸，使用者 2026-10-10 決定接受（方案 D，見 .ai/bus/0053）。
 
 ## 測試資料
 - `D:\Awaysu\raw_samples\`：hashtest 的 4 個公開樣本（raw.pixls.us：`canon_eosr.CR3`、`leica_m10.DNG`、`pana_s5.RW2`、`sony_a7m3.ARW`），報告要與 `tests/results/windows-x86_64/` 逐位元組相同。
