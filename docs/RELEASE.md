@@ -19,8 +19,8 @@ CI（`.github/workflows/ci.yml`）在三平台跑 build＋test；打 `v*` tag �
 [ ] THIRD-PARTY-NOTICES.md 與 Cargo.lock 的直接依賴一致
 ```
 
-版本號含預覽字尾時（例如 `2.0.0-dev`）：Windows 檔案版本寫 `2.0.0.0`、Mac 的
-`CFBundleShortVersionString` 寫 `2.0.0`，deb／rpm 寫 `2.0.0~dev`（`~` 讓它排在正式版 2.0.0 之前；
+版本號含預覽字尾時（例如 `1.2.0-dev`）：Windows 檔案版本寫 `1.2.0.0`、Mac 的
+`CFBundleShortVersionString` 寫 `1.2.0`，deb／rpm 寫 `1.2.0~dev`（`~` 讓它排在正式版 1.2.0 之前；
 rpm 不接受 `-`）。
 
 ---
@@ -58,12 +58,12 @@ dist\SHA256SUMS.txt
 
 ### 安裝檔的行為
 
-| 項目 | 2.x |
+| 項目 | 1.1.0 起 |
 |---|---|
-| 安裝範圍 | 每使用者（`PrivilegesRequired=lowest`），`%LOCALAPPDATA%\Programs\AwayPhotoRawEditor 2`，免 UAC |
-| AppId | **新的** `{9063DED4-6DA5-4A20-933D-AC78F788359C}`（1.x 是 `{8E1A2C64-…-AWPRE0100001}`），2.x 之後每一版沿用 |
-| 已裝 C# 1.x | **不移除**：資料夾與 AppId 不同，兩版並存；設定檔與 RAW_TEMP 兩版互通 |
-| 開始功能表 | `AwayPhotoRawEditor`（顯示名稱一律 AwayPhotoRawEditor）。會蓋掉 C# 1.x 的同名捷徑，這是接受的：1.x 仍可從它自己的資料夾啟動，也仍可從「設定 > 應用程式」解除安裝 |
+| 安裝範圍 | 每使用者（`PrivilegesRequired=lowest`），`%LOCALAPPDATA%\Programs\AwayPhotoRawEditor`（與 C# 1.0.x 同一個資料夾），免 UAC |
+| AppId | 沿用 C# 1.0.x 的 `{8E1A2C64-5A17-4D0B-9C67-AWPRE0100001}`：Windows 視為同一套軟體升級，「設定 > 應用程式」只有一個 AwayPhotoRawEditor |
+| 舊版 | **就地升級、安裝前自動移除舊版**：`PrepareToInstall` 依 Uninstall 登錄找 C# 1.0.x（HKCU 與 HKLM 的 `{8E1A…}_is1`）與已撤回的 2.0.x（HKCU 的 `{9063DED4-6DA5-4A20-933D-AC78F788359C}_is1`，裝在 `AwayPhotoRawEditor 2`），以 `/VERYSILENT /SUPPRESSMSGBOXES /NORESTART` 執行它們的解除安裝程式並等它結束；失敗只寫進安裝紀錄，不中止安裝。兩個舊版的 .iss 都沒有 `[UninstallDelete]`，不會刪使用者資料 |
+| 開始功能表 | `AwayPhotoRawEditor`（顯示名稱一律 AwayPhotoRawEditor） |
 | 桌面捷徑 | 提供，**預設不勾** |
 | 授權頁 | 顯示 LICENSE（BSD-3） |
 | 安裝檔語言 | 繁中（排第一）、簡中、英、日、韓、德、法、西。中文語言檔取自 Inno Setup 官方 issrc `Files/Languages/`，存成 UTF-8 含 BOM 放在 `installer/`（沒 BOM 時 ISCC 會用系統碼頁讀成亂碼） |

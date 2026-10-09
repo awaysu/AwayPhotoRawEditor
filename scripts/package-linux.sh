@@ -14,7 +14,7 @@ VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/ s/^version *= *"\(.*\)"/\1/p' C
 DIST="$ROOT/dist"
 echo "==> AwayPhotoRawEditor $VERSION"
 
-# Packages want a "~" for a pre-release (2.0.0~dev sorts before 2.0.0; rpm rejects "-").
+# Packages want a "~" for a pre-release (1.2.0~dev sorts before 1.2.0; rpm rejects "-").
 PKG_VERSION=${VERSION/-/\~}
 cargo deb --version > /dev/null 2>&1 || cargo install --locked cargo-deb
 cargo generate-rpm --version > /dev/null 2>&1 || cargo install --locked cargo-generate-rpm

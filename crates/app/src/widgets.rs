@@ -146,7 +146,7 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     let need = text_width(ui, spec.label, &font);
     let room = width - value_w - 2.0 * gap - MIN_TRACK;
     let label_w = shared_column_width(ui, "label", need).min(label_cap().max(room)).max(24.0);
-    // 95 % of the 2.0.1 row (2.0.2: a little denser).
+    // 95 % of a text row plus padding: a little denser.
     let row_h = ((ui.fonts_mut(|f| f.row_height(&font)) + 6.0).max(24.0) * 0.95).round();
     let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, row_h), Sense::hover());
     if !ui.is_rect_visible(outer) {

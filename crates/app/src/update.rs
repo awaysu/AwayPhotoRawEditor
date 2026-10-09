@@ -98,9 +98,9 @@ mod tests {
 
     #[test]
     fn parses_the_api_answers() {
-        let v: serde_json::Value = serde_json::from_str(r#"{"ok":true,"latest_version":"v2.0.1","update_available":true,"page_url":""}"#).unwrap();
+        let v: serde_json::Value = serde_json::from_str(r#"{"ok":true,"latest_version":"v1.1.1","update_available":true,"page_url":""}"#).unwrap();
         let i = parse_check(&v).unwrap();
-        assert_eq!((i.update_available, i.latest_version.as_str(), i.page_url.as_str()), (true, "2.0.1", PAGE_URL));
+        assert_eq!((i.update_available, i.latest_version.as_str(), i.page_url.as_str()), (true, "1.1.1", PAGE_URL));
         let v: serde_json::Value = serde_json::from_str(r#"{"ok":true,"latest_version":"1.0.18","update_available":null}"#).unwrap();
         assert!(!parse_check(&v).unwrap().update_available);
         let v: serde_json::Value = serde_json::from_str(r#"{"ok":false}"#).unwrap();
@@ -109,7 +109,7 @@ mod tests {
         assert_eq!(parse_notes(&n), "修正 A\n新增 B");
         let empty: serde_json::Value = serde_json::from_str(r#"{"ok":true,"entries":[]}"#).unwrap();
         assert_eq!(parse_notes(&empty), "");
-        assert_eq!(encode("2.0.0-dev"), "2.0.0-dev");
+        assert_eq!(encode("1.2.0-dev"), "1.2.0-dev");
         assert_eq!(encode("a b"), "a%20b");
     }
 

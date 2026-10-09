@@ -1,14 +1,13 @@
-; AwayPhotoRawEditor 2 installer (Inno Setup 6).
+; AwayPhotoRawEditor installer (Inno Setup 6).
 ; Built by scripts/package-windows.ps1, which passes the version and folders:
-;   ISCC /DMyAppVersion=2.0.0 /DMyFileVersion=2.0.0.0 /DSourceDir=<staged files> /DOutputDir=<dist> AwayPhotoRawEditor.iss
-; Per-user install (no administrator rights, no UAC): {localappdata}\Programs\AwayPhotoRawEditor 2.
+;   ISCC /DMyAppVersion=1.1.0 /DMyFileVersion=1.1.0.0 /DSourceDir=<staged files> /DOutputDir=<dist> AwayPhotoRawEditor.iss
+; Per-user install (no administrator rights, no UAC): {localappdata}\Programs\AwayPhotoRawEditor.
 ;
-; Side by side with the C# 1.x build: a new AppId and its own folder, so installing 2.x
-; neither replaces nor uninstalls 1.x. Both read the same settings and RAW_TEMP files, so a
-; user can keep both. The shortcut is called "AwayPhotoRawEditor" like 1.x's (the display
-; name is always AwayPhotoRawEditor), so it takes over 1.x's Start menu shortcut; 1.x still
-; starts from its own folder and uninstalls from Settings > Apps. The uninstaller only removes what it installed:
-; settings (%AppData%\AwayPhotoRawEditor) and the RAW_TEMP folders beside the photos stay.
+; An in-place upgrade of the C# 1.0.x build: the same AppId and folder, and before the files
+; go in, the old uninstallers run silently (C# 1.0.x, and the withdrawn Rust 2.0.x that was
+; installed side by side in "AwayPhotoRawEditor 2"), so Settings > Apps lists one
+; AwayPhotoRawEditor. Neither old uninstaller, nor this one, deletes user data: settings
+; (%AppData%\AwayPhotoRawEditor), presets and the RAW_TEMP folders beside the photos stay.
 
 #ifndef MyAppVersion
   #error Pass /DMyAppVersion=<version> (scripts/package-windows.ps1 does)
@@ -29,8 +28,9 @@
 #define MyAppExeName "AwayPhotoRawEditor.exe"
 
 [Setup]
-; New for 2.x (the 1.x id is {8E1A2C64-5A17-4D0B-9C67-AWPRE0100001}); keep this one for every 2.x release.
-AppId={{9063DED4-6DA5-4A20-933D-AC78F788359C}
+; The C# 1.0.x id: Windows sees 1.1.0 as an upgrade of the same program. (The withdrawn
+; 2.0.x used {9063DED4-6DA5-4A20-933D-AC78F788359C}; [Code] removes that install.)
+AppId={{8E1A2C64-5A17-4D0B-9C67-AWPRE0100001}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppVerName={#MyAppName} {#MyAppVersion}
@@ -42,7 +42,7 @@ VersionInfoVersion={#MyFileVersion}
 VersionInfoProductName={#MyAppName}
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoDescription={#MyAppName} Setup
-DefaultDirName={autopf}\AwayPhotoRawEditor 2
+DefaultDirName={autopf}\AwayPhotoRawEditor
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
@@ -83,3 +83,48 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+const
+  UninstallKey = 'Software\Microsoft\Windows\CurrentVersion\Uninstall\';
+  CsharpId = '{8E1A2C64-5A17-4D0B-9C67-AWPRE0100001}_is1';
+  Rust2Id = '{9063DED4-6DA5-4A20-933D-AC78F788359C}_is1';
+
+// Run one old version's uninstaller silently and wait for it. A failure is logged, never
+// fatal: the new files still go in.
+procedure RemoveOldVersion(RootKey: Integer; RootName, Id: String);
+var
+  Cmd, Exe: String;
+  Code, Waited: Integer;
+begin
+  if not RegQueryStringValue(RootKey, UninstallKey + Id, 'UninstallString', Cmd) then
+    exit;
+  Exe := RemoveQuotes(Cmd);
+  Log(Format('Old version %s\...\%s: %s', [RootName, Id, Exe]));
+  if not FileExists(Exe) then begin
+    Log('  uninstaller not found; skipped');
+    exit;
+  end;
+  if not Exec(Exe, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '', SW_HIDE, ewWaitUntilTerminated, Code) then begin
+    Log(Format('  could not run it: %s', [SysErrorMessage(Code)]));
+    exit;
+  end;
+  // The uninstaller hands over to a copy of itself in %TEMP%; it is done once its exe is gone.
+  Waited := 0;
+  while FileExists(Exe) and (Waited < 120) do begin
+    Sleep(500);
+    Waited := Waited + 1;
+  end;
+  if FileExists(Exe) then
+    Log(Format('  exit code %d; still installed after 60 s', [Code]))
+  else
+    Log(Format('  exit code %d; removed', [Code]));
+end;
+
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+begin
+  RemoveOldVersion(HKCU, 'HKCU', Rust2Id);
+  RemoveOldVersion(HKCU, 'HKCU', CsharpId);
+  RemoveOldVersion(HKLM, 'HKLM', CsharpId);
+  Result := '';
+end;

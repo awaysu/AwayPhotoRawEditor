@@ -1280,7 +1280,7 @@ impl App {
 
     // ---- layout -------------------------------------------------------------------
 
-    /// Toolbar button height: twice a normal button (2.0.2).
+    /// Toolbar button height: twice a normal button.
     fn top_button_h(ui: &egui::Ui) -> f32 {
         let text = ui.fonts_mut(|f| f.row_height(&egui::TextStyle::Button.resolve(ui.style())));
         2.0 * (text + 2.0 * ui.spacing().button_padding.y).max(ui.spacing().interact_size.y)

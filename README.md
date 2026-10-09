@@ -4,8 +4,8 @@ AwayPhotoRawEditor 以 **Rust 重寫為跨平台版本**（Windows / macOS / Lin
 
 AwayPhotoRawEditor is a non-destructive RAW photo editor written in **Rust** for Windows, macOS and Linux.
 
-**目前版本：2.0.1**——三平台安裝檔、處理版本 3（寬色域線性管線、高光復原、HSL、曲線）、局部遮罩、HEIC、XMP。
-發佈說明見 [`docs/RELEASE-NOTES-2.0.1.md`](docs/RELEASE-NOTES-2.0.1.md)，開發紀錄見 [`docs/ROADMAP.md`](docs/ROADMAP.md)、打包與發佈流程見 [`docs/RELEASE.md`](docs/RELEASE.md)。
+**目前版本：1.1.0**（接續 C# 1.0.18）——三平台安裝檔、處理版本 3（寬色域線性管線、高光復原、HSL、曲線）、局部遮罩、HEIC、XMP。
+發佈說明見 [`docs/RELEASE-NOTES-1.1.0.md`](docs/RELEASE-NOTES-1.1.0.md)，開發紀錄見 [`docs/ROADMAP.md`](docs/ROADMAP.md)、打包與發佈流程見 [`docs/RELEASE.md`](docs/RELEASE.md)。
 
 | crate | 內容 |
 |---|---|

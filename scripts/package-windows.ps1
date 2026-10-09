@@ -20,7 +20,7 @@ Set-Location $Root
 $cargo = Get-Content -Raw -Encoding UTF8 (Join-Path $Root "Cargo.toml")
 if ($cargo -notmatch '(?ms)\[workspace\.package\].*?^version\s*=\s*"([^"]+)"') { throw "No workspace version in Cargo.toml" }
 $Version = $Matches[1]
-# Windows file versions are four numbers: 2.0.0-dev -> 2.0.0.0
+# Windows file versions are four numbers: 1.2.0-dev -> 1.2.0.0
 $nums = ($Version -replace '[-+].*$', '').Split('.') + @('0', '0', '0', '0')
 $FileVersion = ($nums[0..3] -join '.')
 Write-Host "==> AwayPhotoRawEditor $Version (file version $FileVersion)"

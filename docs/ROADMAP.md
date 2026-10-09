@@ -15,7 +15,7 @@
 | 7 | TASK-008 | 放射狀／筆刷遮罩（僅處理版本 3，CPU 點陣化權重＋GPU 套用）；HEIC 評估 `docs/HEIC-EVAL.md` | gputest3 20 組三平台通過；exporttest 差 0 | 完成 2026-10-09（f7fcb80、aec9c3c） |
 | 8 | TASK-009 | HEIC：macOS ImageIO、Windows WIC（缺延伸模組要提示）、Linux 執行時載入系統 libheif；不內嵌 libheif／libde265 | Linux／mac 實解（含 irot＋EXIF 6 直式、10-bit、P3）正確；Windows 只驗到缺 HEVC 延伸模組的提示路徑 | 完成 2026-10-09（14a7649） |
 | 9 | TASK-010 | 收尾：>16 MP 匯出分段走 GPU、遮罩權重留在 GPU、遮罩面板在 1080p／1600×1000 可完整操作、DE/FR/ES 縮短、CI 首次實跑 | 三平台 cargo test 73、hashtest IDENTICAL、gputest／gputest3 全過、tiletest 8-bit 差 ≤1 | 完成 2026-10-09（fe5ddca、1dec452） |
-| 10 | TASK-011 | 版本改 2.0.0、CHANGELOG 整理成發佈說明、三平台重新打包（mac 簽章由 PM 跑）、使用者驗收、依 docs/RELEASE.md 發佈（使用者決定） | 三平台安裝檔 sha256；awaysu.cc check_update 三平台 update_available | 完成 2026-10-09（ba97288；已 push、tag v2.0.0、上傳 awaysu.cc、GitHub Release） |
+| 10 | TASK-011 | 版本改 2.0.0（2026-10-10 使用者改為接續 C# 的 1.1.0，2.0.x 撤回）、CHANGELOG 整理成發佈說明、三平台重新打包（mac 簽章由 PM 跑）、使用者驗收、依 docs/RELEASE.md 發佈（使用者決定） | 三平台安裝檔 sha256；awaysu.cc check_update 三平台 update_available | 完成 2026-10-09（ba97288；已 push、tag v2.0.0、上傳 awaysu.cc、GitHub Release） |
 
 每步完成：更新本表「狀態」、`CLAUDE.md` 目前狀態、`CHANGELOG.md`，commit 到 main。
 

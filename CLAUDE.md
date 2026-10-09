@@ -8,7 +8,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor
 
 ## 目前狀態
-**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP、兩階段快取 044f7e4）；第 7 步完成（f7fcb80 遮罩、aec9c3c HEIC 評估）；第 8 步完成（14a7649 HEIC 系統解碼器）；第 9 步完成（1dec452 收尾）；第 10 步完成：2.0.0 已發佈（2026-10-09，tag v2.0.0、awaysu.cc、GitHub Release）。2.0.1（介面：滑桿單行、側欄 250）同日發佈，tag v2.0.1。之後為維護與新需求。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
+**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP、兩階段快取 044f7e4）；第 7 步完成（f7fcb80 遮罩、aec9c3c HEIC 評估）；第 8 步完成（14a7649 HEIC 系統解碼器）；第 9 步完成（1dec452 收尾）；第 10 步完成：發佈流程走過一次。**1.1.0 待發佈（2.0.x 已撤回）**：TASK-013 介面第二輪（右欄全高、側欄 312、支援 XMP 設定）與版本改號、Windows 就地升級安裝檔。之後為維護與新需求。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
 PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過）。
 
 ## 工作方式（Multi-Agent）
@@ -53,7 +53,7 @@ cargo test --workspace
 - **Mac 簽章／公證要在同一個 SSH 指令裡解鎖登入鑰匙圈**（鑰匙圈解鎖狀態跟 security session 走，別的 SSH 連線解鎖沒用）：`AWPR_KEYCHAIN_PASSWORD=… AWPR_SIGN_IDENTITY="Developer ID Application: Chih-Wei Su (BNH8YS88T9)" AWPR_NOTARY_PROFILE=AwayTerminalNotary scripts/package-macos.sh`。2026-10-09 實跑成功（兩次公證 Accepted、spctl Notarized Developer ID）。
 
 ## 版本號
-正式版從 **2.0.0** 開始（使用者 2026-10-09 決定）；`Cargo.toml` 已改為 `2.0.0`（ba97288）。之後的版本依 `docs/RELEASE.md` 流程，發佈說明放 `docs/RELEASE-NOTES-<版本>.md`。
+接續 C# 的 1.0.18，Rust 版從 **1.1.0** 開始（使用者 2026-10-10 決定；先前發過的 2.0.0／2.0.1 已撤回，GitHub 的 tag 與 Release 已刪）。Windows 安裝檔沿用 C# 的 AppId 與安裝目錄，安裝前自動移除舊版（C# 1.0.x 與 2.0.x）。之後的版本依 `docs/RELEASE.md` 流程，發佈說明放 `docs/RELEASE-NOTES-<版本>.md`。
 
 ## crate 配置
 | crate | 內容 |

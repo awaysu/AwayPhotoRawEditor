@@ -1,5 +1,3 @@
-# CHANGELOG
-
 ## 1.1.0（2026-10-10）
 
 AwayPhotoRawEditor 1.1.0 是全新改寫的版本，Windows、macOS、Linux 三個平台共用同一套程式，接續 1.0.18。原本 1.0.x 的照片、編輯設定與快取可以直接沿用。
@@ -38,7 +36,3 @@ AwayPhotoRawEditor 1.1.0 是全新改寫的版本，Windows、macOS、Linux 三�
 - **Windows 讀 HEIC** 需要 Microsoft Store 的「HEIF 影像延伸模組」與「HEVC 視訊延伸模組」（後者需付費）。沒有安裝時，縮圖會顯示「無法解碼」，照片資訊會說明原因。Linux 需要系統的 libheif（安裝 .deb／.rpm 時會建議一併安裝）；macOS 不需要另外安裝。
 - 處理版本 3 的設定（高光復原、HSL、曲線、遮罩）**只有 1.1.0 以後的版本看得懂**：如果用 1.0.x（例如 macOS 的舊版）開啟並重新存檔，這些設定會遺失（其他設定保留）。
 - Windows、macOS、Linux 三平台的輸出畫面幾乎一致，但**不保證逐位元組完全相同**（不同處理器的浮點運算末位會有極小差異）。
-
----
-
-1.0.x（C# Windows 版、Swift macOS 版）的版本紀錄見 `legacy/windows`、`legacy/macos` 分支。
