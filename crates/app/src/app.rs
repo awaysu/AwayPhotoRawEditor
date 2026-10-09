@@ -86,6 +86,11 @@ pub struct App {
     items: Vec<Item>,
     current: Option<usize>,
     scroll_to_current: bool,
+    /// Right-button drag on the strip, and an offset to apply to it on the next frame.
+    strip_pan: library::StripPan,
+    strip_offset: Option<f32>,
+    /// --shot AWPR_SHOT_STRIP_SCROLL: held every frame (the strip has no width at first).
+    shot_strip_offset: Option<f32>,
     thumbs: HashMap<String, (egui::TextureHandle, u64)>,
     thumb_version: u64,
     thumb_live_due: Option<Instant>,
@@ -227,6 +232,8 @@ impl App {
         if shot.is_some() && std::env::var_os("AWPR_SHOT_XMP").is_some() {
             settings.xmp_support = true; // memory only: the XMP menu items in a screenshot
         }
+        // --shot: the strip scrolled this far (its ◀ ▶ arrows).
+        let shot_strip_offset = std::env::var("AWPR_SHOT_STRIP_SCROLL").ok().filter(|_| shot.is_some()).and_then(|v| v.parse::<f32>().ok());
         let rs = cc.wgpu_render_state.clone();
         let (mut gpu, mut gpu_status) = (None, t("沒有 GPU").to_string());
         if let Some(rs) = &rs {
@@ -260,6 +267,9 @@ impl App {
             items: Vec::new(),
             current: None,
             scroll_to_current: false,
+            strip_pan: library::StripPan::default(),
+            strip_offset: None,
+            shot_strip_offset,
             thumbs: HashMap::new(),
             thumb_version: 1,
             thumb_live_due: None,
@@ -1280,10 +1290,10 @@ impl App {
 
     // ---- layout -------------------------------------------------------------------
 
-    /// Toolbar button height: twice a normal button.
+    /// Toolbar button height: 1.6 × a normal button (1.1.0's 2× less a fifth).
     fn top_button_h(ui: &egui::Ui) -> f32 {
         let text = ui.fonts_mut(|f| f.row_height(&egui::TextStyle::Button.resolve(ui.style())));
-        2.0 * (text + 2.0 * ui.spacing().button_padding.y).max(ui.spacing().interact_size.y)
+        1.6 * (text + 2.0 * ui.spacing().button_padding.y).max(ui.spacing().interact_size.y)
     }
 
     fn top_bar(&mut self, ui: &mut egui::Ui) {
@@ -1572,19 +1582,14 @@ impl App {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
         // Lower while a tool is open, the means inside the plot: the tool panel needs the
-        // room (遮罩 in German fits the 150 % column without scrolling).
+        // room (the photo info stays a full table).
         let compact = self.tool != ToolMode::None;
-        let hist_h = if compact { 40.0 } else { 110.0 };
+        let hist_h = if compact { 32.0 } else { 110.0 };
         theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), hist_h, compact));
         ui.add_space(4.0);
         theme::section(ui, t("照片資訊"), |ui| match &self.exif {
             None => {
                 ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
-            }
-            // A tool open (its panel needs the room): one line instead of the table.
-            Some(e) if self.tool != ToolMode::None => {
-                let line = format!("{} {} · {} · {}", e.camera_make, e.camera_model, e.dimensions_display(), f("處理版本 {0}", &[&(self.adj.pipeline_version + 1)]));
-                ui.add(egui::Label::new(RichText::new(line.trim()).size(theme::scaled(12.0)).color(theme::TEXT_DIM)).truncate());
             }
             Some(e) => {
                 let rows = [
@@ -1606,7 +1611,7 @@ impl App {
                 let key_font = egui::FontId::proportional(theme::scaled(12.5));
                 let key_w = rows.iter().map(|(k, _)| widgets::text_width(ui, k, &key_font)).fold(0.0f32, f32::max).min(ui.available_width() * 0.45);
                 let row_h = ui.text_style_height(&egui::TextStyle::Body);
-                ui.spacing_mut().item_spacing.y = 1.0;
+                ui.spacing_mut().item_spacing.y = 0.0;
                 for (k, v) in rows {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;

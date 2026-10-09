@@ -513,7 +513,13 @@ impl App {
         let mut menu = None;
         let scroll_to = std::mem::take(&mut self.scroll_to_current);
         let (ctrl, shift) = ui.input(|i| (i.modifiers.command, i.modifiers.shift));
-        egui::ScrollArea::horizontal().auto_shrink([false, false]).show(ui, |ui| {
+        // The wheel scrolls the strip without Shift too (it has only the one direction).
+        ui.style_mut().always_scroll_the_only_direction = true;
+        let mut area = egui::ScrollArea::horizontal().id_salt("strip_scroll").auto_shrink([false, false]);
+        if let Some(x) = self.strip_offset.take().or(self.shot_strip_offset) {
+            area = area.horizontal_scroll_offset(x);
+        }
+        let out = area.show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.add_space(4.0);
                 for (i, it) in self.items.iter().enumerate() {
@@ -541,6 +547,42 @@ impl App {
                 }
             });
         });
+        let view = out.inner_rect;
+        let offset = out.state.offset.x;
+        let max_offset = (out.content_size.x - view.width()).max(0.0);
+        // Right-button drag pans the strip; after a drag the release opens no menu.
+        let (pressed, down, pos) = ui.input(|i| (i.pointer.secondary_pressed(), i.pointer.secondary_down(), i.pointer.interact_pos()));
+        let pan = self.strip_pan.update(pressed && pos.is_some_and(|p| view.contains(p)), down, pos.map(|p| p.x), offset);
+        if let Some(x) = pan.offset {
+            self.strip_offset = Some(x.clamp(0.0, max_offset));
+            ui.ctx().request_repaint();
+        }
+        if pan.panning {
+            ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+        }
+        if pan.dragged {
+            menu = None;
+        }
+        // ◀ ▶ over the ends while photos are hidden past them; a click pages one view.
+        let arrow_h = 136.0 / 3.0;
+        let arrow_w = arrow_h * 0.55;
+        let mid = view.min.y + 4.0 + 136.0 / 2.0;
+        for (left, more) in [(true, offset > 0.5), (false, offset < max_offset - 0.5)] {
+            if !more {
+                continue;
+            }
+            let x0 = if left { view.min.x + 6.0 } else { view.max.x - 6.0 - arrow_w };
+            let r = egui::Rect::from_min_size(egui::pos2(x0, mid - arrow_h / 2.0), Vec2::new(arrow_w, arrow_h));
+            let (tip, back) = if left { (r.min.x, r.max.x) } else { (r.max.x, r.min.x) };
+            let pts = vec![egui::pos2(tip, mid), egui::pos2(back, r.min.y), egui::pos2(back, r.max.y)];
+            ui.painter().add(egui::Shape::convex_polygon(pts, Color32::from_white_alpha(178), egui::Stroke::NONE));
+            let hit = ui.interact(r.expand(6.0), ui.id().with(("strip_arrow", left)), egui::Sense::click());
+            if hit.clicked() {
+                let page = view.width() - 176.0;
+                self.strip_offset = Some((if left { offset - page } else { offset + page }).clamp(0.0, max_offset));
+                clicked = None;
+            }
+        }
         if let Some(i) = clicked {
             self.click_thumb(i, ctrl, shift);
         }
@@ -675,6 +717,52 @@ impl App {
 
 /// One strip cell: thumbnail, #number, badges (hidden eye, copy, edited), selection.
 #[allow(clippy::too_many_arguments)]
+/// Right-button drag on the thumbnail strip: past `PAN_SLOP` points it pans, and the
+/// button's release then opens no menu (the menu comes from a click, a release without
+/// a drag).
+#[derive(Default)]
+pub(super) struct StripPan {
+    /// Press x, the strip offset then, whether it has moved past the slop.
+    drag: Option<(f32, f32, bool)>,
+}
+
+pub(super) struct PanStep {
+    /// The strip's new offset.
+    pub offset: Option<f32>,
+    /// Panning now (grab cursor).
+    pub panning: bool,
+    /// This press became a drag: no menu for it.
+    pub dragged: bool,
+}
+
+impl StripPan {
+    const PAN_SLOP: f32 = 4.0;
+
+    /// One frame: `pressed` = the right button went down over the strip this frame.
+    pub fn update(&mut self, pressed: bool, down: bool, x: Option<f32>, offset: f32) -> PanStep {
+        if pressed {
+            self.drag = x.map(|x| (x, offset, false));
+        }
+        let mut step = PanStep { offset: None, panning: false, dragged: false };
+        let Some((x0, off0, moved)) = self.drag.as_mut() else { return step };
+        if down {
+            if let Some(x) = x {
+                let dx = x - *x0;
+                *moved |= dx.abs() > Self::PAN_SLOP;
+                if *moved {
+                    step.offset = Some(*off0 - dx);
+                }
+            }
+            step.panning = *moved;
+            step.dragged = *moved;
+        } else {
+            step.dragged = *moved;
+            self.drag = None;
+        }
+        step
+    }
+}
+
 fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&egui::TextureHandle>, selected: bool, current: bool, copy_source: bool, show_number: bool) {
     let fill = if current {
         Color32::from_rgb(0x2F, 0x3E, 0x52)
@@ -738,5 +826,32 @@ fn paint_thumb(p: &egui::Painter, rect: egui::Rect, it: &Item, thumb: Option<&eg
     );
     if selected {
         p.rect_stroke(rect, 3.0, egui::Stroke::new(2.0, theme::ACCENT), egui::StrokeKind::Inside);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StripPan;
+
+    #[test]
+    fn strip_pan_slop_and_menu() {
+        // A right click that barely moves: no pan, the menu stays.
+        let mut p = StripPan::default();
+        assert!(p.update(true, true, Some(100.0), 50.0).offset.is_none());
+        assert!(p.update(false, true, Some(103.0), 50.0).offset.is_none());
+        let r = p.update(false, false, Some(103.0), 50.0);
+        assert!(!r.dragged && r.offset.is_none());
+        // A drag: past 4 points it pans by the pointer's travel (left drag = scroll right),
+        // and the release swallows the menu.
+        let mut p = StripPan::default();
+        p.update(true, true, Some(100.0), 50.0);
+        let r = p.update(false, true, Some(80.0), 50.0);
+        assert_eq!((r.offset, r.panning), (Some(70.0), true));
+        // Coming back within the slop still pans (once moved, always a drag).
+        assert_eq!(p.update(false, true, Some(98.0), 50.0).offset, Some(52.0));
+        let r = p.update(false, false, Some(98.0), 50.0);
+        assert!(r.dragged && !r.panning);
+        // Nothing pressed: nothing happens.
+        assert!(!p.update(false, false, Some(0.0), 0.0).dragged);
     }
 }
