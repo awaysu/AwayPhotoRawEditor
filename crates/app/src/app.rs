@@ -1628,7 +1628,7 @@ impl App {
     }
 
     /// 工具: 裁切／漸層／修護 tabs (click the open one again to close it) over the
-    /// selected tool's controls, locked while no tool is open (`ToolsPanel`).
+    /// selected tool's controls; with no tool open only the tabs show.
     fn tools_panel(&mut self, ui: &mut egui::Ui) {
         let on = self.has_photo();
         // Four tabs in a row, or two rows of two when a label would not fit (long
@@ -1663,8 +1663,9 @@ impl App {
             ToolMode::Gradient => self.gradient_controls(ui, enabled),
             ToolMode::Heal => self.heal_controls(ui, enabled),
             ToolMode::Mask => self.mask_controls(ui, enabled),
-            // No tool: the crop controls stand in, locked.
-            ToolMode::Crop | ToolMode::None => self.crop_controls(ui, enabled),
+            ToolMode::Crop => self.crop_controls(ui, enabled),
+            // No tool: just the tabs (no locked stand-in), so the column never scrolls.
+            ToolMode::None => {}
         }
     }
 
