@@ -8,7 +8,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor
 
 ## 目前狀態
-**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP、兩階段快取 044f7e4）；第 7 步完成（f7fcb80 遮罩、aec9c3c HEIC 評估）；第 8 步完成（14a7649 HEIC 系統解碼器）；第 9 步完成（1dec452 收尾）；第 10 步完成：2.0.0 已發佈（2026-10-09，tag v2.0.0、awaysu.cc、GitHub Release）。之後為維護與新需求。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
+**第 0 步完成（2026-10-09，commit 9cd31d8）；第 1 步完成（ab14562）；第 2 步完成（b714a8f）；第 3 步完成（6436fb9）；第 4 步完成（72428ac，功能與 C# v1.0.18 對等）；第 5 步完成（c2ae7c4，三平台安裝檔；mac 已公證）；第 6 步完成（5247bdf，處理版本 3：線性管線、高光復原、HSL、曲線、XMP、兩階段快取 044f7e4）；第 7 步完成（f7fcb80 遮罩、aec9c3c HEIC 評估）；第 8 步完成（14a7649 HEIC 系統解碼器）；第 9 步完成（1dec452 收尾）；第 10 步完成：2.0.0 已發佈（2026-10-09，tag v2.0.0、awaysu.cc、GitHub Release）。2.0.1（介面：滑桿單行、側欄 250）同日發佈，tag v2.0.1。之後為維護與新需求。** 進度與各步驟的詳細內容見 `docs/ROADMAP.md`，完成的步驟報告在 `docs/`。
 PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過）。
 
 ## 工作方式（Multi-Agent）
@@ -46,6 +46,7 @@ cargo test --workspace
 |---|---|---|---|
 | Linux x86_64（12 核） | `ssh awpr-linux` | `/home/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（/usr/bin） |
 | macOS 26.6 arm64（M2） | `ssh awpr-mac` | `/Users/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（`export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`，非互動 shell 要自己加） |
+- 兩台的 `AwayPhotoRawEditor` 是 Agent-12 的工作目錄（origin 已改為 GitHub）；**發佈建置用旁邊的 worktree `AwayPhotoRawEditor-rel`**（`git fetch --tags && git checkout v<版本>` 後跑打包腳本），不要動 Agent-12 的工作目錄。
 - 兩台都在各自 WorkspaceAwaysu 下**新建** `AwayPhotoRawEditor` 目錄處理（用 `git clone` 或 rsync 本機 repo），不要動旁邊的 `AwayPhotoRawEditor_Rust_PoC`（PoC 建置檔與測試資料）。
 - Mac 遠端 SSH 看不到桌面，視窗畫面要請使用者在機器前確認；Linux 可用 Xvfb。
 - 密碼不寫進 repo；需要時問使用者。
