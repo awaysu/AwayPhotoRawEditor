@@ -49,6 +49,9 @@ enum ColorTab {
     Curves,
 }
 
+/// Width of the left and right columns (logical points; 360 px at 150 %).
+const SIDE_W: f32 = 240.0;
+
 /// HSL band names, in `ImageAdjustments::hsl_*` order.
 const HSL_BANDS: [&str; 8] = ["紅", "橙", "黃", "綠", "青", "藍", "紫", "洋紅"];
 
@@ -1373,9 +1376,16 @@ impl App {
         });
         ui.add_space(4.0);
         theme::section(ui, t("色彩"), |ui| {
+            // The three tabs at their own widths, squeezed (names cut) only when the row
+            // would not fit: never wider than the column.
             ui.horizontal(|ui| {
-                for (tab, name) in [(ColorTab::Basic, t("基本")), (ColorTab::Hsl, "HSL"), (ColorTab::Curves, t("曲線"))] {
-                    if ui.selectable_label(self.color_tab == tab, name).clicked() {
+                let tabs = [(ColorTab::Basic, t("基本")), (ColorTab::Hsl, "HSL"), (ColorTab::Curves, t("曲線"))];
+                let font = egui::TextStyle::Button.resolve(ui.style());
+                let pad = 2.0 * ui.spacing().button_padding.x + 4.0;
+                let widths = widgets::share_widths(tabs.map(|(_, name)| widgets::text_width(ui, name, &font) + pad), ui.available_width() - 2.0 * ui.spacing().item_spacing.x);
+                for ((tab, name), w) in tabs.into_iter().zip(widths) {
+                    let sel = self.color_tab == tab;
+                    if widgets::fixed_button(ui, true, Vec2::new(w, 24.0), name, |b| b.selected(sel).frame_when_inactive(sel)).clicked() {
                         self.color_tab = tab;
                     }
                 }
@@ -1492,13 +1502,19 @@ impl App {
     /// The 色彩 page every version has: white balance, vibrance, saturation.
     fn color_basic(&mut self, ui: &mut egui::Ui) {
         {
+            // One row in the narrow column: the label (up to 40 %), two buttons sharing the rest.
             ui.horizontal(|ui| {
-                ui.label(RichText::new(t("白平衡")).color(theme::TEXT_DIM));
-                let picker = egui::Button::new(t("滴管")).selected(self.wb_picker);
-                if ui.add_enabled(self.has_photo(), picker).on_hover_text(t("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）")).clicked() {
+                let gap = ui.spacing().item_spacing.x;
+                let font = egui::TextStyle::Body.resolve(ui.style());
+                let label_w = widgets::text_width(ui, t("白平衡"), &font).min(ui.available_width() * 0.4);
+                widgets::fixed_text(ui, label_w, 24.0, t("白平衡"), font, theme::TEXT_DIM);
+                let bw = ((ui.available_width() - gap) / 2.0).max(0.0);
+                let on = self.has_photo();
+                let picker = self.wb_picker;
+                if widgets::fixed_button(ui, on, Vec2::new(bw, 24.0), t("滴管"), |b| b.selected(picker)).on_hover_text(t("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）")).clicked() {
                     self.wb_picker = !self.wb_picker;
                 }
-                if ui.add_enabled(self.has_photo(), egui::Button::new(t("拍攝時設定"))).clicked() {
+                if widgets::fixed_button(ui, on, Vec2::new(bw, 24.0), t("拍攝時設定"), |b| b).clicked() {
                     self.as_shot();
                 }
             });
@@ -1562,15 +1578,19 @@ impl App {
                     (t("尺寸"), e.dimensions_display()),
                     (t("檔案大小"), e.file_size_display()),
                 ];
-                // The label column is measured (the C# ExifView); only the values are cut.
-                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                egui::Grid::new("exif").num_columns(2).spacing([10.0, 1.0]).show(ui, |ui| {
-                    for (k, v) in rows {
-                        ui.label(RichText::new(k).size(theme::scaled(12.5)).color(theme::TEXT_DIM));
+                // The label column is measured (the C# ExifView), at most 45 % of the
+                // column; whatever does not fit is cut with "…" (full text on hover).
+                let key_font = egui::FontId::proportional(theme::scaled(12.5));
+                let key_w = rows.iter().map(|(k, _)| widgets::text_width(ui, k, &key_font)).fold(0.0f32, f32::max).min(ui.available_width() * 0.45);
+                let row_h = ui.text_style_height(&egui::TextStyle::Body);
+                ui.spacing_mut().item_spacing.y = 1.0;
+                for (k, v) in rows {
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing.x = 10.0;
+                        widgets::fixed_text(ui, key_w, row_h, k, key_font.clone(), theme::TEXT_DIM);
                         ui.add(egui::Label::new(v).truncate());
-                        ui.end_row();
-                    }
-                });
+                    });
+                }
                 if let Some(reason) = &self.decode_error {
                     ui.add(egui::Label::new(RichText::new(format!("· {reason}")).size(theme::scaled(12.0)).color(theme::EDITED)).wrap());
                 }
@@ -1629,22 +1649,34 @@ impl App {
         const NAMES: [&str; 6] = ["原始", "3:2", "4:3", "16:9", "1:1", "自訂"];
         const VALUES: [&str; 6] = ["Original", "3:2", "4:3", "16:9", "1:1", "Custom"];
         ui.horizontal(|ui| {
-            ui.add_sized([62.0, 20.0], egui::Label::new(RichText::new(t("比例")).color(theme::TEXT_DIM)).truncate());
+            // Fits the narrow column: the label as long as it is (capped), the W:H boxes
+            // narrow, the combo box whatever is left.
+            let gap = ui.spacing().item_spacing.x;
+            let font = egui::TextStyle::Body.resolve(ui.style());
+            let label_w = widgets::text_width(ui, t("比例"), &font).min(64.0);
+            let colon_w = widgets::text_width(ui, ":", &font);
+            let num_w = 30.0;
+            ui.spacing_mut().interact_size.x = num_w; // a DragValue is never narrower than this
+            let combo_w = (ui.available_width() - label_w - 2.0 * num_w - colon_w - 4.0 * gap).max(40.0);
+            widgets::fixed_text(ui, label_w, 20.0, t("比例"), font.clone(), theme::TEXT_DIM);
             let cur = if self.crop_custom.is_some() { 5 } else { tools::aspect_index(&self.adj.crop_aspect_ratio) };
             let mut sel = cur;
-            ui.add_enabled_ui(on, |ui| {
-                egui::ComboBox::from_id_salt("crop_aspect").width(72.0).selected_text(t(NAMES[cur])).show_ui(ui, |ui| {
-                    for (i, name) in NAMES.iter().enumerate() {
-                        ui.selectable_value(&mut sel, i, t(name));
-                    }
+            // In a box of exactly combo_w, so a long name ("Benutzerdefiniert") is cut.
+            ui.allocate_ui(Vec2::new(combo_w, ui.spacing().interact_size.y), |ui| {
+                ui.add_enabled_ui(on, |ui| {
+                    egui::ComboBox::from_id_salt("crop_aspect").width(combo_w).truncate().selected_text(t(NAMES[cur])).show_ui(ui, |ui| {
+                        for (i, name) in NAMES.iter().enumerate() {
+                            ui.selectable_value(&mut sel, i, t(name));
+                        }
+                    });
                 });
             });
             // 自訂 W:H, restored from a stored "W:H" that is not one of the presets.
             let (mut cw, mut ch) = self.crop_custom.unwrap_or_else(|| custom_ratio(&self.adj.crop_aspect_ratio).unwrap_or((3, 2)));
             let custom = on && sel == 5;
-            let r1 = ui.add_enabled(custom, egui::DragValue::new(&mut cw).range(1..=99));
+            let r1 = ui.add_enabled_ui(custom, |ui| ui.add_sized([num_w, 20.0], egui::DragValue::new(&mut cw).range(1..=99))).inner;
             ui.label(":");
-            let r2 = ui.add_enabled(custom, egui::DragValue::new(&mut ch).range(1..=99));
+            let r2 = ui.add_enabled_ui(custom, |ui| ui.add_sized([num_w, 20.0], egui::DragValue::new(&mut ch).range(1..=99))).inner;
             if sel != cur {
                 if sel == 5 {
                     // C#: 自訂 stores the W:H numbers, never the word "Custom".
@@ -2160,9 +2192,9 @@ impl eframe::App for App {
             .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(0, 4)))
             .show(ui, |ui| self.strip(ui));
         egui::Panel::left("left")
-            .exact_size(330.0)
+            .exact_size(SIDE_W)
             .resizable(false)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(10, 0)))
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(6, 0)))
             .show(ui, |ui| {
                 let bars = self.scroll_bars();
                 if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
@@ -2171,9 +2203,9 @@ impl eframe::App for App {
                 egui::ScrollArea::vertical().id_salt("left_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.left_column(ui));
             });
         egui::Panel::right("right")
-            .exact_size(320.0)
+            .exact_size(SIDE_W)
             .resizable(false)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(10, 0)))
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(6, 0)))
             .show(ui, |ui| {
                 egui::Panel::bottom("right_bottom").exact_size(80.0).frame(egui::Frame::new().fill(theme::WINDOW)).show(ui, |ui| self.right_bottom(ui));
                 egui::CentralPanel::no_frame().show(ui, |ui| {

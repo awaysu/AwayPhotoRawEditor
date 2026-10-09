@@ -70,24 +70,79 @@ fn gradient_color(g: Gradient, t: f32) -> Color32 {
     }
 }
 
-/// One slider row: label and value on top, the track below. 32 points + the 4 point
-/// item spacing = the C# 36-unit row pitch.
+/// The label column shared by the slider rows of one panel (one `Ui`): as wide as its
+/// longest label in the current language, measured anew every pass.
+#[derive(Clone, Copy, Default)]
+struct LabelColumn {
+    pass: u64,
+    /// The widest label seen so far in this pass.
+    cur: f32,
+    /// The widest label of the previous pass (what the rows use).
+    prev: f32,
+}
+
+/// The longest label a row shows whole: about 7 CJK characters; longer ones end in "…".
+fn label_cap() -> f32 {
+    7.0 * theme::scaled(14.0)
+}
+
+/// The width of the label column for a row whose own label needs `need`.
+fn label_column_width(ui: &egui::Ui, need: f32) -> f32 {
+    let id = ui.id().with("awpr_label_column");
+    let pass = ui.ctx().cumulative_pass_nr();
+    let mut col = ui.data(|d| d.get_temp::<LabelColumn>(id)).unwrap_or_default();
+    if col.pass != pass {
+        if col.cur != col.prev && col.pass != 0 {
+            // The longest label changed (language, panel content): lay out once more.
+            ui.ctx().request_repaint();
+        }
+        col.prev = col.cur;
+        col.cur = 0.0;
+        col.pass = pass;
+    }
+    col.cur = col.cur.max(need);
+    if need > col.prev {
+        // Rows above were laid out narrower: redo this pass rather than show them ragged.
+        ui.ctx().request_discard("slider label column");
+    }
+    let w = col.prev.max(need);
+    ui.data_mut(|d| d.insert_temp(id, col));
+    w
+}
+
+/// One slider row on a single line: `label | track | value`. The label column is as wide
+/// as the panel's longest label (capped; a longer one is cut with "…" and shown on hover),
+/// the track takes what is left, the value box fits "-100", "5022", "0.00".
 pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enabled: bool) -> SliderResponse {
     let mut out = SliderResponse::default();
     let width = ui.available_width();
-    let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, 32.0), Sense::hover());
+    let font = egui::FontId::proportional(theme::scaled(14.0));
+    let text_col = if enabled { theme::TEXT } else { theme::TEXT_FAINT };
+    let gap = 6.0;
+    let value_font = egui::TextStyle::Body.resolve(ui.style());
+    let value_w = ui.fonts_mut(|f| f.layout_no_wrap("-0000".to_owned(), value_font, Color32::WHITE).size().x) + 2.0 * ui.spacing().button_padding.x;
+    let need = ui.fonts_mut(|f| f.layout_no_wrap(spec.label.to_owned(), font.clone(), text_col).size().x).ceil();
+    // The track keeps at least ~56 points: the label gives way first.
+    let label_w = label_column_width(ui, need).min(label_cap()).min((width - value_w - 2.0 * gap - 56.0).max(24.0));
+    let row_h = (ui.fonts_mut(|f| f.row_height(&font)) + 6.0).max(24.0);
+    let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, row_h), Sense::hover());
     if !ui.is_rect_visible(outer) {
         return out;
     }
-    let text_col = if enabled { theme::TEXT } else { theme::TEXT_FAINT };
 
-    // Label (double-click → default, like double-clicking the slider).
-    let label_rect = Rect::from_min_size(outer.min, Vec2::new(width - 70.0, 16.0));
+    // Label (double-click → default, like double-clicking the slider). Never wraps.
+    let label_rect = Rect::from_min_size(outer.min, Vec2::new(label_w, row_h));
     let label_resp = ui.interact(label_rect, ui.id().with((spec.label, "label")), Sense::click());
-    ui.painter().text(label_rect.left_center(), egui::Align2::LEFT_CENTER, spec.label, egui::FontId::proportional(theme::scaled(14.0)), text_col);
+    let mut job = egui::text::LayoutJob::simple_singleline(spec.label.to_owned(), font, text_col);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(label_w);
+    let galley = ui.fonts_mut(|f| f.layout_job(job));
+    let elided = galley.elided;
+    ui.painter().galley(Pos2::new(label_rect.min.x, label_rect.center().y - galley.size().y / 2.0), galley, text_col);
+    let label_resp = if elided { label_resp.on_hover_text(spec.label) } else { label_resp };
 
     // Editable value on the right.
-    let value_rect = Rect::from_min_size(Pos2::new(outer.max.x - 64.0, outer.min.y - 1.0), Vec2::new(64.0, 18.0));
+    let value_h = ui.spacing().interact_size.y;
+    let value_rect = Rect::from_min_size(Pos2::new(outer.max.x - value_w, outer.center().y - value_h / 2.0), Vec2::new(value_w, value_h));
     let mut v = *value;
     let dv = ui.put(
         value_rect,
@@ -105,7 +160,7 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     }
 
     // Track.
-    let track = Rect::from_min_max(Pos2::new(outer.min.x + 6.0, outer.min.y + 22.0), Pos2::new(outer.max.x - 6.0, outer.min.y + 30.0));
+    let track = Rect::from_min_max(Pos2::new(label_rect.max.x + gap + 6.0, outer.center().y - 4.0), Pos2::new(value_rect.min.x - gap - 6.0, outer.center().y + 4.0));
     let hit = track.expand2(Vec2::new(6.0, 6.0));
     let resp = ui.interact(hit, ui.id().with((spec.label, "track")), Sense::click_and_drag());
     let t_of = |v: f64| (((v - spec.min) / (spec.max - spec.min)).clamp(0.0, 1.0)) as f32;
@@ -304,18 +359,56 @@ pub fn curve_editor(ui: &mut egui::Ui, id: egui::Id, points: &mut Vec<(f64, f64)
     out
 }
 
+/// Text in a box of exactly `width` × `height`, left-aligned and vertically centred, cut
+/// with "…" when it does not fit (the full text on hover). Never wraps or widens the column.
+pub fn fixed_text(ui: &mut egui::Ui, width: f32, height: f32, text: &str, font: egui::FontId, color: Color32) -> egui::Response {
+    let (rect, resp) = ui.allocate_exact_size(Vec2::new(width, height), Sense::hover());
+    let mut job = egui::text::LayoutJob::simple_singleline(text.to_owned(), font, color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(width);
+    let galley = ui.fonts_mut(|f| f.layout_job(job));
+    let elided = galley.elided;
+    ui.painter().galley(Pos2::new(rect.min.x, rect.center().y - galley.size().y / 2.0), galley, color);
+    if elided { resp.on_hover_text(text) } else { resp }
+}
+
+/// Widths for items that want `want` but must share `room`: short ones keep their width,
+/// the long ones are cut to an equal share of what is left.
+pub fn share_widths<const N: usize>(want: [f32; N], room: f32) -> [f32; N] {
+    let mut sorted = want;
+    sorted.sort_by(f32::total_cmp);
+    let mut left = room;
+    let mut cap = f32::INFINITY;
+    for (i, w) in sorted.iter().enumerate() {
+        let share = left / (N - i) as f32;
+        if *w > share {
+            cap = share;
+            break;
+        }
+        left -= w;
+    }
+    want.map(|w| w.min(cap).max(0.0))
+}
+
+/// The width `text` needs in `font`.
+pub fn text_width(ui: &egui::Ui, text: &str, font: &egui::FontId) -> f32 {
+    ui.fonts_mut(|f| f.layout_no_wrap(text.to_owned(), font.clone(), Color32::WHITE).size().x).ceil()
+}
+
 /// A button of exactly `size` whose text is cut with "…" when it does not fit: words go into
 /// the fixed box instead of widening the column (the C# rule for long translations). The
 /// full text shows on hover.
 pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: impl Into<egui::WidgetText>, f: impl FnOnce(egui::Button) -> egui::Button) -> egui::Response {
     let text: egui::WidgetText = text.into();
     let full = text.text().to_string();
-    ui.add_enabled_ui(enabled, |ui| {
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-        let r = ui.add_sized(size, f(egui::Button::new(text).min_size(size)));
-        r.on_hover_text(full)
-    })
-    .inner
+    // The box is allocated first and the button placed in it: a cut label can make the
+    // button report a few points more than `size`, which must not widen the column.
+    let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rect).layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)));
+    if !enabled {
+        child.disable();
+    }
+    child.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+    child.add(f(egui::Button::new(text).min_size(size))).on_hover_text(full)
 }
 
 /// 256-bin RGB histogram (R, G, B in `bins[0..256]`, `[256..512]`, `[512..768]`).
@@ -374,7 +467,7 @@ pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>) {
     }
     let m = h.means();
     ui.label(
-        egui::RichText::new(format!("R {:.1}   G {:.1}   B {:.1}", m[0], m[1], m[2]))
+        egui::RichText::new(format!("R {:.1}  G {:.1}  B {:.1}", m[0], m[1], m[2]))
             .monospace()
             .color(theme::TEXT_DIM),
     );
