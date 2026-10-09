@@ -203,12 +203,18 @@ fn apply_style(style: &mut egui::Style) {
 }
 
 /// A section box with a bold title (`SectionPanel`).
+/// The side columns' scroll bar: solid (never over a slider) but thin, so the narrow
+/// columns keep their room.
+pub fn side_scroll_style() -> egui::style::ScrollStyle {
+    egui::style::ScrollStyle { bar_inner_margin: 2.0, ..egui::style::ScrollStyle::solid() }
+}
+
 pub fn section<R>(ui: &mut egui::Ui, title: &str, body: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::new()
         .fill(PANEL)
         .stroke(egui::Stroke::new(1.0, BORDER))
         .corner_radius(4.0)
-        .inner_margin(egui::Margin { left: 10, right: 10, top: 6, bottom: 8 })
+        .inner_margin(egui::Margin { left: 5, right: 5, top: 6, bottom: 8 })
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.label(egui::RichText::new(title).strong().size(fs(FontKind::SectionTitle)));

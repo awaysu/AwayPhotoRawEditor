@@ -63,15 +63,23 @@ impl App {
             self.active_mask = i as i32;
         }
         ui.horizontal(|ui| {
-            let w = (ui.available_width() - 2.0 * ui.spacing().item_spacing.x) / 3.0;
-            // Short labels so three fit the column; the full action on hover.
-            if crate::widgets::fixed_button(ui, on, Vec2::new(w, 26.0), format!("+ {}", t("放射狀")), |b| b).on_hover_text(t("新增放射狀")).clicked() {
+            // Short labels at their own widths so three fit the column; the full action on hover.
+            let (radial, brush) = (format!("+ {}", t("放射狀")), format!("+ {}", t("筆刷")));
+            let font = egui::TextStyle::Button.resolve(ui.style());
+            let pad = 2.0 * ui.spacing().button_padding.x + 4.0;
+            let tw = |ui: &egui::Ui, s: &str| crate::widgets::text_width(ui, s, &font) + pad;
+            let want = [tw(ui, &radial), tw(ui, &brush), tw(ui, t("刪除"))];
+            let room = ui.available_width() - 2.0 * ui.spacing().item_spacing.x;
+            // Spread the spare room evenly so the row still fills the column.
+            let spare = ((room - want.iter().sum::<f32>()) / 3.0).max(0.0);
+            let [w1, w2, w3] = crate::widgets::share_widths(want.map(|w| w + spare), room);
+            if crate::widgets::fixed_button(ui, on, Vec2::new(w1, 26.0), radial, |b| b).on_hover_text(t("新增放射狀")).clicked() {
                 self.add_mask(MaskKind::Radial);
             }
-            if crate::widgets::fixed_button(ui, on, Vec2::new(w, 26.0), format!("+ {}", t("筆刷")), |b| b).on_hover_text(t("新增筆刷")).clicked() {
+            if crate::widgets::fixed_button(ui, on, Vec2::new(w2, 26.0), brush, |b| b).on_hover_text(t("新增筆刷")).clicked() {
                 self.add_mask(MaskKind::Brush);
             }
-            if crate::widgets::fixed_button(ui, on && active.is_some(), Vec2::new(w, 26.0), t("刪除"), |b| b).on_hover_text(t("刪除遮罩")).clicked() {
+            if crate::widgets::fixed_button(ui, on && active.is_some(), Vec2::new(w3, 26.0), t("刪除"), |b| b).on_hover_text(t("刪除遮罩")).clicked() {
                 if let Some(i) = active {
                     self.delete_mask(i);
                 }
@@ -112,11 +120,13 @@ impl App {
             (SliderSpec::pm100(t("飽和度")).gradient(Gradient::Saturation), |m| m.saturation, |m, v| m.saturation = v),
         ];
         for (n, (spec, get, set)) in shape.into_iter().chain(fields).enumerate() {
-            ui.push_id(("mask_field", n), |ui| {
-                self.slider_with(ui, spec, has, |a| active.map_or(spec.default, |i| get(&a.masks[i])), |a, v| {
-                    if let Some(i) = active {
-                        set(&mut a.masks[i], v);
-                    }
+            crate::widgets::slider_scope(ui, |ui| {
+                ui.push_id(("mask_field", n), |ui| {
+                    self.slider_with(ui, spec, has, |a| active.map_or(spec.default, |i| get(&a.masks[i])), |a, v| {
+                        if let Some(i) = active {
+                            set(&mut a.masks[i], v);
+                        }
+                    });
                 });
             });
         }

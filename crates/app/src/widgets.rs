@@ -70,27 +70,46 @@ fn gradient_color(g: Gradient, t: f32) -> Color32 {
     }
 }
 
-/// The label column shared by the slider rows of one panel (one `Ui`): as wide as its
-/// longest label in the current language, measured anew every pass.
+/// A column shared by the slider rows of one panel (one `Ui`) — the labels, the value
+/// boxes: as wide as its widest entry in the current language, measured anew every pass.
 #[derive(Clone, Copy, Default)]
-struct LabelColumn {
+struct SharedColumn {
     pass: u64,
-    /// The widest label seen so far in this pass.
+    /// The widest entry seen so far in this pass.
     cur: f32,
-    /// The widest label of the previous pass (what the rows use).
+    /// The widest entry of the previous pass (what the rows use).
     prev: f32,
 }
 
-/// The longest label a row shows whole: about 7 CJK characters; longer ones end in "…".
+/// The label width a row always gets: 5 CJK characters (the longest zh label is 4).
 fn label_cap() -> f32 {
-    7.0 * theme::scaled(14.0)
+    5.0 * theme::scaled(14.0)
 }
 
-/// The width of the label column for a row whose own label needs `need`.
-fn label_column_width(ui: &egui::Ui, need: f32) -> f32 {
-    let id = ui.id().with("awpr_label_column");
+/// The shortest track (points) the label column may squeeze it to beyond `label_cap`.
+const MIN_TRACK: f32 = 110.0;
+
+fn slider_scope_key() -> egui::Id {
+    egui::Id::new("awpr_slider_scope")
+}
+
+/// Slider rows added inside `f` share one label / value column even when each sits in its
+/// own child `Ui` (`push_id`), as the HSL and mask rows do.
+pub fn slider_scope<R>(ui: &mut egui::Ui, f: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    // Its own key: the rows added straight into `ui` (another page) keep theirs.
+    let id = ui.id().with("awpr_slider_scope");
+    ui.data_mut(|d| d.insert_temp(slider_scope_key(), Some(id)));
+    let r = f(ui);
+    ui.data_mut(|d| d.insert_temp::<Option<egui::Id>>(slider_scope_key(), None));
+    r
+}
+
+/// The width of the shared column `key` for a row whose own entry needs `need`.
+fn shared_column_width(ui: &egui::Ui, key: &'static str, need: f32) -> f32 {
+    let base = ui.data(|d| d.get_temp::<Option<egui::Id>>(slider_scope_key())).flatten().unwrap_or(ui.id());
+    let id = base.with(("awpr_slider_column", key));
     let pass = ui.ctx().cumulative_pass_nr();
-    let mut col = ui.data(|d| d.get_temp::<LabelColumn>(id)).unwrap_or_default();
+    let mut col = ui.data(|d| d.get_temp::<SharedColumn>(id)).unwrap_or_default();
     if col.pass != pass {
         if col.cur != col.prev && col.pass != 0 {
             // The longest label changed (language, panel content): lay out once more.
@@ -103,7 +122,7 @@ fn label_column_width(ui: &egui::Ui, need: f32) -> f32 {
     col.cur = col.cur.max(need);
     if need > col.prev {
         // Rows above were laid out narrower: redo this pass rather than show them ragged.
-        ui.ctx().request_discard("slider label column");
+        ui.ctx().request_discard("slider column");
     }
     let w = col.prev.max(need);
     ui.data_mut(|d| d.insert_temp(id, col));
@@ -111,19 +130,22 @@ fn label_column_width(ui: &egui::Ui, need: f32) -> f32 {
 }
 
 /// One slider row on a single line: `label | track | value`. The label column is as wide
-/// as the panel's longest label (capped; a longer one is cut with "…" and shown on hover),
-/// the track takes what is left, the value box fits "-100", "5022", "0.00".
+/// as the panel's longest label as long as the track keeps `MIN_TRACK` (it always gets
+/// `label_cap`; a longer label is cut with "…" and shown on hover), the value boxes are as
+/// wide as the panel's longest value ("-100", "12000", "0.00"), the track takes the rest.
 pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enabled: bool) -> SliderResponse {
     let mut out = SliderResponse::default();
     let width = ui.available_width();
     let font = egui::FontId::proportional(theme::scaled(14.0));
     let text_col = if enabled { theme::TEXT } else { theme::TEXT_FAINT };
+    // Label / value to the track's end; the 6.5 point knob overhangs the end into it.
     let gap = 6.0;
     let value_font = egui::TextStyle::Body.resolve(ui.style());
-    let value_w = ui.fonts_mut(|f| f.layout_no_wrap("-0000".to_owned(), value_font, Color32::WHITE).size().x) + 2.0 * ui.spacing().button_padding.x;
-    let need = ui.fonts_mut(|f| f.layout_no_wrap(spec.label.to_owned(), font.clone(), text_col).size().x).ceil();
-    // The track keeps at least ~56 points: the label gives way first.
-    let label_w = label_column_width(ui, need).min(label_cap()).min((width - value_w - 2.0 * gap - 56.0).max(24.0));
+    let value_need = [spec.min, spec.max].iter().map(|v| text_width(ui, &format!("{v:.*}", spec.decimals), &value_font)).fold(0.0f32, f32::max) + 2.0;
+    let value_w = shared_column_width(ui, "value", value_need);
+    let need = text_width(ui, spec.label, &font);
+    let room = width - value_w - 2.0 * gap - MIN_TRACK;
+    let label_w = shared_column_width(ui, "label", need).min(label_cap().max(room)).max(24.0);
     let row_h = (ui.fonts_mut(|f| f.row_height(&font)) + 6.0).max(24.0);
     let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, row_h), Sense::hover());
     if !ui.is_rect_visible(outer) {
@@ -144,8 +166,11 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     let value_h = ui.spacing().interact_size.y;
     let value_rect = Rect::from_min_size(Pos2::new(outer.max.x - value_w, outer.center().y - value_h / 2.0), Vec2::new(value_w, value_h));
     let mut v = *value;
-    let dv = ui.put(
-        value_rect,
+    // In a child sized to the box (a DragValue is otherwise at least `interact_size.x`).
+    let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::centered_and_justified(egui::Direction::TopDown)));
+    child.spacing_mut().interact_size.x = value_w;
+    child.spacing_mut().button_padding.x = 2.0;
+    let dv = child.add(
         egui::DragValue::new(&mut v)
             .range(spec.min..=spec.max)
             .speed((spec.max - spec.min) / 400.0)
@@ -160,7 +185,7 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     }
 
     // Track.
-    let track = Rect::from_min_max(Pos2::new(label_rect.max.x + gap + 6.0, outer.center().y - 4.0), Pos2::new(value_rect.min.x - gap - 6.0, outer.center().y + 4.0));
+    let track = Rect::from_min_max(Pos2::new(label_rect.max.x + gap, outer.center().y - 4.0), Pos2::new(value_rect.min.x - gap, outer.center().y + 4.0));
     let hit = track.expand2(Vec2::new(6.0, 6.0));
     let resp = ui.interact(hit, ui.id().with((spec.label, "track")), Sense::click_and_drag());
     let t_of = |v: f64| (((v - spec.min) / (spec.max - spec.min)).clamp(0.0, 1.0)) as f32;
@@ -443,8 +468,8 @@ impl Histogram {
     }
 }
 
-pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>) {
-    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), 110.0), Sense::hover());
+pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32) {
+    let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 3.0, theme::VIEWER);
     let Some(h) = h else { return };

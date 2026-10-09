@@ -11,6 +11,7 @@
 //!   env AWPR_SHOT_DLG=export|presets|settings|fonts|about|firstrun|cameras
 //!                                              (shot) open that window
 //!   env AWPR_LANG=zh-TW|en|ja|ko|zh-CN|de|fr|es  interface language for this run
+//!   env AWPR_SHOT_SCROLL=bottom               (shot) scroll the right column to its end
 //!   env AWPR_UI_SCALE=1.5                      force the interface size
 //!   env AWPR_SHOT_SELECT=1,2                   (shot) select these strip positions (1-based)
 //!   env AWPR_SHOT_MENU=1                       (shot) open the thumbnail menu

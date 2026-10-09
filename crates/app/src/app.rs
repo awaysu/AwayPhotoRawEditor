@@ -49,8 +49,8 @@ enum ColorTab {
     Curves,
 }
 
-/// Width of the left and right columns (logical points; 360 px at 150 %).
-const SIDE_W: f32 = 240.0;
+/// Width of the left and right columns (logical points; 375 px at 150 %).
+const SIDE_W: f32 = 250.0;
 
 /// HSL band names, in `ImageAdjustments::hsl_*` order.
 const HSL_BANDS: [&str; 8] = ["紅", "橙", "黃", "綠", "青", "藍", "紫", "洋紅"];
@@ -1447,8 +1447,10 @@ impl App {
                 1 => a.hsl_saturation[b] = v,
                 _ => a.hsl_luminance[b] = v,
             };
-            ui.push_id(("hsl", tab, b), |ui| {
-                self.slider_with(ui, spec, enabled, get, set);
+            widgets::slider_scope(ui, |ui| {
+                ui.push_id(("hsl", tab, b), |ui| {
+                    self.slider_with(ui, spec, enabled, get, set);
+                });
             });
         }
     }
@@ -1502,19 +1504,23 @@ impl App {
     /// The 色彩 page every version has: white balance, vibrance, saturation.
     fn color_basic(&mut self, ui: &mut egui::Ui) {
         {
-            // One row in the narrow column: the label (up to 40 %), two buttons sharing the rest.
+            // One row in the narrow column, everything at its own width (the label is the
+            // short "WB:" form); squeezed only if a translation is still too long.
             ui.horizontal(|ui| {
-                let gap = ui.spacing().item_spacing.x;
                 let font = egui::TextStyle::Body.resolve(ui.style());
-                let label_w = widgets::text_width(ui, t("白平衡"), &font).min(ui.available_width() * 0.4);
-                widgets::fixed_text(ui, label_w, 24.0, t("白平衡"), font, theme::TEXT_DIM);
-                let bw = ((ui.available_width() - gap) / 2.0).max(0.0);
+                let bfont = egui::TextStyle::Button.resolve(ui.style());
+                let pad = 2.0 * ui.spacing().button_padding.x + 4.0;
+                let [label_w, pick_w, shot_w] = widgets::share_widths(
+                    [widgets::text_width(ui, t("白平衡："), &font), widgets::text_width(ui, t("滴管"), &bfont) + pad, widgets::text_width(ui, t("拍攝時設定"), &bfont) + pad],
+                    ui.available_width() - 2.0 * ui.spacing().item_spacing.x,
+                );
+                widgets::fixed_text(ui, label_w, 24.0, t("白平衡："), font, theme::TEXT_DIM).on_hover_text(t("白平衡"));
                 let on = self.has_photo();
                 let picker = self.wb_picker;
-                if widgets::fixed_button(ui, on, Vec2::new(bw, 24.0), t("滴管"), |b| b.selected(picker)).on_hover_text(t("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）")).clicked() {
+                if widgets::fixed_button(ui, on, Vec2::new(pick_w, 24.0), t("滴管"), |b| b.selected(picker)).on_hover_text(t("點擊畫面上的中性灰色區域設定白平衡（Esc 取消）")).clicked() {
                     self.wb_picker = !self.wb_picker;
                 }
-                if widgets::fixed_button(ui, on, Vec2::new(bw, 24.0), t("拍攝時設定"), |b| b).clicked() {
+                if widgets::fixed_button(ui, on, Vec2::new(shot_w, 24.0), t("拍攝時設定"), |b| b).clicked() {
                     self.as_shot();
                 }
             });
@@ -1552,7 +1558,9 @@ impl App {
     fn right_column(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
-        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref()));
+        // Half height while a tool is open: its panel needs the room.
+        let hist_h = if self.tool == ToolMode::None { 110.0 } else { 55.0 };
+        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), hist_h));
         ui.add_space(4.0);
         theme::section(ui, t("照片資訊"), |ui| match &self.exif {
             None => {
@@ -2194,26 +2202,32 @@ impl eframe::App for App {
         egui::Panel::left("left")
             .exact_size(SIDE_W)
             .resizable(false)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(6, 0)))
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(4, 0)))
             .show(ui, |ui| {
                 let bars = self.scroll_bars();
                 if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
-                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
+                    ui.style_mut().spacing.scroll = theme::side_scroll_style();
                 }
                 egui::ScrollArea::vertical().id_salt("left_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.left_column(ui));
             });
         egui::Panel::right("right")
             .exact_size(SIDE_W)
             .resizable(false)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(6, 0)))
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(4, 0)))
             .show(ui, |ui| {
                 egui::Panel::bottom("right_bottom").exact_size(80.0).frame(egui::Frame::new().fill(theme::WINDOW)).show(ui, |ui| self.right_bottom(ui));
                 egui::CentralPanel::no_frame().show(ui, |ui| {
                     // The tool panels (遮罩 above all) can be taller than the column: its
                     // scroll bar shows whenever that happens, whatever 顯示捲軸 says.
                     let bars = egui::scroll_area::ScrollBarVisibility::VisibleWhenNeeded;
-                    ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
-                    egui::ScrollArea::vertical().id_salt("right_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.right_column(ui));
+                    ui.style_mut().spacing.scroll = theme::side_scroll_style();
+                    let to_end = self.headless() && std::env::var("AWPR_SHOT_SCROLL").as_deref() == Ok("bottom");
+                    egui::ScrollArea::vertical().id_salt("right_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| {
+                        self.right_column(ui);
+                        if to_end {
+                            ui.scroll_to_cursor(Some(egui::Align::BOTTOM));
+                        }
+                    });
                 });
             });
         egui::CentralPanel::no_frame().show(ui, |ui| {
