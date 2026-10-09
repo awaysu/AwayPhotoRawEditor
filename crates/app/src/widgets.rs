@@ -146,7 +146,8 @@ pub fn adjust_slider(ui: &mut egui::Ui, spec: &SliderSpec, value: &mut f64, enab
     let need = text_width(ui, spec.label, &font);
     let room = width - value_w - 2.0 * gap - MIN_TRACK;
     let label_w = shared_column_width(ui, "label", need).min(label_cap().max(room)).max(24.0);
-    let row_h = (ui.fonts_mut(|f| f.row_height(&font)) + 6.0).max(24.0);
+    // 95 % of the 2.0.1 row (2.0.2: a little denser).
+    let row_h = ((ui.fonts_mut(|f| f.row_height(&font)) + 6.0).max(24.0) * 0.95).round();
     let (outer, outer_resp) = ui.allocate_exact_size(Vec2::new(width, row_h), Sense::hover());
     if !ui.is_rect_visible(outer) {
         return out;
@@ -421,10 +422,11 @@ pub fn text_width(ui: &egui::Ui, text: &str, font: &egui::FontId) -> f32 {
 
 /// A button of exactly `size` whose text is cut with "…" when it does not fit: words go into
 /// the fixed box instead of widening the column (the C# rule for long translations). The
-/// full text shows on hover.
+/// full text shows on hover when it was cut. The text is centred.
 pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: impl Into<egui::WidgetText>, f: impl FnOnce(egui::Button) -> egui::Button) -> egui::Response {
     let text: egui::WidgetText = text.into();
     let full = text.text().to_string();
+    let cut = text_width(ui, &full, &egui::TextStyle::Button.resolve(ui.style())) + 2.0 * ui.spacing().button_padding.x > size.x;
     // The box is allocated first and the button placed in it: a cut label can make the
     // button report a few points more than `size`, which must not widen the column.
     let (rect, _) = ui.allocate_exact_size(size, Sense::hover());
@@ -433,7 +435,8 @@ pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: impl Int
         child.disable();
     }
     child.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
-    child.add(f(egui::Button::new(text).min_size(size))).on_hover_text(full)
+    let resp = child.add(f(egui::Button::new(text).min_size(size)));
+    if cut { resp.on_hover_text(full) } else { resp }
 }
 
 /// 256-bin RGB histogram (R, G, B in `bins[0..256]`, `[256..512]`, `[512..768]`).
@@ -468,7 +471,9 @@ impl Histogram {
     }
 }
 
-pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32) {
+/// `compact` (a tool is open): the means go inside the plot's top-left corner instead of
+/// a line of their own.
+pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32, compact: bool) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 3.0, theme::VIEWER);
@@ -491,9 +496,14 @@ pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32) {
         painter.add(mesh);
     }
     let m = h.means();
-    ui.label(
-        egui::RichText::new(format!("R {:.1}  G {:.1}  B {:.1}", m[0], m[1], m[2]))
-            .monospace()
-            .color(theme::TEXT_DIM),
-    );
+    let means = format!("R {:.1}  G {:.1}  B {:.1}", m[0], m[1], m[2]);
+    if compact {
+        let font = egui::TextStyle::Monospace.resolve(ui.style());
+        let galley = painter.layout_no_wrap(means, font, theme::TEXT);
+        let at = rect.min + Vec2::new(4.0, 2.0);
+        painter.rect_filled(Rect::from_min_size(at, galley.size()).expand(2.0), 2.0, Color32::from_black_alpha(150));
+        painter.galley(at, galley, theme::TEXT);
+    } else {
+        ui.label(egui::RichText::new(means).monospace().color(theme::TEXT_DIM));
+    }
 }

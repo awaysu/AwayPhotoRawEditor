@@ -86,7 +86,7 @@ impl PresetEditor {
                     ui.label(RichText::new(t("新增自訂風格檔")).color(theme::TEXT_DIM));
                     ui.horizontal(|ui| {
                         ui.add(egui::TextEdit::singleline(&mut self.new_name).desired_width(150.0));
-                        if ui.add(egui::Button::new(t("新增")).min_size(Vec2::new(78.0, 26.0))).clicked() {
+                        if widgets::fixed_button(ui, true, Vec2::new(78.0, 26.0), t("新增"), |b| b).clicked() {
                             let name = self.new_name.trim().to_string();
                             if name.is_empty() {
                                 self.message = Some(t("請先輸入自訂風格檔名稱").into());
@@ -104,7 +104,7 @@ impl PresetEditor {
                     });
                     ui.label(RichText::new(t("「新增」以目前顯示的設定建立\n修改會自動儲存")).size(theme::scaled(11.5)).color(theme::TEXT_FAINT));
                     let custom = self.cur.as_deref().is_some_and(|n| !presets::is_builtin(n));
-                    if ui.add_enabled(custom, egui::Button::new(t("刪除這個自訂風格檔")).min_size(Vec2::new(240.0, 28.0))).clicked() {
+                    if widgets::fixed_button(ui, custom, Vec2::new(240.0, 28.0), t("刪除這個自訂風格檔"), |b| b).clicked() {
                         if let Some(n) = self.cur.take() {
                             presets.remove(&n);
                             changed = true;
@@ -115,7 +115,7 @@ impl PresetEditor {
                     }
                     ui.add_space(10.0);
                     ui.horizontal(|ui| {
-                        if ui.add(egui::Button::new(t("備份全部")).min_size(Vec2::new(116.0, 30.0))).clicked() {
+                        if widgets::fixed_button(ui, true, Vec2::new(116.0, 30.0), t("備份全部"), |b| b).clicked() {
                             changed |= self.commit(presets);
                             if let Some(p) = rfd::FileDialog::new().set_title(t("風格檔備份")).add_filter(t("風格檔備份"), &["xml"]).set_file_name("AwayPhotoRawEditor_Presets.xml").save_file() {
                                 self.message = Some(match presets.export_to(&p) {
@@ -124,13 +124,13 @@ impl PresetEditor {
                                 });
                             }
                         }
-                        if ui.add(egui::Button::new(t("還原全部")).min_size(Vec2::new(116.0, 30.0))).clicked() {
+                        if widgets::fixed_button(ui, true, Vec2::new(116.0, 30.0), t("還原全部"), |b| b).clicked() {
                             if let Some(p) = rfd::FileDialog::new().set_title(t("風格檔備份")).add_filter(t("風格檔備份"), &["xml"]).pick_file() {
                                 self.ask = Some(Ask::Restore(p));
                             }
                         }
                     });
-                    if ui.add(egui::Button::new(t("恢復預設")).min_size(Vec2::new(240.0, 30.0))).clicked() {
+                    if widgets::fixed_button(ui, true, Vec2::new(240.0, 30.0), t("恢復預設"), |b| b).clicked() {
                         self.ask = Some(Ask::Reset);
                     }
                 });

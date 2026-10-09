@@ -49,8 +49,8 @@ enum ColorTab {
     Curves,
 }
 
-/// Width of the left and right columns (logical points; 375 px at 150 %).
-const SIDE_W: f32 = 250.0;
+/// Width of the left and right columns (logical points; 468 px at 150 %).
+const SIDE_W: f32 = 312.0;
 
 /// HSL band names, in `ImageAdjustments::hsl_*` order.
 const HSL_BANDS: [&str; 8] = ["紅", "橙", "黃", "綠", "青", "藍", "紫", "洋紅"];
@@ -223,6 +223,9 @@ impl App {
         }
         if shot.is_some() && std::env::var_os("AWPR_SHOT_SHOW_HIDDEN").is_some() {
             settings.show_hidden = true; // memory only: the hidden badge in a screenshot
+        }
+        if shot.is_some() && std::env::var_os("AWPR_SHOT_XMP").is_some() {
+            settings.xmp_support = true; // memory only: the XMP menu items in a screenshot
         }
         let rs = cc.wgpu_render_state.clone();
         let (mut gpu, mut gpu_status) = (None, t("沒有 GPU").to_string());
@@ -1277,36 +1280,46 @@ impl App {
 
     // ---- layout -------------------------------------------------------------------
 
+    /// Toolbar button height: twice a normal button (2.0.2).
+    fn top_button_h(ui: &egui::Ui) -> f32 {
+        let text = ui.fonts_mut(|f| f.row_height(&egui::TextStyle::Button.resolve(ui.style())));
+        2.0 * (text + 2.0 * ui.spacing().button_padding.y).max(ui.spacing().interact_size.y)
+    }
+
     fn top_bar(&mut self, ui: &mut egui::Ui) {
+        let bh = Self::top_button_h(ui);
+        let button = |text: &str| egui::Button::new(text).min_size(Vec2::new(0.0, bh));
         ui.horizontal_centered(|ui| {
             ui.add_space(8.0);
             self.app_menu_button(ui);
             ui.label(RichText::new("AwayPhotoRawEditor").strong().size(theme::fs(crate::settings::FontKind::Logo)));
             ui.label(RichText::new(concat!("v", env!("CARGO_PKG_VERSION"))).size(theme::scaled(12.0)).color(theme::TEXT_FAINT));
             ui.add_space(16.0);
-            if ui.button(t("📁  開啟資料夾")).clicked() {
+            if ui.add(button(t("📁  開啟資料夾"))).clicked() {
                 self.pick_folder();
             }
             let has_folder = !self.folder.is_empty();
-            if ui.add_enabled(has_folder, egui::Button::new(t("重新整理"))).clicked() {
+            if ui.add_enabled(has_folder, button(t("重新整理"))).clicked() {
                 let f = self.folder.clone();
                 self.open_folder(&f);
             }
-            if ui.add_enabled(has_folder, egui::Button::new(t("關閉資料夾"))).clicked() {
+            if ui.add_enabled(has_folder, button(t("關閉資料夾"))).clicked() {
                 self.close_folder();
             }
-            let can_export = self.has_photo() && self.export_job.is_none() && self.export_dlg.is_none();
-            if ui.add_enabled(can_export, egui::Button::new(t("匯出…"))).clicked() {
-                self.open_export(false);
-            }
             let show = self.settings.show_hidden;
-            if ui.add_enabled(has_folder, egui::Button::new(t("顯示隱藏的照片")).selected(show)).on_hover_text(t("不顯示隱藏／顯示全部")).clicked() {
+            if ui.add_enabled(has_folder, button(t("顯示隱藏的照片")).selected(show)).on_hover_text(t("不顯示隱藏／顯示全部")).clicked() {
                 self.set_show_hidden(!show);
             }
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // 匯出… at the far end: wide and blue. (The GPU status moved to 設定.)
                 ui.add_space(10.0);
-                ui.label(RichText::new(&self.gpu_status).size(theme::scaled(12.0)).color(theme::TEXT_FAINT));
+                let can_export = self.has_photo() && self.export_job.is_none() && self.export_dlg.is_none();
+                let export = egui::Button::new(RichText::new(t("匯出…")).color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(160.0, bh));
+                if ui.add_enabled(can_export, export).clicked() {
+                    self.open_export(false);
+                }
+                ui.add_space(6.0);
                 if let Some((done, total, name)) = &self.cache_progress {
                     ui.add(egui::ProgressBar::new(*done as f32 / (*total).max(1) as f32).desired_width(140.0).show_percentage());
                     ui.label(RichText::new(f("產生快取 {0}/{1} {2}", &[done, total, name])).size(theme::scaled(12.0)).color(theme::TEXT_DIM));
@@ -1558,16 +1571,18 @@ impl App {
     fn right_column(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
-        // Half height while a tool is open: its panel needs the room.
-        let hist_h = if self.tool == ToolMode::None { 110.0 } else { 55.0 };
-        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), hist_h));
+        // Lower while a tool is open, the means inside the plot: the tool panel needs the
+        // room (遮罩 in German fits the 150 % column without scrolling).
+        let compact = self.tool != ToolMode::None;
+        let hist_h = if compact { 40.0 } else { 110.0 };
+        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), hist_h, compact));
         ui.add_space(4.0);
         theme::section(ui, t("照片資訊"), |ui| match &self.exif {
             None => {
                 ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
             }
             // A tool open (its panel needs the room): one line instead of the table.
-            Some(e) if matches!(self.tool, ToolMode::Gradient | ToolMode::Heal | ToolMode::Mask) => {
+            Some(e) if self.tool != ToolMode::None => {
                 let line = format!("{} {} · {} · {}", e.camera_make, e.camera_model, e.dimensions_display(), f("處理版本 {0}", &[&(self.adj.pipeline_version + 1)]));
                 ui.add(egui::Label::new(RichText::new(line.trim()).size(theme::scaled(12.0)).color(theme::TEXT_DIM)).truncate());
             }
@@ -1916,7 +1931,8 @@ impl App {
                 None => ui.close(),
             });
         }
-        // Cursor feedback: which crop handle a press would grab.
+        // Cursor feedback: which crop handle a press would grab; elsewhere over the
+        // photo a pointing hand (a closed hand while panning or dragging a handle).
         if over || self.drag != Drag::None {
             let d = if self.drag != Drag::None {
                 self.drag
@@ -1932,7 +1948,9 @@ impl App {
                 Drag::CropL | Drag::CropR => Some(egui::CursorIcon::ResizeHorizontal),
                 Drag::CropT | Drag::CropB => Some(egui::CursorIcon::ResizeVertical),
                 Drag::CropMove => Some(egui::CursorIcon::Move),
-                _ => None,
+                Drag::None if resp.dragged() => Some(egui::CursorIcon::Grabbing),
+                Drag::None | Drag::MaskPaint => Some(egui::CursorIcon::PointingHand),
+                _ => Some(egui::CursorIcon::Grabbing),
             };
             if let Some(icon) = icon {
                 ui.ctx().set_cursor_icon(icon);
@@ -2194,22 +2212,10 @@ impl eframe::App for App {
             self.render();
         }
 
-        egui::Panel::top("top").exact_size(52.0).frame(egui::Frame::new().fill(theme::TOOLBAR)).show(ui, |ui| self.top_bar(ui));
-        egui::Panel::top("strip")
-            .exact_size(144.0)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(0, 4)))
-            .show(ui, |ui| self.strip(ui));
-        egui::Panel::left("left")
-            .exact_size(SIDE_W)
-            .resizable(false)
-            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(4, 0)))
-            .show(ui, |ui| {
-                let bars = self.scroll_bars();
-                if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
-                    ui.style_mut().spacing.scroll = theme::side_scroll_style();
-                }
-                egui::ScrollArea::vertical().id_salt("left_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.left_column(ui));
-            });
+        let top_h = Self::top_button_h(ui) + 16.0;
+        egui::Panel::top("top").exact_size(top_h).frame(egui::Frame::new().fill(theme::TOOLBAR)).show(ui, |ui| self.top_bar(ui));
+        // The right column runs from the toolbar to the bottom; the strip spans only the
+        // left column and the viewer, so the tools get the full height.
         egui::Panel::right("right")
             .exact_size(SIDE_W)
             .resizable(false)
@@ -2229,6 +2235,21 @@ impl eframe::App for App {
                         }
                     });
                 });
+            });
+        egui::Panel::top("strip")
+            .exact_size(144.0)
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(0, 4)))
+            .show(ui, |ui| self.strip(ui));
+        egui::Panel::left("left")
+            .exact_size(SIDE_W)
+            .resizable(false)
+            .frame(egui::Frame::new().fill(theme::WINDOW).inner_margin(egui::Margin::symmetric(4, 0)))
+            .show(ui, |ui| {
+                let bars = self.scroll_bars();
+                if bars != egui::scroll_area::ScrollBarVisibility::AlwaysHidden {
+                    ui.style_mut().spacing.scroll = theme::side_scroll_style();
+                }
+                egui::ScrollArea::vertical().id_salt("left_scroll").auto_shrink([false, false]).scroll_bar_visibility(bars).show(ui, |ui| self.left_column(ui));
             });
         egui::CentralPanel::no_frame().show(ui, |ui| {
             egui::Panel::bottom("viewer_bar").exact_size(36.0).frame(egui::Frame::new().fill(theme::TOOLBAR)).show(ui, |ui| self.viewer_toolbar(ui));

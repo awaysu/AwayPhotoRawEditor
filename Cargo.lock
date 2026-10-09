@@ -506,7 +506,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-app"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "awpr-core",
  "awpr-gpu",
@@ -525,7 +525,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-cli"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "awpr-core",
  "awpr-gpu",
@@ -538,7 +538,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-core"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "awpr-libraw-sys",
  "rayon",
@@ -546,7 +546,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-gpu"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "awpr-core",
  "bytemuck",
@@ -556,7 +556,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-libraw-sys"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "cc",
  "libz-sys",
@@ -564,7 +564,7 @@ dependencies = [
 
 [[package]]
 name = "awpr-photo"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "ab_glyph",
  "awpr-core",

@@ -176,9 +176,11 @@ impl App {
                 ui.separator();
                 item(ui, t("設定…"), true, Act::Settings);
                 item(ui, t("編輯風格檔…"), true, Act::Presets);
-                let photo = self.has_photo();
-                item(ui, t("匯出 XMP"), photo, Act::ExportXmp);
-                item(ui, t("匯入 XMP"), photo, Act::ImportXmp);
+                if self.settings.xmp_support {
+                    let photo = self.has_photo();
+                    item(ui, t("匯出 XMP"), photo, Act::ExportXmp);
+                    item(ui, t("匯入 XMP"), photo, Act::ImportXmp);
+                }
                 ui.separator();
                 item(ui, t("支援RAW檔相機列表"), true, Act::Cameras);
                 item(ui, t("關於"), true, Act::About);
@@ -263,6 +265,9 @@ impl App {
             t("GPU：已停用（設定）").into()
         } else if let Some(g) = self.gpu {
             format!("{}{}", t("GPU："), g.status)
+        } else if self.settings.use_gpu && !self.gpu_status.is_empty() {
+            // Why the GPU is not in use (the reason the toolbar used to show).
+            self.gpu_status.clone()
         } else {
             t("GPU：未偵測到可用裝置，使用 CPU").into()
         }
@@ -322,6 +327,8 @@ impl App {
             ui.checkbox(&mut d.s.show_thumbnail_number, t("在縮圖左上顯示編號 (#1, #2 …)"));
             ui.checkbox(&mut d.s.show_column_scroll_bars, t("顯示捲軸（視窗過矮時左右欄可捲動）"));
             ui.checkbox(&mut d.s.use_gpu, t("使用 GPU 加速算圖（偵測不到或失敗時自動改用 CPU）"));
+            ui.checkbox(&mut d.s.xmp_support, t("支援 XMP"));
+            ui.label(RichText::new(t("開啟後縮圖右鍵選單與選單會出現匯出／匯入 XMP")).size(theme::fs(FontKind::Small)).color(theme::TEXT_FAINT));
             ui.add_space(4.0);
             let small = |ui: &mut egui::Ui, s: String| ui.label(RichText::new(s).size(theme::fs(FontKind::Small)).color(theme::TEXT_FAINT));
             let lib = if awpr_core::libraw::available() { f("LibRaw {0} 已載入", &[&libraw_version()]) } else { t("LibRaw 無法使用（將使用相機內嵌預覽）").to_string() };

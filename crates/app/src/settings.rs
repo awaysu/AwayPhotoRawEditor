@@ -156,6 +156,8 @@ pub struct Settings {
     pub font_sizes: FontSizes,
     pub last_folder: String,
     pub recent_folders: Vec<String>,
+    /// 支援 XMP: shows 匯出／匯入 XMP in the menus (Rust build only; off by default).
+    pub xmp_support: bool,
 }
 
 impl Default for Settings {
@@ -173,6 +175,7 @@ impl Default for Settings {
             font_sizes: FontSizes::default(),
             last_folder: String::new(),
             recent_folders: Vec::new(),
+            xmp_support: false,
         }
     }
 }
@@ -219,6 +222,7 @@ impl Settings {
             font_sizes: FontSizes::from_xml(r.child("FontSizes")),
             last_folder: r.string_or("LastFolder", ""),
             recent_folders: r.child("RecentFolders").map(|n| n.children_named("string").filter_map(|s| s.text.clone()).filter(|s| !s.is_empty()).collect()).unwrap_or_default(),
+            xmp_support: r.bool_or("XmpSupport", d.xmp_support),
         }
     }
 
@@ -242,6 +246,8 @@ impl Settings {
         for p in &self.recent_folders {
             r.add_str("string", p);
         }
+        // After the C# fields, so their order stays as the C# class writes it.
+        root.add_bool("XmpSupport", self.xmp_support);
         root.to_document(style)
     }
 
@@ -272,7 +278,7 @@ mod tests {
 
     #[test]
     fn settings_round_trip_and_csharp_fields() {
-        let mut s = Settings { language: Lang::De, ui_scale_percent: 150, show_thumbnail_number: false, high_precision: true, ..Default::default() };
+        let mut s = Settings { language: Lang::De, ui_scale_percent: 150, show_thumbnail_number: false, high_precision: true, xmp_support: true, ..Default::default() };
         s.font_sizes.set(FontKind::Normal, 18);
         s.font_sizes.set(FontKind::Logo, 99); // clamped to 48
         s.push_recent_folder(r"D:\a");
@@ -282,7 +288,7 @@ mod tests {
         assert_eq!(s.font_sizes.logo, 48);
         let x = s.to_xml(XmlStyle::DotNet);
         // Element order = the C# property order.
-        let order = ["UseLibRaw", "UseHighPrecisionRawPipeline", "UseGpu", "ShowThumbnailNumber", "ShowColumnScrollBars", "ShowHiddenPhotos", "InterfaceStyle", "UiLanguage", "UiScalePercent", "FontSizes", "LastFolder", "RecentFolders"];
+        let order = ["UseLibRaw", "UseHighPrecisionRawPipeline", "UseGpu", "ShowThumbnailNumber", "ShowColumnScrollBars", "ShowHiddenPhotos", "InterfaceStyle", "UiLanguage", "UiScalePercent", "FontSizes", "LastFolder", "RecentFolders", "XmpSupport"];
         let pos: Vec<usize> = order.iter().map(|t| x.find(&format!("<{t}")).unwrap_or_else(|| panic!("{t}"))).collect();
         assert!(pos.windows(2).all(|w| w[0] < w[1]));
         assert!(x.contains("<UiLanguage>German</UiLanguage>") && x.contains("<Normal>18</Normal>"));
@@ -290,6 +296,6 @@ mod tests {
         // A C# file from before FontSizes / RecentFolders existed keeps the defaults.
         let old = xml::parse("<AppSettings><UseGpu>false</UseGpu><UiLanguage>Japanese</UiLanguage><UiScalePercent>999</UiScalePercent></AppSettings>").unwrap();
         let o = Settings::from_xml(&old);
-        assert_eq!((o.use_gpu, o.language, o.ui_scale_percent, o.font_sizes), (false, Lang::Ja, 200, FontSizes::default()));
+        assert_eq!((o.use_gpu, o.language, o.ui_scale_percent, o.font_sizes, o.xmp_support), (false, Lang::Ja, 200, FontSizes::default(), false));
     }
 }

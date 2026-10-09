@@ -16,6 +16,7 @@
 //!   env AWPR_SHOT_SELECT=1,2                   (shot) select these strip positions (1-based)
 //!   env AWPR_SHOT_MENU=1                       (shot) open the thumbnail menu
 //!   env AWPR_SHOT_SHOW_HIDDEN=1                (shot) show hidden photos
+//!   env AWPR_SHOT_XMP=1                        (shot) turn 支援 XMP on (menus offer XMP)
 //!   env AWPR_SHOT_WM=<text>                    (shot) turn the export watermark on (live preview)
 //!   env AWPR_NO_GPU=1                          render on the CPU
 

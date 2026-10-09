@@ -376,6 +376,8 @@ pub static TABLE: &[(&str, [&str; 7])] = &[
     ("點兩下或按右鍵刪除控制點", ["Double-click or right-click a point to delete it", "ポイントをダブルクリックまたは右クリックで削除", "점을 두 번 클릭하거나 오른쪽 클릭하여 삭제", "双击或右键删除控制点", "Punkt doppelt oder rechts anklicken zum Löschen", "Double-clic ou clic droit sur un point pour le supprimer", "Doble clic o clic derecho en un punto para borrarlo"]),
     ("重設曲線", ["Reset curve", "カーブをリセット", "곡선 재설정", "重置曲线", "Kurve zurücksetzen", "Réinitialiser la courbe", "Restablecer curva"]),
     ("處理版本 {0}", ["Process version {0}", "処理バージョン {0}", "처리 버전 {0}", "处理版本 {0}", "Prozessversion {0}", "Version de traitement {0}", "Versión de proceso {0}"]),
+    ("支援 XMP", ["XMP support", "XMP に対応", "XMP 지원", "支持 XMP", "XMP-Unterstützung", "Prise en charge XMP", "Compatibilidad XMP"]),
+    ("開啟後縮圖右鍵選單與選單會出現匯出／匯入 XMP", ["When on, the thumbnail and app menus offer Export / Import XMP", "オンにするとサムネイルの右クリックメニューとメニューに XMP の書き出し／読み込みが表示されます", "켜면 썸네일 오른쪽 클릭 메뉴와 메뉴에 XMP 내보내기／가져오기가 표시됩니다", "开启后缩略图右键菜单与菜单会出现导出／导入 XMP", "Wenn aktiv, bieten Miniatur- und App-Menü XMP exportieren / importieren", "Activé, les menus (vignette et application) proposent Exporter / Importer XMP", "Si está activo, los menús (miniatura y aplicación) ofrecen Exportar / Importar XMP"]),
     ("匯出 XMP", ["Export XMP", "XMP を書き出し", "XMP 내보내기", "导出 XMP", "XMP exportieren", "Exporter XMP", "Exportar XMP"]),
     ("匯入 XMP", ["Import XMP", "XMP を読み込み", "XMP 가져오기", "导入 XMP", "XMP importieren", "Importer XMP", "Importar XMP"]),
     ("已匯出 {0} 個 XMP 檔", ["Exported {0} XMP file(s)", "{0} 個の XMP ファイルを書き出しました", "XMP 파일 {0}개를 내보냈습니다", "已导出 {0} 个 XMP 文件", "{0} XMP-Datei(en) exportiert", "{0} fichier(s) XMP exporté(s)", "{0} archivo(s) XMP exportado(s)"]),

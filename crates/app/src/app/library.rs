@@ -589,8 +589,10 @@ impl App {
                 item(ui, t("複製照片設定"), sel.len() <= 1, MenuAction::Copy(i));
                 item(ui, t("貼上照片設定"), self.copied.is_some(), MenuAction::Paste);
                 item(ui, t("升級處理版本"), true, MenuAction::Upgrade);
-                item(ui, t("匯出 XMP"), true, MenuAction::ExportXmp);
-                item(ui, t("匯入 XMP"), true, MenuAction::ImportXmp);
+                if self.settings.xmp_support {
+                    item(ui, t("匯出 XMP"), true, MenuAction::ExportXmp);
+                    item(ui, t("匯入 XMP"), true, MenuAction::ImportXmp);
+                }
                 ui.separator();
                 item(ui, t("建立副本"), true, MenuAction::VirtualCopy(i));
                 item(ui, t("隱藏且不輸出"), any_shown, MenuAction::Hide);
