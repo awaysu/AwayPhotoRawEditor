@@ -471,9 +471,8 @@ impl Histogram {
     }
 }
 
-/// `compact` (a tool is open): the means go inside the plot's top-left corner instead of
-/// a line of their own.
-pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32, compact: bool) {
+/// RGB histogram plot of `height`, the channel means on a line below it.
+pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32) {
     let (rect, _) = ui.allocate_exact_size(Vec2::new(ui.available_width(), height), Sense::hover());
     let painter = ui.painter_at(rect);
     painter.rect_filled(rect, 3.0, theme::VIEWER);
@@ -497,13 +496,5 @@ pub fn histogram(ui: &mut egui::Ui, h: Option<&Histogram>, height: f32, compact:
     }
     let m = h.means();
     let means = format!("R {:.1}  G {:.1}  B {:.1}", m[0], m[1], m[2]);
-    if compact {
-        let font = egui::TextStyle::Monospace.resolve(ui.style());
-        let galley = painter.layout_no_wrap(means, font, theme::TEXT);
-        let at = rect.min + Vec2::new(4.0, 2.0);
-        painter.rect_filled(Rect::from_min_size(at, galley.size()).expand(2.0), 2.0, Color32::from_black_alpha(150));
-        painter.galley(at, galley, theme::TEXT);
-    } else {
-        ui.label(egui::RichText::new(means).monospace().color(theme::TEXT_DIM));
-    }
+    ui.label(egui::RichText::new(means).monospace().color(theme::TEXT_DIM));
 }

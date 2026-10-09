@@ -1581,11 +1581,9 @@ impl App {
     fn right_column(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
-        // Lower while a tool is open, the means inside the plot: the tool panel needs the
-        // room (the photo info stays a full table).
-        let compact = self.tool != ToolMode::None;
-        let hist_h = if compact { 32.0 } else { 110.0 };
-        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), hist_h, compact));
+        // The histogram and the photo info keep their full size whether or not a tool is
+        // open (1.1.1); when the tool panel does not fit, the column scrolls.
+        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), 110.0));
         ui.add_space(4.0);
         theme::section(ui, t("照片資訊"), |ui| match &self.exif {
             None => {
@@ -1611,7 +1609,7 @@ impl App {
                 let key_font = egui::FontId::proportional(theme::scaled(12.5));
                 let key_w = rows.iter().map(|(k, _)| widgets::text_width(ui, k, &key_font)).fold(0.0f32, f32::max).min(ui.available_width() * 0.45);
                 let row_h = ui.text_style_height(&egui::TextStyle::Body);
-                ui.spacing_mut().item_spacing.y = 0.0;
+                ui.spacing_mut().item_spacing.y = 1.0;
                 for (k, v) in rows {
                     ui.horizontal(|ui| {
                         ui.spacing_mut().item_spacing.x = 10.0;
