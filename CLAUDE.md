@@ -39,7 +39,7 @@ target/release/AwayPhotoRawEditor --shot <資料夾> <out.png> [WxH] [第幾張]
 target/release/awpr hashtest|gputest|gputest3|viewtest|v3cmp|bench|stages|meta|info|heictest|exporttest ...
 cargo test --workspace                   # 1.1.0：73 項
 ```
-- 環境變數：`AWPR_NO_GPU=1` 強制 CPU；`AWPR_TRACE=<檔案>` 執行軌跡；`AWPR_UI_SCALE=1.5`、`AWPR_LANG=de` 模擬縮放／語言；截圖用 `AWPR_SHOT_ADJ="exposure=1,hlr=100,version=3"`、`AWPR_SHOT_ZOOM`、`AWPR_SHOT_TOOL`、`AWPR_SHOT_COLOR_TAB`、`AWPR_SHOT_HSL_TAB`、`AWPR_SHOT_SCROLL=bottom`、`AWPR_SHOT_XMP=1`（鍵名見 `crates/app/src/app.rs` 的 `apply_shot_adj`）。
+- 環境變數：`AWPR_NO_GPU=1` 強制 CPU；`AWPR_TRACE=<檔案>` 執行軌跡；`AWPR_UI_SCALE=1.5`、`AWPR_LANG=de` 模擬縮放／語言；截圖用 `AWPR_SHOT_ADJ="exposure=1,hlr=100,version=3"`、`AWPR_SHOT_ZOOM`、`AWPR_SHOT_TOOL`、`AWPR_SHOT_COLOR_TAB`、`AWPR_SHOT_HSL_TAB`、`AWPR_SHOT_SCROLL=bottom`、`AWPR_SHOT_XMP=1`（鍵名見 `crates/app/src/app.rs` 的 `apply_adjust_spec`）。
 - Windows 正式版沒有主控台，panic 寫到 `%TEMP%\awpr_crash.txt`；`--features console` 保留主控台。
 - ⚠️ 本機防毒軟體會擋新建置的 exe（無聲結束、沒有紀錄；留下 `.tmp` 快取檔是典型症狀）。`--shot` 失敗時先懷疑這個，不要花時間查程式；請使用者暫時關閉或把 `target` 加入排除清單。
 - 重建前先關掉殘留的 `AwayPhotoRawEditor.exe`（只砍自己啟動的 PID）。
