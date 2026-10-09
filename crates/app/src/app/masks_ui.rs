@@ -4,11 +4,10 @@
 
 use super::App;
 use crate::i18n::{f, t};
-use crate::theme;
 use crate::tools::{self, Drag, View, P};
 use crate::widgets::{Gradient, SliderSpec};
 use awpr_core::{masks, BrushStroke, LocalMask, MaskKind};
-use eframe::egui::{self, Color32, RichText, Stroke, Vec2};
+use eframe::egui::{self, Color32, Stroke, Vec2};
 
 /// The overlay is rasterized at most this large (long edge), whatever the proxy.
 const OVERLAY_MAX: usize = 1200;
@@ -43,24 +42,29 @@ impl App {
     pub(super) fn mask_controls(&mut self, ui: &mut egui::Ui, on: bool) {
         let on = on && self.v3_notice(ui);
         let active = self.active_mask();
-        // The list.
-        if self.adj.masks.is_empty() {
-            ui.label(RichText::new(t("（尚無遮罩）")).color(theme::TEXT_FAINT));
-        }
-        let mut pick = None;
-        ui.horizontal_wrapped(|ui| {
-            for (i, m) in self.adj.masks.iter().enumerate() {
-                let name = match m.kind {
-                    MaskKind::Radial => f("放射狀 {0}", &[&(i + 1)]),
-                    MaskKind::Brush => f("筆刷 {0}", &[&(i + 1)]),
-                };
-                if ui.add_enabled(on, egui::Button::new(name).selected(Some(i) == active)).clicked() {
-                    pick = Some(i);
+        // The list: one combo box the width of the column (a fixed row however many
+        // masks there are); disabled with "（尚無遮罩）" when there are none.
+        let name = |i: usize, m: &LocalMask| match m.kind {
+            MaskKind::Radial => f("放射狀 {0}", &[&(i + 1)]),
+            MaskKind::Brush => f("筆刷 {0}", &[&(i + 1)]),
+        };
+        let current = match active {
+            Some(i) => name(i, &self.adj.masks[i]),
+            None => t("（尚無遮罩）").to_string(),
+        };
+        let mut pick = active;
+        let combo_w = ui.available_width();
+        ui.add_enabled_ui(on && !self.adj.masks.is_empty(), |ui| {
+            egui::ComboBox::from_id_salt("mask_list").width(combo_w).truncate().selected_text(current).show_ui(ui, |ui| {
+                for (i, m) in self.adj.masks.iter().enumerate() {
+                    ui.selectable_value(&mut pick, Some(i), name(i, m));
                 }
-            }
+            });
         });
         if let Some(i) = pick {
-            self.active_mask = i as i32;
+            if Some(i) != active {
+                self.active_mask = i as i32;
+            }
         }
         ui.horizontal(|ui| {
             // Short labels at their own widths so three fit the column; the full action on hover.

@@ -1581,49 +1581,48 @@ impl App {
     fn right_column(&mut self, ui: &mut egui::Ui) {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
         ui.add_space(4.0);
-        // The histogram and the photo info keep their full size whether or not a tool is
-        // open (1.1.1); when the tool panel does not fit, the column scrolls.
-        theme::section(ui, t("直方圖"), |ui| widgets::histogram(ui, self.hist.as_ref(), 110.0));
-        ui.add_space(4.0);
-        theme::section(ui, t("照片資訊"), |ui| match &self.exif {
-            None => {
-                ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
-            }
-            Some(e) => {
-                let rows = [
-                    (t("相機"), format!("{} {}", e.camera_make, e.camera_model).trim().to_string()),
-                    (t("鏡頭"), e.lens.clone()),
-                    ("ISO", e.iso.clone()),
-                    (t("光圈"), e.aperture.clone()),
-                    (t("快門"), e.shutter.clone()),
-                    (t("焦段"), e.focal_length.clone()),
-                    (t("曝光補償"), e.exposure_bias.clone()),
-                    (t("白平衡"), e.white_balance.clone()),
-                    (t("測光"), e.metering_mode.clone()),
-                    (t("日期"), e.date_taken.clone()),
-                    (t("尺寸"), e.dimensions_display()),
-                    (t("檔案大小"), e.file_size_display()),
-                ];
-                // The label column is measured (the C# ExifView), at most 45 % of the
-                // column; whatever does not fit is cut with "…" (full text on hover).
-                let key_font = egui::FontId::proportional(theme::scaled(12.5));
-                let key_w = rows.iter().map(|(k, _)| widgets::text_width(ui, k, &key_font)).fold(0.0f32, f32::max).min(ui.available_width() * 0.45);
-                let row_h = ui.text_style_height(&egui::TextStyle::Body);
-                ui.spacing_mut().item_spacing.y = 1.0;
-                for (k, v) in rows {
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 10.0;
-                        widgets::fixed_text(ui, key_w, row_h, k, key_font.clone(), theme::TEXT_DIM);
-                        ui.add(egui::Label::new(v).truncate());
-                    });
+        // One section for both (1.1.1): the histogram and the photo info keep their full
+        // size whether or not a tool is open; when the tool panel does not fit, the column
+        // scrolls.
+        theme::section(ui, t("直方圖與照片資訊"), |ui| {
+            widgets::histogram(ui, self.hist.as_ref(), 110.0);
+            ui.add_space(6.0);
+            match &self.exif {
+                None => {
+                    ui.label(RichText::new(t("尚未選擇照片")).color(theme::TEXT_FAINT));
                 }
-                if let Some(reason) = &self.decode_error {
-                    ui.add(egui::Label::new(RichText::new(format!("· {reason}")).size(theme::scaled(12.0)).color(theme::EDITED)).wrap());
+                Some(e) => {
+                    let rows = [
+                        (t("相機"), format!("{} {}", e.camera_make, e.camera_model).trim().to_string()),
+                        (t("鏡頭"), e.lens.clone()),
+                        ("ISO", e.iso.clone()),
+                        (t("光圈"), e.aperture.clone()),
+                        (t("快門"), e.shutter.clone()),
+                        (t("焦段"), e.focal_length.clone()),
+                        (t("曝光補償"), e.exposure_bias.clone()),
+                        (t("白平衡"), e.white_balance.clone()),
+                        (t("測光"), e.metering_mode.clone()),
+                        (t("日期"), e.date_taken.clone()),
+                        (t("尺寸"), e.dimensions_display()),
+                        (t("檔案大小"), e.file_size_display()),
+                    ];
+                    // The label column is measured (the C# ExifView), at most 45 % of the
+                    // column; whatever does not fit is cut with "…" (full text on hover).
+                    let key_font = egui::FontId::proportional(theme::scaled(12.5));
+                    let key_w = rows.iter().map(|(k, _)| widgets::text_width(ui, k, &key_font)).fold(0.0f32, f32::max).min(ui.available_width() * 0.45);
+                    let row_h = ui.text_style_height(&egui::TextStyle::Body);
+                    ui.spacing_mut().item_spacing.y = 1.0;
+                    for (k, v) in rows {
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 10.0;
+                            widgets::fixed_text(ui, key_w, row_h, k, key_font.clone(), theme::TEXT_DIM);
+                            ui.add(egui::Label::new(v).truncate());
+                        });
+                    }
+                    if let Some(reason) = &self.decode_error {
+                        ui.add(egui::Label::new(RichText::new(format!("· {reason}")).size(theme::scaled(12.0)).color(theme::EDITED)).wrap());
+                    }
                 }
-                // 處理版本 1 / 2 / 3 = pipeline_version 0 / 1 / 2; older than current is marked.
-                let old = self.adj.pipeline_version < ImageAdjustments::CURRENT_PIPELINE_VERSION;
-                let color = if old { theme::EDITED } else { theme::TEXT_FAINT };
-                ui.label(RichText::new(format!("· {}", f("處理版本 {0}", &[&(self.adj.pipeline_version + 1)]))).size(theme::scaled(12.0)).color(color));
             }
         });
         ui.add_space(4.0);
