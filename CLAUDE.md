@@ -59,7 +59,7 @@ cargo test --workspace                   # 1.1.1：76 項
 | Linux x86_64（12 核，RTX 3060） | `ssh awpr-linux` | `/home/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（/usr/bin） |
 | macOS 26.6 arm64（M2） | `ssh awpr-mac` | `/Users/awaysu/WorkspaceAwaysu/AwayPhotoRawEditor` | rustc 1.99（`export PATH=/opt/homebrew/opt/rustup/bin:$HOME/.cargo/bin:$PATH`，非互動 shell 要自己加） |
 - 兩台的 `AwayPhotoRawEditor` 是 Agent-12 的工作目錄（origin 是 GitHub）；**發佈建置用旁邊的 worktree `AwayPhotoRawEditor-rel`**（`git fetch --tags origin && git checkout v<版本>` 後跑打包腳本），不要動 Agent-12 的工作目錄，也不要動 `AwayPhotoRawEditor_Rust_PoC`。
-- **Mac 簽章／公證要在同一個 SSH 指令裡解鎖登入鑰匙圈**（解鎖狀態跟 security session 走）：`AWPR_KEYCHAIN_PASSWORD=… AWPR_SIGN_IDENTITY="Developer ID Application: Chih-Wei Su (BNH8YS88T9)" AWPR_NOTARY_PROFILE=AwayTerminalNotary scripts/package-macos.sh`。公證約 3–5 分鐘，用背景工作等。
+- **Mac 簽章／公證要在同一個 SSH 指令裡解鎖登入鑰匙圈**（解鎖狀態跟 security session 走；密碼從 `D:Awaysumac_keychain.txt` 第一行讀進環境變數，2026-10-11 起）：`AWPR_KEYCHAIN_PASSWORD=… AWPR_SIGN_IDENTITY="Developer ID Application: Chih-Wei Su (BNH8YS88T9)" AWPR_NOTARY_PROFILE=AwayTerminalNotary scripts/package-macos.sh`。公證約 3–5 分鐘，用背景工作等。
 - 不要動 Mac 上鎖住的 `awpr-signing`／`ios-signing` 鑰匙圈。
 
 ## 發佈流程（1.1.0 實跑過，細節在 `docs/RELEASE.md`）
