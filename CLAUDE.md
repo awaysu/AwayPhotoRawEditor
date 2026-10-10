@@ -15,7 +15,7 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過），已不再使用。
 
 ## 工作方式（Multi-Agent）
-- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-016），信箱 `.ai/bus/`（最後一封 0061）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
+- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-017），信箱 `.ai/bus/`（最後一封 0064）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
 - PM 不改程式碼，但可以跑打包腳本、上傳、建 Release、改文件。
 - 處理版本對照：XML `PipelineVersion` 0／1／2 ＝ 使用者看到的「處理版本 1／2／3」；版本 3 走 `crates/core/src/v3.rs`，GPU 對照用 `awpr gputest3`。
 - 大項目完成時更新本檔的「目前狀態」與 `docs/ROADMAP.md`，並在 `CHANGELOG.md` 記錄（新版在上）。
@@ -37,9 +37,9 @@ scripts/build-macos.sh <libomp>          # macOS
 target/release/AwayPhotoRawEditor        # 開上次的資料夾
 target/release/AwayPhotoRawEditor --shot <資料夾> <out.png> [WxH] [第幾張]   # 離屏截圖後結束
 target/release/awpr hashtest|gputest|gputest3|viewtest|v3cmp|bench|stages|meta|info|heictest|exporttest ...
-cargo test --workspace                   # 1.1.0：73 項
+cargo test --workspace                   # 1.1.1：76 項
 ```
-- 環境變數：`AWPR_NO_GPU=1` 強制 CPU；`AWPR_TRACE=<檔案>` 執行軌跡；`AWPR_UI_SCALE=1.5`、`AWPR_LANG=de` 模擬縮放／語言；截圖用 `AWPR_SHOT_ADJ="exposure=1,hlr=100,version=3"`、`AWPR_SHOT_ZOOM`、`AWPR_SHOT_TOOL`、`AWPR_SHOT_COLOR_TAB`、`AWPR_SHOT_HSL_TAB`、`AWPR_SHOT_SCROLL=bottom`、`AWPR_SHOT_XMP=1`（鍵名見 `crates/app/src/app.rs` 的 `apply_adjust_spec`）。
+- 環境變數：`AWPR_NO_GPU=1` 強制 CPU；`AWPR_TRACE=<檔案>` 執行軌跡；`AWPR_UI_SCALE=1.5`、`AWPR_LANG=de` 模擬縮放／語言；截圖用 `AWPR_SHOT_ADJ="exposure=1,hlr=100,version=3"`、`AWPR_SHOT_ZOOM`、`AWPR_SHOT_TOOL`、`AWPR_SHOT_COLOR_TAB`、`AWPR_SHOT_HSL_TAB`、`AWPR_SHOT_SCROLL=bottom`、`AWPR_SHOT_XMP=1`、`AWPR_SHOT_STRIP_SCROLL=<點數>`、`AWPR_SHOT_DLG=settings-custom|close`（鍵名見 `crates/app/src/app.rs` 的 `apply_adjust_spec`）。
 - Windows 正式版沒有主控台，panic 寫到 `%TEMP%\awpr_crash.txt`；`--features console` 保留主控台。
 - ⚠️ 本機防毒軟體會擋新建置的 exe（無聲結束、沒有紀錄；留下 `.tmp` 快取檔是典型症狀）。`--shot` 失敗時先懷疑這個，不要花時間查程式；請使用者暫時關閉或把 `target` 加入排除清單。
 - 重建前先關掉殘留的 `AwayPhotoRawEditor.exe`（只砍自己啟動的 PID）。
