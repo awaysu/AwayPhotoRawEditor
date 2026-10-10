@@ -8,14 +8,14 @@ AwayPhotoRawEditor 以 **Rust 重寫為 Windows / macOS / Linux 三平台版**�
 - 下載頁：https://www.awaysu.cc/software/awayphotoraweditor ／ GitHub Releases：https://github.com/awaysu/AwayPhotoRawEditor/releases
 
 ## 目前狀態
-- **1.1.0 已發佈（2026-10-10，tag `v1.1.0`，awaysu.cc + GitHub Release，三平台皆簽章／公證）**。這是 Rust 版第一個正式版，接續 C# 1.0.18。
+- **1.1.1 已發佈（2026-10-11，tag `v1.1.1`，awaysu.cc + GitHub Release，三平台皆簽章／公證）**：介面第三～六輪（TASK-014～017）。1.1.0（2026-10-10）是 Rust 版第一個正式版，接續 C# 1.0.18。
 - 重寫的第 0–10 步全部完成（2026-10-09），步驟內容與 commit 見 `docs/ROADMAP.md`，各步報告在 `docs/`。
 - 之前短暫發過 2.0.0／2.0.1，已依使用者決定撤回：GitHub tag／Release 刪除、awaysu.cc 的版本說明與封存檔清除。git 歷史裡仍有 2.0.x 的 commit 訊息，不要再改。
-- 之後為維護與新需求；下一版從 **1.1.1**（修正）或 **1.2.0**（新功能）起。
+- 之後為維護與新需求；下一版從 **1.1.2**（修正）或 **1.2.0**（新功能）起。
 - PoC 原本在 `C:\Users\AwayWork\Desktop\WORKSPACE2\testAwayPhotoRawEditor\AwayPhotoRawEditor_Rust`（第 1–3 步，三平台驗證過），已不再使用。
 
 ## 工作方式（Multi-Agent）
-- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-017），信箱 `.ai/bus/`（最後一封 0064）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
+- Agent-11（PM）規劃、拆任務、審查、發佈；Agent-12（Software Engineer）寫程式。任務編號 `TASK-NNN`（最後一個是 TASK-017），信箱 `.ai/bus/`（最後一封 0065）。每個任務：Engineer commit（不 push）→ PM 審查截圖與測試 → 修正 → PM push。
 - PM 不改程式碼，但可以跑打包腳本、上傳、建 Release、改文件。
 - 處理版本對照：XML `PipelineVersion` 0／1／2 ＝ 使用者看到的「處理版本 1／2／3」；版本 3 走 `crates/core/src/v3.rs`，GPU 對照用 `awpr gputest3`。
 - 大項目完成時更新本檔的「目前狀態」與 `docs/ROADMAP.md`，並在 `CHANGELOG.md` 記錄（新版在上）。
@@ -69,6 +69,7 @@ cargo test --workspace                   # 1.1.1：76 項
 4. awaysu.cc：每檔 `api.php?action=upload`（exe、zip、dmg、deb、rpm），changelog **只帶該版本段落**用檔案帶入（`-F "changelog=<檔案"`；檔尾「---」後的 legacy 說明會被解析成另一個版本條目，2026-10-10 發生過，用 `delete_changelog` 清掉）。上傳會自動把被取代的檔封存到 old_versions。驗證 `check_update` 三平台。
 5. `gh release create v<版本> --notes-file docs/RELEASE-NOTES-<版本>.md <5 個檔> dist/SHA256SUMS-<版本>.txt`。CI 的 release.yml 只上傳 unsigned artifact，不碰 Release 資產。
 6. 更新本檔「目前狀態」、`docs/ROADMAP.md`，commit push，INFO 給 Agent-12。
+- 把舊檔放進網站「舊版本」：API 沒有直接動作，用「備份現行檔 → upload 舊檔（帶 download_id，不帶 version）→ upload 原檔換回 → delete_old_version 多出的現行版歸檔 → keep_old_version」（2026-10-11 1.0.19.dmg 實跑過）。
 - 撤回版本：`gh release delete --cleanup-tag`、`git tag -d`；awaysu.cc 用 `delete_changelog`（version）＋ `delete_old_version`（id 從 `old_versions` 取）；現行下載檔只能用新版上傳取代。
 
 ## 版本號與安裝程式
