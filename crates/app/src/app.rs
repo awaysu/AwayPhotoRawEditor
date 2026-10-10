@@ -652,6 +652,12 @@ impl App {
                 Ok("export") => self.open_export(false),
                 Ok("presets") => self.preset_editor = Some(crate::presets_ui::PresetEditor::new(&self.presets)),
                 Ok("settings") => self.settings_dlg = Some(SettingsDraft::new(&self.settings, false)),
+                Ok("close") => self.confirm = Some(Confirm::CloseFolder),
+                Ok("settings-custom") => {
+                    let mut s = self.settings.clone();
+                    s.ui_scale_percent = 95;
+                    self.settings_dlg = Some(SettingsDraft::new(&s, false));
+                }
                 Ok("fonts") => self.settings_dlg = Some(SettingsDraft::new(&self.settings, true)),
                 Ok("about") => self.about = Some(UpdateState::Idle),
                 Ok("cameras") => self.cameras = Some((String::new(), awpr_core::libraw::camera_list())),
@@ -1314,7 +1320,7 @@ impl App {
                 self.open_folder(&f);
             }
             if ui.add_enabled(has_folder, button(t("關閉資料夾"))).clicked() {
-                self.close_folder();
+                self.confirm = Some(Confirm::CloseFolder);
             }
             let show = self.settings.show_hidden;
             if ui.add_enabled(has_folder, button(t("顯示隱藏的照片")).selected(show)).on_hover_text(t("不顯示隱藏／顯示全部")).clicked() {
@@ -1428,7 +1434,7 @@ impl App {
             self.slider(ui, nr, |a| &mut a.noise_reduction);
         });
         ui.add_space(8.0);
-        if ui.add_enabled(self.has_photo(), egui::Button::new(t("基本／色彩／細節 重設")).min_size(Vec2::new(ui.available_width(), 30.0))).clicked() {
+        if widgets::wide_button(ui, self.has_photo(), 30.0, t("基本／色彩／細節 重設"), |b| b).clicked() {
             self.reset_basic_color_detail();
         }
         ui.add_space(8.0);
@@ -1506,7 +1512,7 @@ impl App {
         }
         // The hint on its own line (it may be cut in a long language), the button whole.
         ui.add(egui::Label::new(RichText::new(t("點兩下或按右鍵刪除控制點")).color(theme::TEXT_FAINT).size(theme::scaled(11.0))).truncate());
-        if ui.add_enabled(enabled, egui::Button::new(t("重設曲線")).min_size(Vec2::new(ui.available_width(), 24.0))).clicked() {
+        if widgets::wide_button(ui, enabled, 24.0, t("重設曲線"), |b| b).clicked() {
             self.edit_begin();
             self.set_curve(ch, Vec::new());
         }
@@ -1732,7 +1738,7 @@ impl App {
                 self.rotate(true);
             }
         });
-        if ui.add_enabled(on, egui::Button::new(t("裁切重設")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if widgets::wide_button(ui, on, 28.0, t("裁切重設"), |b| b).clicked() {
             self.reset_crop();
         }
     }
@@ -1757,11 +1763,10 @@ impl App {
             });
         }
         ui.add_space(6.0);
-        let add = egui::Button::new(RichText::new(t("新增線性漸層")).color(Color32::WHITE)).fill(theme::ACCENT).min_size(Vec2::new(ui.available_width(), 28.0));
-        if ui.add_enabled(on, add).clicked() {
+        if widgets::wide_button(ui, on, 28.0, RichText::new(t("新增線性漸層")).color(Color32::WHITE), |b| b.fill(theme::ACCENT)).clicked() {
             self.add_gradient();
         }
-        if ui.add_enabled(on, egui::Button::new(t("漸層重設（清除全部）")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if widgets::wide_button(ui, on, 28.0, t("漸層重設（清除全部）"), |b| b).clicked() {
             self.clear_gradients();
         }
     }
@@ -1786,7 +1791,7 @@ impl App {
             }
         });
         ui.add_space(2.0);
-        if ui.add_enabled(on, egui::Button::new(t("修護重設")).min_size(Vec2::new(ui.available_width(), 28.0))).clicked() {
+        if widgets::wide_button(ui, on, 28.0, t("修護重設"), |b| b).clicked() {
             self.clear_heal();
         }
     }
@@ -1796,7 +1801,7 @@ impl App {
         let on = self.has_photo();
         let w = ui.available_width();
         ui.add_space(6.0);
-        if ui.add_enabled(on, egui::Button::new(t("全部重設")).min_size(Vec2::new(w, 30.0))).clicked() {
+        if widgets::wide_button(ui, on, 30.0, t("全部重設"), |b| b).clicked() {
             self.reset_all();
         }
         ui.horizontal(|ui| {

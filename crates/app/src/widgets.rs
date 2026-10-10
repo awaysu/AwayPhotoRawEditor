@@ -439,6 +439,11 @@ pub fn fixed_button(ui: &mut egui::Ui, enabled: bool, size: Vec2, text: impl Int
     if cut { resp.on_hover_text(full) } else { resp }
 }
 
+/// A button the full width of the column with its text centred (the 重設 buttons).
+pub fn wide_button(ui: &mut egui::Ui, enabled: bool, h: f32, text: impl Into<egui::WidgetText>, f: impl FnOnce(egui::Button) -> egui::Button) -> egui::Response {
+    fixed_button(ui, enabled, Vec2::new(ui.available_width(), h), text, f)
+}
+
 /// 256-bin RGB histogram (R, G, B in `bins[0..256]`, `[256..512]`, `[512..768]`).
 pub struct Histogram {
     pub bins: Vec<u32>,

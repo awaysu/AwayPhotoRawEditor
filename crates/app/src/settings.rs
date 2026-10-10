@@ -141,6 +141,10 @@ pub const INTERFACE_STYLES: [&str; 2] = ["ClassicDark", "WarmPaper"];
 /// Folders kept in 紀錄 (the menu shows the first ten).
 const RECENT_LIMIT: usize = 20;
 
+/// 介面大小 custom range (1.1.1).
+pub const UI_SCALE_MIN: i64 = 60;
+pub const UI_SCALE_MAX: i64 = 150;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub use_libraw: bool,
@@ -152,6 +156,7 @@ pub struct Settings {
     pub interface_style: String,
     pub language: Lang,
     /// 0 = automatic (fit the screen), else 100–200.
+    /// 介面大小 in percent, 0 = 自動; a non-zero value is within 60–150.
     pub ui_scale_percent: i64,
     pub font_sizes: FontSizes,
     pub last_folder: String,
@@ -216,8 +221,9 @@ impl Settings {
             interface_style: if INTERFACE_STYLES.contains(&style.as_str()) { style } else { d.interface_style },
             language: r.string("UiLanguage").and_then(Lang::from_xml).unwrap_or(d.language),
             ui_scale_percent: {
+                // 0 = 自動; anything outside 60–150 (a 175 / 200 from 1.1.0) is 自動 too.
                 let v = r.i64_or("UiScalePercent", 0);
-                if v == 0 { 0 } else { v.clamp(100, 200) }
+                if (UI_SCALE_MIN..=UI_SCALE_MAX).contains(&v) { v } else { 0 }
             },
             font_sizes: FontSizes::from_xml(r.child("FontSizes")),
             last_folder: r.string_or("LastFolder", ""),
@@ -296,6 +302,13 @@ mod tests {
         // A C# file from before FontSizes / RecentFolders existed keeps the defaults.
         let old = xml::parse("<AppSettings><UseGpu>false</UseGpu><UiLanguage>Japanese</UiLanguage><UiScalePercent>999</UiScalePercent></AppSettings>").unwrap();
         let o = Settings::from_xml(&old);
-        assert_eq!((o.use_gpu, o.language, o.ui_scale_percent, o.font_sizes, o.xmp_support), (false, Lang::Ja, 200, FontSizes::default(), false));
+        assert_eq!((o.use_gpu, o.language, o.ui_scale_percent, o.font_sizes, o.xmp_support), (false, Lang::Ja, 0, FontSizes::default(), false));
+    }
+
+    #[test]
+    fn ui_scale_out_of_range_loads_as_auto() {
+        let load = |v: i64| Settings::from_xml(&xml::parse(&format!("<AppSettings><UiScalePercent>{v}</UiScalePercent></AppSettings>")).unwrap()).ui_scale_percent;
+        assert_eq!((load(0), load(60), load(95), load(150)), (0, 60, 95, 150));
+        assert_eq!((load(59), load(151), load(175), load(200), load(-5)), (0, 0, 0, 0, 0));
     }
 }

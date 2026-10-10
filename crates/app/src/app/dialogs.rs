@@ -5,15 +5,24 @@
 use super::library::Confirm;
 use super::{App, DESIGN_HEIGHT};
 use crate::i18n::{self, f, t, Lang};
-use crate::settings::{FontKind, FontSizes, Settings};
+use crate::settings::{FontKind, FontSizes, Settings, UI_SCALE_MAX, UI_SCALE_MIN};
 use crate::theme;
 use crate::update::{self, UpdateInfo};
 use awpr_photo::{library, paths};
 use eframe::egui::{self, Color32, RichText, Vec2};
 use std::sync::mpsc::Receiver;
 
-/// Fixed interface sizes offered besides 自動 (C# `ScalePercents`).
-const SCALE_PERCENTS: [i64; 5] = [100, 125, 150, 175, 200];
+/// Fixed interface sizes offered besides 自動 and 自訂… (1.1.1; C# had 100–200).
+const SCALE_PERCENTS: [i64; 4] = [90, 100, 110, 120];
+
+/// The 自訂… box: a typed percentage clamped to 60–150, anything that is not a number
+/// keeps the previous value.
+pub(super) fn parse_scale(text: &str, prev: i64) -> i64 {
+    match text.trim().trim_end_matches('%').trim().parse::<i64>() {
+        Ok(v) => v.clamp(UI_SCALE_MIN, UI_SCALE_MAX),
+        Err(_) => prev,
+    }
+}
 /// How many folders 紀錄 lists.
 const RECENT_SHOWN: usize = 10;
 
@@ -23,11 +32,16 @@ pub(super) struct SettingsDraft {
     /// 字體大小… open, with its own draft.
     fonts: Option<FontSizes>,
     help: bool,
+    /// 自訂… picked in 介面大小 (also when the stored value is not one of the fixed ones).
+    custom_scale: bool,
+    /// What the 自訂… box shows while it is being typed in.
+    scale_text: String,
 }
 
 impl SettingsDraft {
     pub(super) fn new(s: &Settings, with_fonts: bool) -> Self {
-        Self { s: s.clone(), fonts: with_fonts.then_some(s.font_sizes), help: false }
+        let custom = s.ui_scale_percent != 0 && !SCALE_PERCENTS.contains(&s.ui_scale_percent);
+        Self { s: s.clone(), fonts: with_fonts.then_some(s.font_sizes), help: false, custom_scale: custom, scale_text: s.ui_scale_percent.to_string() }
     }
 }
 
@@ -197,7 +211,7 @@ impl App {
         self.app_menu = None;
         match a {
             Act::Open => self.pick_folder(),
-            Act::Close => self.close_folder(),
+            Act::Close => self.confirm = Some(Confirm::CloseFolder),
             Act::ClearCache => self.confirm = Some(Confirm::ClearCache),
             Act::RestoreHidden => self.restore_hidden(),
             Act::Refresh => {
@@ -295,14 +309,39 @@ impl App {
             });
             section(ui, t("介面大小"));
             ui.horizontal(|ui| {
-                let label = |p: i64| if p == 0 { format!("{}　—　{auto}%", t("自動（依螢幕大小）")) } else { format!("{p}%") }; // i18n-ignore: not language text
-                egui::ComboBox::from_id_salt("set_scale").width(260.0).selected_text(label(d.s.ui_scale_percent)).show_ui(ui, |ui| {
-                    for p in std::iter::once(0).chain(SCALE_PERCENTS) {
-                        ui.selectable_value(&mut d.s.ui_scale_percent, p, label(p));
+                // -1 stands for 自訂… in the list; the stored value is always a percentage.
+                const CUSTOM: i64 = -1;
+                let label = |p: i64| match p {
+                    0 => format!("{}　—　{auto}%", t("自動（依螢幕大小）")), // i18n-ignore: not language text
+                    CUSTOM => t("自訂…").to_string(),
+                    _ => format!("{p}%"),
+                };
+                let mut pick = if d.custom_scale { CUSTOM } else { d.s.ui_scale_percent };
+                egui::ComboBox::from_id_salt("set_scale").width(200.0).selected_text(label(pick)).show_ui(ui, |ui| {
+                    for p in std::iter::once(0).chain(SCALE_PERCENTS).chain(std::iter::once(CUSTOM)) {
+                        ui.selectable_value(&mut pick, p, label(p));
                     }
                 });
-                ui.label(RichText::new(t("變更後立即套用")).size(theme::fs(FontKind::Small)).color(theme::TEXT_FAINT));
+                if pick == CUSTOM {
+                    if !d.custom_scale {
+                        d.custom_scale = true;
+                        // Start from the size in use (自動 → 100).
+                        d.s.ui_scale_percent = if d.s.ui_scale_percent == 0 { 100 } else { d.s.ui_scale_percent };
+                        d.scale_text = d.s.ui_scale_percent.to_string();
+                    }
+                    let edit = ui.add(egui::TextEdit::singleline(&mut d.scale_text).desired_width(44.0));
+                    if edit.lost_focus() || ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                        d.s.ui_scale_percent = parse_scale(&d.scale_text, d.s.ui_scale_percent);
+                        d.scale_text = d.s.ui_scale_percent.to_string();
+                    }
+                    ui.label("%"); // i18n-ignore
+                    ui.label(RichText::new(format!("{UI_SCALE_MIN}–{UI_SCALE_MAX}%")).size(theme::fs(FontKind::Small)).color(theme::TEXT_FAINT)); // i18n-ignore
+                } else {
+                    d.custom_scale = false;
+                    d.s.ui_scale_percent = pick;
+                }
             });
+            ui.label(RichText::new(t("變更後立即套用")).size(theme::fs(FontKind::Small)).color(theme::TEXT_FAINT));
             ui.horizontal(|ui| {
                 if ui.add(egui::Button::new(t("字體大小…")).min_size(Vec2::new(130.0, 28.0))).clicked() {
                     d.fonts = Some(d.s.font_sizes);
@@ -636,5 +675,20 @@ fn font_sizes_ui(ctx: &egui::Context, draft: &mut FontSizes) -> Option<bool> {
 pub(super) fn remember_folder(s: &mut Settings, folder: &str) {
     if !paths::file_name(folder).is_empty() {
         s.push_recent_folder(folder);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn custom_scale_input_clamps_and_keeps_previous_on_junk() {
+        assert_eq!(parse_scale("95", 100), 95);
+        assert_eq!(parse_scale(" 110% ", 100), 110);
+        assert_eq!(parse_scale("20", 100), 60);
+        assert_eq!(parse_scale("999", 100), 150);
+        assert_eq!(parse_scale("abc", 100), 100);
+        assert_eq!(parse_scale("", 125), 125);
     }
 }

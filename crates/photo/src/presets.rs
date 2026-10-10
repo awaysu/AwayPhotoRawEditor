@@ -60,6 +60,17 @@ pub fn apply_builtin(name: &str, a: &mut ImageAdjustments) -> bool {
     true
 }
 
+/// The fields a preset stands for, taken from a photo's adjustments (what
+/// `apply_stored` copies back): tonal, vibrance / saturation and detail values on an
+/// otherwise default set — never white balance, crop, gradients, heal spots or masks.
+pub fn preset_values(a: &ImageAdjustments) -> ImageAdjustments {
+    let mut p = ImageAdjustments::default();
+    (p.exposure, p.contrast, p.highlights, p.shadows, p.whites, p.blacks) = (a.exposure, a.contrast, a.highlights, a.shadows, a.whites, a.blacks);
+    (p.vibrance, p.saturation) = (a.vibrance, a.saturation);
+    (p.sharpening, p.noise_reduction, p.vignette, p.distortion) = (a.sharpening, a.noise_reduction, a.vignette, a.distortion);
+    p
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NamedPreset {
     pub name: String,

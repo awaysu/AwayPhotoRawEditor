@@ -26,6 +26,8 @@ pub(super) enum Confirm {
     Upgrade(Vec<Item>),
     /// 關閉資料夾並刪除快取縮圖.
     ClearCache,
+    /// 關閉資料夾 (asked first since 1.1.1).
+    CloseFolder,
 }
 
 /// What a thumbnail-menu click asks for (run after the menu is drawn).
@@ -34,6 +36,7 @@ enum MenuAction {
     Invert,
     DeselectAll,
     ApplyPreset(String),
+    SaveCustom1(usize),
     Copy(usize),
     Paste,
     Upgrade,
@@ -239,6 +242,21 @@ impl App {
         self.copied = a;
         self.copy_source = Some(it.key.clone());
         self.status = t("已複製相片設定").into();
+    }
+
+    /// 儲存成風格檔 自訂1: the photo's global (tonal / detail) values into the built-in
+    /// 自訂1 slot — the same fields the preset editor stores and `apply_stored` reads; no
+    /// white balance, crop, gradients, heal spots or masks.
+    fn save_as_custom1(&mut self, i: usize) {
+        let it = &self.items[i];
+        let a = if Some(i) == self.current { Some(self.adj.clone()) } else { store::load_all(&it.path, it.copy).0 };
+        let a = a.unwrap_or_default();
+        let name = "自訂1";
+        self.presets.commit(name, &presets::preset_values(&a));
+        if !self.headless() {
+            let _ = self.presets.save();
+        }
+        self.status = f("已儲存成風格檔：{0}", &[&tr(name)]);
     }
 
     /// 貼上照片設定 onto every selected photo.
@@ -627,7 +645,8 @@ impl App {
                         item(ui, &tr(&n), true, MenuAction::ApplyPreset(n.clone()));
                     }
                 });
-                // Copying only makes sense for one photo.
+                // Saving / copying only makes sense for one photo.
+                item(ui, t("儲存成風格檔 自訂1"), sel.len() <= 1, MenuAction::SaveCustom1(i));
                 item(ui, t("複製照片設定"), sel.len() <= 1, MenuAction::Copy(i));
                 item(ui, t("貼上照片設定"), self.copied.is_some(), MenuAction::Paste);
                 item(ui, t("升級處理版本"), true, MenuAction::Upgrade);
@@ -666,6 +685,7 @@ impl App {
             MenuAction::Invert => self.invert_selection(),
             MenuAction::DeselectAll => self.deselect_all(),
             MenuAction::ApplyPreset(n) => self.apply_preset_to_selection(&n),
+            MenuAction::SaveCustom1(i) => self.save_as_custom1(i),
             MenuAction::Copy(i) => self.copy_settings(i),
             MenuAction::Paste => self.paste_settings(),
             MenuAction::Upgrade => self.upgrade_selected(),
@@ -687,6 +707,7 @@ impl App {
             Confirm::DeleteFile(it) => (t("刪除照片檔案").to_string(), f("確定刪除檔案？（會移到資源回收桶）\n{0}", &[&it.name()])),
             Confirm::Upgrade(v) => (t("升級處理版本").to_string(), f("升級到處理版本 3（寬色域線性管線，可用高光復原、HSL 與曲線）。曝光與白平衡維持不變，畫面可能略有變化。要升級選取的 {0} 張照片嗎？", &[&v.len()])),
             Confirm::ClearCache => (t("刪除快取縮圖").to_string(), t("關閉資料夾並刪除此資料夾的快取與縮圖檔案？\n（編輯設定會保留，下次開啟會重新產生快取）").to_string()),
+            Confirm::CloseFolder => (t("關閉資料夾").to_string(), t("要關閉目前的資料夾嗎？").to_string()),
         };
         let mut answer = None;
         egui::Window::new(title).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, Vec2::ZERO).show(ctx, |ui| {
@@ -707,6 +728,7 @@ impl App {
                 Some(Confirm::DeleteFile(it)) => self.delete_file_confirmed(it),
                 Some(Confirm::Upgrade(v)) => self.upgrade_confirmed(v),
                 Some(Confirm::ClearCache) => self.clear_cache_confirmed(),
+                Some(Confirm::CloseFolder) => self.close_folder(),
                 None => {}
             },
             Some(false) => self.confirm = None,

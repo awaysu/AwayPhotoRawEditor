@@ -8,7 +8,7 @@
 //!                                              diagnostics: screenshot and quit
 //!   env AWPR_SHOT_ADJ="exposure=0.5,..."       (shot) adjustments applied in memory
 //!   env AWPR_SHOT_TOOL=crop|gradient|heal      (shot) open that tool (sample spots if none)
-//!   env AWPR_SHOT_DLG=export|presets|settings|fonts|about|firstrun|cameras
+//!   env AWPR_SHOT_DLG=export|presets|settings|settings-custom|fonts|about|firstrun|cameras|close
 //!                                              (shot) open that window
 //!   env AWPR_LANG=zh-TW|en|ja|ko|zh-CN|de|fr|es  interface language for this run
 //!   env AWPR_SHOT_SCROLL=bottom               (shot) scroll the right column to its end
